@@ -1,0 +1,51 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffffff', 'primaryTextColor': '#333333', 'primaryBorderColor': '#7C0000', 'lineColor': '#F8B229', 'secondaryColor': '#006100', 'tertiaryColor': '#fff'}}}%%
+graph TD
+    %% BPMN Nodes
+    StartEvent((fa:fa-bolt Receive <br>Tick / 1-Min Candle))
+    UpdatePos[fa:fa-cog Update Position<br>SL & Target]
+    SplitGateway{fa:fa-plus Parallel Split<br>per Timeframe}
+    
+    %% Multi-Instance Subprocess
+    subgraph "Multi-Instance Resampler [For each TF ∈ Active_Timeframes]"
+        direction TB
+        Resample[Resample Data to TF]
+        CheckClosed{Is TF Candle<br>Closed?}
+        CalcInd[Calculate TF Indicators]
+        Resample --> CheckClosed
+        CheckClosed -->|Yes| CalcInd
+    end
+    
+    MergeState[fa:fa-database Merge to Global<br>Indicator State Cache]
+    EvalStrategy[fa:fa-balance-scale Evaluate JSON-DSL<br>Strategy]
+    SignalGateway{Signal<br>Generated?}
+    
+    CheckPos[Check Position Status]
+    ExecOrder[Execute Order via OrderManager]
+    
+    EndHold((fa:fa-stop End: Hold <br>Wait for Tick))
+    EndComplete((fa:fa-check End: Traded))
+
+    %% Sequence / Flow
+    StartEvent --> UpdatePos
+    UpdatePos --> SplitGateway
+    
+    SplitGateway -->|Spawn Parallel| Resample
+    
+    CheckClosed -->|No| EndHold
+    CalcInd --> MergeState
+    MergeState --> EvalStrategy
+    EvalStrategy --> SignalGateway
+    
+    SignalGateway -->|HOLD| EndHold
+    SignalGateway -->|BUY / SELL| CheckPos
+    
+    CheckPos --> ExecOrder
+    ExecOrder --> EndComplete
+    
+    classDef Event fill:#eaf4fc,stroke:#5b9bd5,stroke-width:2px,color:#333;
+    classDef Task fill:#f2f2f2,stroke:#a6a6a6,stroke-width:1px,color:#333;
+    classDef Gateway fill:#fff2cc,stroke:#ffc000,stroke-width:2px,color:#333;
+    
+    class StartEvent,EndHold,EndComplete Event;
+    class UpdatePos,Resample,CalcInd,MergeState,EvalStrategy,CheckPos,ExecOrder Task;
+    class SplitGateway,CheckClosed,SignalGateway Gateway;

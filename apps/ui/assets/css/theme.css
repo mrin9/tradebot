@@ -1,0 +1,74 @@
+:root {
+    /* Scaling */
+    --font-size: 14px;
+    --border-radius: 4px;
+    --card-border-radius: 6px;
+
+    /* Layout Dimensions */
+    --layout-topbar-height: 56px;
+    --layout-sidebar-width: 320px; /* Wider for watchlist like Kite */
+    --layout-sidebar-collapsed-width: 64px;
+
+    --layout-padding: 1rem;
+    --layout-padding-sm: 0.5rem;
+
+    /* Semantic Trading Colors - Light Mode Default */
+    --color-profit: #10b981; /* Tailwind emerald 500 */
+    --color-loss: #ef4444;   /* Tailwind red 500 */
+
+    /* Light Mode Tokens (Zerodha inspired Light) */
+    --layout-bg: #f5f5f5; /* Light grey backdrop */
+    --layout-surface: #ffffff; /* White panels */
+    --layout-border: #e0e0e0; /* Subtle borders */
+    
+    --text-main: #444444;
+    --text-muted: #9b9b9b;
+    
+    --primary-color: #f05a28; /* Zerodha Orange-ish color */
+    --primary-color-hover: rgba(240, 90, 40, 0.1);
+    --primary-color-active: rgba(240, 90, 40, 0.15);
+
+    /* KlineCharts Pro Specific Overrides - Light mapped to PrimeVue */
+    .klinecharts-pro {
+        --klinecharts-pro-background-color: transparent !important;
+        --klinecharts-pro-popover-background-color: var(--layout-surface) !important;
+        --klinecharts-pro-primary-color: var(--primary-color) !important;
+        --klinecharts-pro-text-color: var(--text-main) !important;
+        --klinecharts-pro-text-second-color: var(--text-muted) !important;
+        --klinecharts-pro-border-color: var(--layout-border) !important;
+        --klinecharts-pro-hover-background-color: var(--primary-color-hover) !important;
+        --klinecharts-pro-selected-color: var(--primary-color-active) !important;
+    }
+}
+
+html.dark-mode {
+    /* Semantic Trading Colors - Dark Mode Default */
+    --color-profit: #4ade80; /* lighter green for dark bg */
+    --color-loss: #f87171; /* lighter red for dark bg */
+
+    /* Dark Mode Tokens (Kite Dark Theme inspired) */
+    --layout-bg: #1e1e1e; /* Deep dark background */
+    --layout-surface: #1e1e1e; /* Same as bg for seamless Kite look */
+    --layout-border: #2b2b2b; /* Subtle dark borders */
+    
+    --text-main: #dfdfdf;
+    --text-muted: #808080;
+    
+    --primary-color: #f05a28;
+    --primary-color-hover: rgba(240, 90, 40, 0.1);
+    --primary-color-active: rgba(240, 90, 40, 0.15);
+}
+
+html {
+    font-size: var(--font-size);
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--layout-bg);
+    color: var(--text-main);
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    font-size: 1rem;
+}

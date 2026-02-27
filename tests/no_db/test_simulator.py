@@ -1,0 +1,51 @@
+"""
+Tests for the SocketDataProvider, verifying real-time data emission for backtest simulations.
+"""
+import pytest
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
+from packages.simulator.socket_data_provider import SocketDataProvider
+
+def test_provider_initialization():
+    """Verifies the initial state of the SocketDataProvider."""
+    mock_sio = AsyncMock()
+    provider = SocketDataProvider(mock_sio)
+    assert provider.sio == mock_sio
+    assert provider.running is False
+
+def test_provider_emit_tick():
+    async def run_test():
+        mock_sio = AsyncMock()
+        provider = SocketDataProvider(mock_sio)
+        
+        await provider._emit_tick(26000, 24500, 1700000000, 100)
+        
+        # Verify emit was called
+        mock_sio.emit.assert_called_once()
+        args, kwargs = mock_sio.emit.call_args
+        assert args[0] == '1501-json-full'
+        assert args[1]['ExchangeInstrumentID'] == 26000
+        assert args[1]['Touchline']['LastTradedPrice'] == 24500.0
+    
+    asyncio.run(run_test())
+
+def test_provider_stop():
+    async def run_test():
+        mock_sio = AsyncMock()
+        provider = SocketDataProvider(mock_sio)
+        provider.running = True
+        
+        # Mock task precisely
+        mock_task = MagicMock()
+        mock_task.done.return_value = True 
+        provider.task = mock_task
+        
+        await provider.stop_simulation()
+        assert provider.running is False
+    
+    asyncio.run(run_test())
+
+def test_multi_collection_merge_logic():
+    # This is a unit test for the logic inside stream_data
+    # We can mock the Repo and cursors
+    pass

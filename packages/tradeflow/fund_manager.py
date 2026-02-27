@@ -1,0 +1,445 @@
+from typing import Dict, Callable, Any, List
+from packages.utils.date_utils import DateUtils
+from datetime import datetime
+import logging
+from packages.tradeflow.indicator_calculator import IndicatorCalculator
+from packages.tradeflow.rule_strategy import RuleStrategy, Signal
+from packages.tradeflow.ml_strategy import MLStrategy
+from packages.utils.log_utils import setup_logger
+
+from packages.tradeflow.position_manager import PositionManager, MarketIntent, InstrumentType
+from packages.tradeflow.order_manager import PaperTradingOrderManager
+from packages.tradeflow.candle_resampler import CandleResampler
+from packages.utils.mongo import MongoRepository
+
+logger = setup_logger(__name__)
+
+class FundManager:
+    """
+    The Orchestrator (Brain) for Multi-Timeframe Analysis (MTFA).
+    Coordinates data flow between Market Data, multiple Timeframe Resamplers, Indicators, and Strategy Logic.
+    """
+    def __init__(self, strategy_config: Dict[str, Any], position_config: Dict[str, Any] | None = None, log_heartbeat: bool = False, is_backtest: bool = False):
+        """
+        Args:
+            strategy_config (Dict): The full JSON-DSL strategy rule document from the database.
+            position_config (Dict, optional): Configuration for PositionManager (quantity, stop_loss, target).
+            log_heartbeat (bool): If True, logs indicator state on every candle close (useful for live).
+        """
+        self.config = strategy_config
+        self.indicators_config = self.config.get('indicators', [])
+        self.log_heartbeat = log_heartbeat
+        self.is_backtest = is_backtest
+        
+        # 1. Initialize Indicator Calculator (managing multiple timeframes)
+        self.indicator_calculator = IndicatorCalculator(indicators_config=self.indicators_config)
+        
+        # 2. Initialize Strategy Logic (Hybrid: Rule or ML)
+        pos_cfg = position_config or {}
+        self.strategy_mode = pos_cfg.get("strategy_mode", "rule")
+        
+        if self.strategy_mode == "ml":
+            self.strategy = MLStrategy(
+                model_path=pos_cfg.get("ml_model_path"),
+                confidence_threshold=pos_cfg.get("ml_confidence", 0.65)
+            )
+            logger.info(f"🤖 Strategy Mode: ML (self-contained features)")
+        else:
+            self.strategy = RuleStrategy(strategy_config=self.config)
+            logger.info(f"📏 Strategy Mode: Rule (RuleStrategy)")
+        
+        # 3. Position Manager
+        self.initial_budget = pos_cfg.get("budget", 200000.0)
+        self.invest_mode = pos_cfg.get("invest_mode", "fixed")
+        
+        self.trade_instrument_type = pos_cfg.get("instrument_type", "CASH").upper() # CASH, OPTIONS, FUTURES
+        self.trade_option_type = pos_cfg.get("option_type", "ATM").upper() # ATM, ITM, OTM
+        
+        # Map string to InstrumentType enum
+        enum_map = {
+            "CASH": InstrumentType.CASH,
+            "OPTIONS": InstrumentType.OPTIONS,
+            "FUTURES": InstrumentType.FUTURES
+        }
+        instr_enum = enum_map.get(self.trade_instrument_type, InstrumentType.CASH)
+        if self.trade_instrument_type not in enum_map:
+            logger.warning(f"Unrecognized instrument type '{self.trade_instrument_type}', defaulting to CASH")
+        
+        # Parse pyramid steps from string "25,50,25" to list [25, 50, 25]
+        pyramid_steps_raw = pos_cfg.get("pyramid_steps", "100")
+        if isinstance(pyramid_steps_raw, str):
+            pyramid_steps = [int(s.strip()) for s in pyramid_steps_raw.split(',')]
+        else:
+            pyramid_steps = pyramid_steps_raw
+        
+        self.position_manager = PositionManager(
+            symbol=pos_cfg.get("symbol", "NIFTY"), 
+            quantity=pos_cfg.get("quantity", 50), 
+            stop_loss_points=pos_cfg.get("stop_loss_points", 20), 
+            target_points=pos_cfg.get("target_points", 40),
+            instrument_type=instr_enum,
+            trailing_sl_points=pos_cfg.get("trailing_sl_points", 0.0),
+            use_break_even=pos_cfg.get("use_break_even", True),
+            pyramid_steps=pyramid_steps,
+            pyramid_confirm_pts=pos_cfg.get("pyramid_confirm_pts", 10.0)
+        )
+        self.order_manager = PaperTradingOrderManager()
+        self.position_manager.set_order_manager(self.order_manager)
+        
+        self.on_signal: Callable[[Dict], None] | None = None
+        self.db = MongoRepository.get_db()
+        self.latest_tick_prices: Dict[int, float] = {}
+        
+        # 4. Global Timeframe and Multi-Instrument Streams
+        self.global_timeframe = self.config.get('timeframe', 300)
+        
+        # Track active instruments being monitored {category: instrument_id}
+        self.active_instruments: Dict[str, int] = {"SPOT": 26000}
+        self.selection_spot_price: float | None = None
+        
+        # Initialize Resamplers per category
+        self.resamplers: Dict[str, CandleResampler] = {}
+        for category in ["SPOT", "CE", "PE"]:
+            self.resamplers[category] = CandleResampler(
+                instrument_id=0, # Will be set dynamically during data ingestion
+                interval_seconds=self.global_timeframe,
+                on_candle_closed=lambda c, cat=category: self._on_resampled_candle_closed(c, cat)
+            )
+            
+        # 5. Global cache 
+        self.latest_indicators_state: Dict[str, float] = {}
+        self.is_warming_up = False
+        
+    def _resolve_option_contract(self, strike: float, is_ce: bool, current_ts: float) -> tuple[int | None, str | None]:
+        """Resolves the nearest expiry option contract ID and description for NIFTY from DB given a strike."""
+        # Convert timestamp to ISO string for comparison with contractExpiration
+        dt_iso = datetime.fromtimestamp(current_ts).strftime("%Y-%m-%dT%H:%M:%S")
+        
+        opt_type_num = 3 if is_ce else 4 # CE=3, PE=4 in XTS
+        
+        # Simplification: Sort by contractExpiration and get the first one (nearest expiry)
+        from packages.config import settings
+        contract = self.db[settings.INSTRUMENT_MASTER_COLLECTION].find_one(
+            {
+                "name": "NIFTY", 
+                "series": "OPTIDX", 
+                "strikePrice": strike, 
+                "optionType": opt_type_num,
+                "contractExpiration": {"$gte": dt_iso}
+            },
+            sort=[("contractExpiration", 1)]
+        )
+        
+        if contract:
+            return contract["exchangeInstrumentID"], contract.get("description", contract.get("displayName"))
+        return None, None
+        
+    def _check_and_update_monitored_instruments(self, current_spot: float, current_ts: float):
+        """Continuously manages the CE and PE instruments being monitored. Handles drift re-selection."""
+        atm_strike = round(current_spot / 50) * 50
+        
+        needs_update = False
+        if self.selection_spot_price is None:
+            needs_update = True
+        elif abs(current_spot - self.selection_spot_price) > 25:
+            # Price drifted significantly, recalculate ATM and re-map
+            logger.info(f"🔄 Spot drifted to {current_spot} (prev {self.selection_spot_price}). Recalculating Active Options.")
+            needs_update = True
+            
+        if needs_update:
+            self.selection_spot_price = current_spot
+            
+            # Resolve CE
+            ce_id, _ = self._resolve_option_contract(atm_strike, True, current_ts)
+            if ce_id:
+                self.active_instruments["CE"] = int(ce_id)
+                self.resamplers["CE"].current_candle = None # Reset partial candle on switch
+            
+            # Resolve PE
+            pe_id, _ = self._resolve_option_contract(atm_strike, False, current_ts)
+            if pe_id:
+                self.active_instruments["PE"] = int(pe_id)
+                self.resamplers["PE"].current_candle = None # Reset partial candle on switch
+
+    def _get_fallback_option_price(self, symbol_id: int, current_ts: float | None, is_entry: bool = False) -> float | None:
+        """
+        Attempts to find a reliable price for an option when the live tick is missing.
+        Priority:
+        1. Tick Cache
+        2. DB Fallback (nearest candle before or at current_ts)
+        3. Position Manager's current_price (only for exits)
+        """
+        # 1. Tick Cache
+        price = self.latest_tick_prices.get(symbol_id)
+        if price:
+            return price
+            
+        # 2. DB Fallback
+        logger.info(f"🔍 No live tick for {symbol_id}. Checking DB fallback...")
+        query = {"i": symbol_id}
+        if current_ts:
+            query["t"] = {"$lte": current_ts}
+            
+        fallback = self.db['options_candle'].find_one(query, sort=[("t", -1)])
+        if fallback:
+            price = fallback.get('c', fallback.get('p'))
+            if price is not None:
+                logger.info(f"✅ Found DB fallback price for {symbol_id}: {price}")
+                return price
+            
+        # 3. Position Manager Fallback (Exits Only)
+        if not is_entry and self.position_manager.current_position and str(symbol_id) == self.position_manager.current_position.symbol:
+            price = self.position_manager.current_position.current_price
+            if price is not None and price > 0:
+                logger.info(f"⚠️ Using PositionManager last known price for {symbol_id}: {price}")
+                return price
+                
+        return None
+
+    def on_tick_or_base_candle(self, market_data: Dict):
+        """
+        Process a real-time TICK or a base 1-minute CANDLE from the stream.
+        Routes it to all configured timeframes for resampling.
+        
+        Args:
+            market_data (Dict): OHLCV data or Tick data.
+        """
+        # 1. Update Tick Price Cache
+        inst_id = market_data.get('i', market_data.get('instrument_id'))
+        price = market_data.get('c', market_data.get('close', market_data.get('p')))
+        
+        if price is None:
+            return
+
+        # 0. Tick Normalization: If this is a raw tick (no OHLC), populate OHLC for downstream compatibility
+        if 'p' in market_data and 'c' not in market_data:
+            market_data.update({
+                'o': price,
+                'h': price,
+                'l': price,
+                'c': price
+            })
+        
+        if inst_id:
+            self.latest_tick_prices[int(inst_id)] = price
+
+        is_spot = (inst_id == 26000) or getattr(self, 'spot_instrument_id', 26000) == inst_id
+        
+        # 1.a Drift Check (Only when we get Spot)
+        ts = market_data.get('t', market_data.get('timestamp'))
+        if is_spot and ts:
+            self._check_and_update_monitored_instruments(price, ts)
+
+        # 2. Update Position Manager immediately for Stop Loss / Target checks
+        if self.position_manager.current_position:
+            # Only update position if the tick belongs to the active traded instrument
+            if str(inst_id) == self.position_manager.current_position.symbol:
+                nifty_price = self.latest_tick_prices.get(26000)
+                self.position_manager.update_tick(market_data, nifty_price=nifty_price)
+
+        # 3. Route to Resamplers based on Category
+        category = None
+        for cat, active_id in self.active_instruments.items():
+            if active_id == int(inst_id):
+                category = cat
+                break
+                
+        if not category:
+            return # Data for instrument not actively monitored
+
+        resampler = self.resamplers.get(category)
+        if resampler:
+            resampler.instrument_id = int(inst_id)
+            resampler.add_candle(market_data)
+
+    def _on_resampled_candle_closed(self, candle: Dict, category: str):
+        """
+        Callback triggered when a specific Category Resampler finalizes a candle.
+        For Triple-Lock, we evaluate the unified state ONLY when the SPOT candle closes.
+        """
+        ts = candle.get('t', candle.get('timestamp'))
+
+        # Both MLStrategy and RuleStrategy now implement on_resampled_candle_closed
+        if self.strategy_mode == "rule":
+            new_indicators = self.indicator_calculator.add_candle(candle, instrument_category=category)
+            if new_indicators:
+                self.latest_indicators_state.update(new_indicators)
+            
+            if self.log_heartbeat and new_indicators:
+                ind_str = ", ".join([f"{k}: {v:.2f}" if isinstance(v, (int, float)) else f"{k}: {v}" for k, v in new_indicators.items()])
+                ts_str = DateUtils.from_timestamp(ts).strftime('%H:%M:%S') if ts else "N/A"
+                logger.info(f"💚 HEARTBEAT [{ts_str}] 💚| Category: {category} | Indicators: {ind_str}")
+
+        # ONLY execute strategy decision synchronously when the SPOT candle acts as the anchor
+        if category != "SPOT":
+            return
+            
+        # Pass the current position intent to explicitly evaluate Exit Rules if configured
+        current_intent_str = None
+        if self.position_manager.current_position:
+            current_intent_str = "LONG" if self.position_manager.current_position.intent == MarketIntent.LONG else "SHORT"
+
+        if self.strategy_mode == "ml":
+            signal, reason, confidence = self.strategy.on_resampled_candle_closed(candle, self.latest_indicators_state)
+        else:
+            signal, reason, confidence = self.strategy.on_resampled_candle_closed(
+                candle, self.latest_indicators_state, current_position_intent=current_intent_str
+            )
+        
+        if signal != Signal.NEUTRAL:
+            if self.is_warming_up:
+                # No signals/trades during warmup!
+                return
+            
+            # 0. Stale Signal Protection (Max 30 minutes)
+            # This prevents the bot from acting on "catch-up" data right after startup
+            import time
+            if not self.is_backtest and ts and time.time() - ts > 1800:
+                 logger.warning(f"⚠️ Signal ignored: Triggered by stale data from {ts} (>{1800}s old)")
+                 return
+
+            spot_price = candle.get('c', candle.get('close'))
+
+            # 1. Handle Signals for existing positions
+            if self.position_manager.current_position:
+                if signal == Signal.EXIT:
+                    ts_dt = DateUtils.from_timestamp(ts) if isinstance(ts, (int, float)) else datetime.now()
+                    ts_str = ts_dt.strftime('%d-%b %H:%M')
+                    formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
+                    logger.info(f"Signal: EXIT ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
+                    
+                    pos = self.position_manager.current_position
+                    opt_price = self._get_fallback_option_price(int(pos.symbol), ts)
+                    if not opt_price:
+                        logger.error(f"Cannot exit {pos.symbol}, ALL fallbacks failed. Using entry price as last resort.")
+                        opt_price = pos.entry_price if pos.entry_price else spot_price # Extremely rare
+                    self.position_manager._close_position(opt_price, ts_dt, "STRATEGY_EXIT", reason_desc=reason, nifty_price=spot_price)
+                    return
+            
+                intent = MarketIntent.LONG if signal == Signal.LONG else MarketIntent.SHORT
+                
+                # If current intent matches signal, do nothing (already in position)
+                if self.position_manager.current_position.intent == intent:
+                    return
+                
+                # Signal changed (flip) - log it and handle closure
+                ts_dt = DateUtils.from_timestamp(ts) if isinstance(ts, (int, float)) else datetime.now()
+                ts_str = ts_dt.strftime('%d-%b %H:%M')
+                formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
+                logger.info(f"Signal: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
+                
+                pos = self.position_manager.current_position
+                opt_price = self._get_fallback_option_price(int(pos.symbol), ts)
+                if not opt_price: 
+                    logger.error(f"Cannot exit {pos.symbol}, ALL fallbacks failed. Using entry price as last resort.")
+                    opt_price = pos.entry_price if pos.entry_price else spot_price
+                
+                self.position_manager._close_position(opt_price, ts_dt, "SIGNAL_FLIP", reason_desc=reason, nifty_price=spot_price)
+            else:
+                if signal == Signal.EXIT:
+                    return # Ignore lone exit signals when not in position
+                
+                intent = MarketIntent.LONG if signal == Signal.LONG else MarketIntent.SHORT
+                
+                # No existing position - log new entry signal
+                ts_dt = DateUtils.from_timestamp(ts) if isinstance(ts, (int, float)) else datetime.now()
+                ts_str = ts_dt.strftime('%d-%b %H:%M')
+                formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
+                logger.info(f"Signal: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
+                
+            # 2. Handle Entries
+            target_symbol = "26000" # default spot
+            target_display_symbol = "NIFTY SPOT"
+            entry_price = spot_price
+            
+            if self.trade_instrument_type == "OPTIONS":
+                t_cat = "CE" if intent == MarketIntent.LONG else "PE"
+                resolved_id = self.active_instruments.get(t_cat)
+                
+                # We also need the contract description if possible for the Payload.
+                # In Triple-Lock, the contract is already resolved and tracked during drift!
+                if not resolved_id:
+                    logger.error(f"Failed to find active {t_cat} instrument from drift tracker")
+                    return
+                    
+                target_symbol = str(resolved_id)
+                target_display_symbol = f"NIFTY {t_cat} ({target_symbol})" # Simplified description
+                
+                # Entry Price Cache check
+                entry_price = self._get_fallback_option_price(int(resolved_id), ts, is_entry=True)
+                if not entry_price:
+                    logger.warning(f"No active tick feed OR DB fallback for option {target_symbol}. Skipping entry.")
+                    return
+            elif self.trade_instrument_type == "FUTURES":
+                target_display_symbol = "NIFTY FUT" # Example, could be more dynamic
+            
+            # Use on_signal for centralized entry/exit logic
+            payload = {
+                'signal': intent,
+                'confidence': confidence,
+                'price': entry_price,
+                'symbol': target_symbol,
+                'display_symbol': target_display_symbol,
+                'timestamp': ts,
+                'reason': signal.name,
+                'reason_desc': reason,
+                'nifty_price': spot_price
+            }
+            
+            # Recalculate quantity based on exact entry price and budget
+            from packages.config import settings
+            lot_size = settings.NIFTY_LOT_SIZE
+            
+            # Decide which capital to use (Total Capital vs Initial Budget)
+            total_realized_pnl = sum([t.pnl for t in self.position_manager.trades_history])
+            current_capital = self.initial_budget + total_realized_pnl
+            
+            # If compounding, we use current_capital. If fixed, we use initial_budget.
+            capital_to_use = current_capital if self.invest_mode == "compound" else self.initial_budget
+            
+            # Calculate exactly how many lots we can afford
+            # capital / (price * lot_size)
+            if entry_price > 0:
+                new_qty = int(capital_to_use // (entry_price * lot_size))
+                if new_qty > 0:
+                    self.position_manager.quantity = new_qty
+                    if self.invest_mode == "compound":
+                        logger.info(f"📈 [COMPOUND] Recalculated Qty: {new_qty} based on Capital: ₹{current_capital:,.2f} and Price: {entry_price}")
+                    else:
+                        logger.info(f"💰 [FIXED] Calculated Qty: {new_qty} based on Budget: ₹{self.initial_budget:,.2f} and Price: {entry_price}")
+                else:
+                    logger.warning(f"⚠️ Insufficient budget (₹{capital_to_use:,.2f}) for entry at {entry_price}. Qty remains {self.position_manager.quantity}")
+
+            self.position_manager.on_signal(payload)
+            
+            if self.on_signal:
+                payload.update({
+                    'indicators': self.latest_indicators_state.copy(),
+                    'is_buy': signal == Signal.LONG
+                })
+                self.on_signal(payload)
+
+    def handle_eod_settlement(self, timestamp: float):
+        """
+        Forces closure of any open positions at the end of the trading day.
+        
+        Args:
+            timestamp (float): The UNIX timestamp for the settlement (typically 15:30).
+        """
+        if not self.position_manager.current_position:
+            return
+
+        pos = self.position_manager.current_position
+        # Use price from fund_manager's tick cache for the specific instrument
+        eod_price = self.latest_tick_prices.get(int(pos.symbol))
+        
+        # If for some reason tick price isn't in cache, use the last known price
+        if not eod_price:
+            eod_price = pos.current_price
+        
+        eod_time = datetime.fromtimestamp(timestamp)
+        nifty_price = self.latest_tick_prices.get(26000)
+        
+        logger.info(f"🌙 FundManager: EOD Settlement for {pos.symbol} at {eod_price}")
+        desc = f"End of Day Settlement at {eod_price:.2f}"
+        self.position_manager._close_position(eod_price, eod_time, "EOD", reason_desc=desc, nifty_price=nifty_price)

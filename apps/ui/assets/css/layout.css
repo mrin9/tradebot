@@ -1,0 +1,171 @@
+/* Layout specifically for the dashboard skeleton */
+.layout-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.layout-topbar {
+    height: var(--layout-topbar-height);
+    background-color: var(--layout-surface);
+    border-bottom: 1px solid var(--layout-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.5rem;
+    z-index: 10;
+}
+
+.layout-main-container {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.layout-sidebar {
+    width: var(--layout-sidebar-width);
+    background-color: var(--layout-surface);
+    border-right: 1px solid var(--layout-border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    transition: width 0.3s ease;
+}
+
+.layout-sidebar-collapsed {
+    width: var(--layout-sidebar-collapsed-width);
+}
+
+.layout-main {
+    flex: 1;
+    overflow-y: auto;
+    background-color: var(--layout-bg);
+}
+
+/* Topbar Logo Match */
+.logo-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+}
+
+.logo-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--primary-color);
+}
+
+.logo-text {
+    font-weight: 700;
+    font-size: 1.4rem;
+    letter-spacing: -0.04em;
+    color: var(--primary-color);
+    background: linear-gradient(135deg, var(--primary-color) 0%, rgba(240, 90, 40, 0.5) 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Sidebar Watchlist styles */
+.watchlist-header {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--layout-border);
+}
+
+.watchlist-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--layout-border);
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.watchlist-item:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+html.dark-mode .watchlist-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Sidebar menu styles */
+.sidebar-menu {
+    padding: 0.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.menu-item {
+    display: flex;
+    align-items: center;
+    padding: 0.85rem 1.25rem;
+    margin-bottom: 0.25rem;
+    border-radius: var(--card-border-radius);
+    color: var(--text-main);
+    text-decoration: none;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    gap: 1rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+.menu-item i {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+}
+
+.menu-item:hover {
+    background-color: var(--primary-color-hover);
+    color: var(--primary-color);
+}
+
+.menu-item:hover i {
+    color: var(--primary-color);
+}
+
+.menu-item.router-link-active {
+    background-color: var(--primary-color-active);
+    color: var(--primary-color);
+    font-weight: 700;
+}
+
+.menu-item.router-link-active i {
+    color: var(--primary-color);
+}
+
+.sidebar-header {
+    padding: 1.25rem 1.25rem 0.75rem;
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+/* Topbar main navigation */
+.topbar-nav {
+    display: flex;
+    gap: 1.25rem;
+    height: 100%;
+}
+
+.topbar-nav-item {
+    color: var(--text-main);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    border-bottom: 2px solid transparent;
+}
+
+/* the exact match router-link-exact-active is for current path */
+.topbar-nav-item.router-link-exact-active,
+.topbar-nav-item.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}

@@ -1,0 +1,155 @@
+/* Colors */
+.txt-profit {
+    color: var(--color-profit) !important;
+}
+
+.txt-loss {
+    color: var(--color-loss) !important;
+}
+
+.txt-primary {
+    color: var(--primary-color) !important;
+}
+
+.txt-muted {
+    color: var(--text-muted) !important;
+}
+
+.txt-main {
+    color: var(--text-main) !important;
+}
+
+/* Backgrounds & Borders */
+.bg-surface {
+    background-color: var(--layout-surface) !important;
+}
+
+.bg-layout {
+    background-color: var(--layout-bg) !important;
+}
+
+.border-default {
+    border: 1px solid var(--layout-border) !important;
+}
+
+.border-b-default {
+    border-bottom: 1px solid var(--layout-border) !important;
+}
+
+.border-r-default {
+    border-right: 1px solid var(--layout-border) !important;
+}
+
+/* Flex layout utilities */
+.flex-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.flex-between {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.flex-col {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Margins & Paddings */
+.p-4 {
+    padding: 1rem;
+}
+
+.p-3 {
+    padding: 0.75rem;
+}
+
+.p-2 {
+    padding: 0.5rem;
+}
+
+.m-0 {
+    margin: 0;
+}
+
+.mt-1 {
+    margin-top: 0.25rem;
+}
+
+.mt-2 {
+    margin-top: 0.5rem;
+}
+
+.mb-1 {
+    margin-bottom: 0.25rem;
+}
+
+.mb-2 {
+    margin-bottom: 0.5rem;
+}
+
+.mb-4 {
+    margin-bottom: 1rem;
+}
+
+.me-2 {
+    margin-right: 0.5rem;
+}
+
+.ms-1 {
+    margin-left: 0.25rem;
+}
+
+.ms-2 {
+    margin-left: 0.5rem;
+}
+
+.ms-auto {
+    margin-left: auto;
+}
+
+/* Font styling */
+.font-bold {
+    font-weight: 700;
+}
+
+.font-medium {
+    font-weight: 500;
+}
+
+.text-sm {
+    font-size: 0.875rem;
+}
+
+.text-xs {
+    font-size: 0.75rem;
+}
+
+.text-lg {
+    font-size: 1.125rem;
+}
+
+/* Grid layout classes */
+.grid {
+    display: grid;
+    gap: 1.5rem;
+}
+
+.grid-cols-1 {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+.grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.grid-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}

@@ -1,0 +1,15 @@
+polars
+pytz
+requests
+python-socketio[client]
+pydantic-settings
+pydantic
+pymongo
+typer
+questionary
+aiohttp
+fastapi
+uvicorn
+scikit-learn
+xgboost
+joblib

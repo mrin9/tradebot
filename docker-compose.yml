@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongo:
+    image: mongo:latest
+    container_name: trade-bot-mongo
+    ports:
+      - "27017:27017" # Exposed for local tools (Compass)
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - trade-net
+
+  # Backend API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trade-bot-api
+    depends_on:
+      - mongo
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/
+      - DB_NAME=trade_bot
+      - XTS_API_KEY=${XTS_API_KEY}
+      - XTS_API_SECRET=${XTS_API_SECRET}
+      - XTS_ROOT_URL=${XTS_ROOT_URL}
+    volumes:
+      - .:/app # Hot Reload
+    command: uvicorn apps.api.main:socket_app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - trade-net
+
+  # Frontend Dashboard
+  web:
+    build:
+      context: ./apps/ui
+      dockerfile: Dockerfile
+    container_name: trade-bot-web
+    depends_on:
+      - api
+    ports:
+      - "4321:80" # Map to standard HTTP or 4321 as user prefers
+    networks:
+      - trade-net
+
+networks:
+  trade-net:
+    driver: bridge
+
+volumes:
+  mongo_data:
