@@ -157,12 +157,25 @@ class BacktestBot:
             
             db = MongoRepository.get_db()
 
-            strategy_name = (self.args.rule_id or "ml-model").lower().replace("_", "-")
+            strategy_id = (self.args.rule_id or "ml-model")
+            prefix = strategy_id.split('-')[0][:10].lower()
+            
+            # Formulate date range
+            start_dt = DateUtils._parse_keyword(self.args.start, is_end=False)
+            end_dt = DateUtils._parse_keyword(self.args.end, is_end=True)
+            start_str = start_dt.strftime("%d%b").upper()
+            end_str = end_dt.strftime("%d%b").upper()
+            
+            if start_str == end_str:
+                date_range = start_str
+            else:
+                date_range = f"{start_str}-{end_str}"
+            
             short_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=3))
-            timestamp = DateUtils.get_market_time().strftime("%b%d-%H%M")
-            result_id = f"{strategy_name}-{timestamp}-{short_id}"
+            result_id = f"{prefix}-{date_range}-{short_id}"
 
             # Format trades for UI consumption
+            # ... (rest of the mapping logic)
             # 1. Collect all unique instrument IDs
             instrument_ids = list(set([str(getattr(t, "symbol", "")) for t in self.trades if getattr(t, "symbol", "")]))
             
@@ -279,6 +292,8 @@ class BacktestBot:
                 "timestamp": DateUtils.to_utc(DateUtils.get_market_time()).replace(tzinfo=None).isoformat(timespec='seconds'),
                 "config": {
                     "strategy": self.args.rule_id or "ml-model",
+                    "startDate": start_dt.strftime("%Y-%m-%d"),
+                    "endDate": end_dt.strftime("%Y-%m-%d"),
                     "timeframe": getattr(self.fm, 'global_timeframe', 300),
                     "indicators": getattr(self.fm, 'indicators_config', []),
                     "budget": self.args.budget,
