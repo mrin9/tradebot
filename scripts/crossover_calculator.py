@@ -112,7 +112,7 @@ def calculate_crossovers(df: pl.DataFrame, fast: int, slow: int, timeframe_sec: 
 
 def main():
     parser = argparse.ArgumentParser(description="EMA Crossover Calculator using Polars")
-    parser.add_argument("--instruments", type=str, help="Comma separated instrument descriptions (max 2)")
+    parser.add_argument("--instrument", type=str, help="Instrument description (e.g., NIFTY2630225400CE)")
     parser.add_argument("--date", type=str, help="ISO Date (YYYY-MM-DD)")
     parser.add_argument("--crossover", type=str, default="EMA-5-21", help="Crossover (e.g., EMA-5-21 or SMA-9-13)")
     parser.add_argument("--timeframe", type=int, default=180, help="Timeframe in seconds")
@@ -132,24 +132,34 @@ def main():
             return
 
     # Parse Crossover
-    # Assuming "EMA-5-21" or "SMA-5-21"
     parts = args.crossover.split("-")
     type_name = parts[0]
     fast_period = int(parts[1])
     slow_period = int(parts[2])
     
-    inst_names = [i.strip() for i in args.instruments.split(",")] if args.instruments else []
-    if len(inst_names) > 2:
-        inst_names = inst_names[:2]
+    if not args.instrument:
+        console.print("[red]Error: Instrument description required.[/red]")
+        return
+
+    name1 = args.instrument.upper()
+    # Derive twin instrument
+    if name1.endswith("CE"):
+        name2 = name1[:-2] + "PE"
+    elif name1.endswith("PE"):
+        name2 = name1[:-2] + "CE"
+    else:
+        console.print(f"[red]Error: Instrument '{name1}' must end with CE or PE to calculate counterpart.[/red]")
+        return
 
     # Get IDs
-    inst_ids = []
-    for name in inst_names:
-        iid = get_instrument_id(db, name)
-        if iid:
-            inst_ids.append((name, iid))
-        else:
-            console.print(f"[yellow]Warning: Instrument '{name}' not found in master.[/yellow]")
+    id1 = get_instrument_id(db, name1)
+    if not id1:
+        console.print(f"[red]Error: Instrument '{name1}' not found in master.[/red]")
+        return
+        
+    id2 = get_instrument_id(db, name2)
+    if not id2:
+        console.print(f"[yellow]Warning: Twin instrument '{name2}' not found in master.[/yellow]")
 
     nifty_id = settings.NIFTY_EXCHANGE_INSTRUMENT_ID
     
@@ -163,48 +173,23 @@ def main():
         return
         
     # Fetch Instrument 1
-    if not inst_ids:
-        console.print("[red]Error: At least one instrument description required.[/red]")
-        return
-        
-    name1, id1 = inst_ids[0]
     df1 = fetch_candles(db, id1, date_str)
     if df1.is_empty():
         console.print(f"[red]No data found for {name1}.[/red]")
         return
 
     # Fetch Instrument 2 if exists
-    name2, id2 = (None, None)
-    df2 = pl.DataFrame()
-    if len(inst_ids) > 1:
-        name2, id2 = inst_ids[1]
-        df2 = fetch_candles(db, id2, date_str)
+    df2 = fetch_candles(db, id2, date_str) if id2 else pl.DataFrame()
 
     # 3. Calculate Crossovers for Instrument 1
     console.print(f"[blue]Calculating {args.crossover} crossovers for {name1} on {args.timeframe}s timeframe...[/blue]")
     cross_df, full_df1 = calculate_crossovers(df1, fast_period, slow_period, args.timeframe)
-
-    # Debug: Print values around 11:24
-    target_time = datetime.strptime(f"{date_str} 11:24:00", "%Y-%m-%d %H:%M:%S")
-    # Determine the timezone of time_ist. Polars Datetime with TZ.
-    # We need to localize the target_time to Asia/Kolkata if time_ist has it.
-    import zoneinfo
-    target_time = target_time.replace(tzinfo=zoneinfo.ZoneInfo("Asia/Kolkata"))
-    
-    debug_range = full_df1.filter(
-        (pl.col("time_ist") >= target_time - timedelta(minutes=15)) &
-        (pl.col("time_ist") <= target_time + timedelta(minutes=15))
-    )
-    console.print("\n[yellow]Debug: ALL Candles around 11:24:[/yellow]")
-    with pl.Config(tbl_rows=100):
-        console.print(debug_range.select(["time_ist", "close", "ema_fast", "ema_slow"]))
 
     if cross_df.is_empty():
         console.print(f"[yellow]No crossovers found for {name1} on {date_str}.[/yellow]")
         return
 
     # 4. Process NIFTY and Instrument 2 at crossover times
-    # We need to resample NIFTY and Inst 2 exactly like Inst 1
     def get_full_resampled(df, fast, slow, tf):
         if df.is_empty(): return pl.DataFrame()
         df = df.sort("time_ist")
@@ -231,7 +216,7 @@ def main():
     table.add_column(f"EMA {fast_period}-{slow_period} ({name1})", justify="right")
     table.add_column(f"EMA {fast_period}-{slow_period} (NIFTY)", justify="right")
     
-    if name2:
+    if id2:
         table.add_column(f"EMA {fast_period}-{slow_period} ({name2})", justify="right")
 
     for row in cross_df.iter_rows(named=True):
@@ -239,34 +224,47 @@ def main():
         ctype = "BULLISH" if row["is_bullish"] else "BEARISH"
         color = "green" if row["is_bullish"] else "red"
         
+        def get_ema_indicator_str(fast, slow):
+            if fast > slow: return "🟢 "
+            if fast < slow: return "🔴 "
+            return "🟠 "
+
+        # Primary EMA and indicator
+        p_indicator = get_ema_indicator_str(row['ema_fast'], row['ema_slow'])
+        p_ema_vals = f"{p_indicator}{row['ema_fast']:.1f} - {row['ema_slow']:.1f}"
+
         # Get NIFTY values at this time
         n_row = full_nifty.filter(pl.col("time_ist") == row["time_ist"])
         nifty_vals = "N/A"
         if not n_row.is_empty():
             n_data = n_row.to_dicts()[0]
-            nifty_vals = f"{n_data['ema_fast']:.1f} - {n_data['ema_slow']:.1f}"
+            n_indicator = get_ema_indicator_str(n_data['ema_fast'], n_data['ema_slow'])
+            nifty_vals = f"{n_indicator}{n_data['ema_fast']:.1f} - {n_data['ema_slow']:.1f}"
 
         # Get Inst 2 values at this time
         inst2_vals = "N/A"
-        if name2 and not full_df2.is_empty():
+        if id2 and not full_df2.is_empty():
             i2_row = full_df2.filter(pl.col("time_ist") == row["time_ist"])
             if not i2_row.is_empty():
                 i2_data = i2_row.to_dicts()[0]
-                inst2_vals = f"{i2_data['ema_fast']:.1f} - {i2_data['ema_slow']:.1f}"
+                i2_indicator = get_ema_indicator_str(i2_data['ema_fast'], i2_data['ema_slow'])
+                inst2_vals = f"{i2_indicator}{i2_data['ema_fast']:.1f} - {i2_data['ema_slow']:.1f}"
 
         row_data = [
             t_ist,
             f"[{color}]{ctype}[/{color}]",
             f"{row['close']:.2f}",
-            f"{row['ema_fast']:.1f} - {row['ema_slow']:.1f}",
+            p_ema_vals,
             nifty_vals
         ]
-        if name2:
+        if id2:
             row_data.append(inst2_vals)
             
         table.add_row(*row_data)
+
 
     console.print(table)
 
 if __name__ == "__main__":
     main()
+

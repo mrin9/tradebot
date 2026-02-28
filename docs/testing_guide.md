@@ -140,7 +140,7 @@ python -m packages.backtest.backtest_runner \
     --mode db \
     --start 2026-02-27 \
     --strategy-mode python_code \
-    --python-strategy-path scripts/my_strategies.py:TripleLockStrategy \
+    --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
     --budget 200000 \
     --sl 15.0 \
     --target-steps "15,25,50" \
@@ -174,7 +174,7 @@ python -m packages.backtest.backtest_runner \
     --invest-mode compound \
     --strategy-mode python_code \
     --rule-id triple-lock-momentum \
-    --python-strategy-path scripts/my_strategies.py:TripleLockStrategy \
+    --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
     --sl 15.0 \
     --target-steps "15,25,50" \
     --trailing-sl 10.0 \

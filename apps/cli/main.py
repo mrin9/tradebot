@@ -160,15 +160,15 @@ def simulator(
 
 @app.command()
 def crossover(
-    instruments: Annotated[str, typer.Option(help="Comma separated instrument descriptions (max 2)")] = "",
+    instrument: Annotated[str, typer.Option(help="Instrument description (e.g., NIFTY2630225400CE)")] = "",
     date: Annotated[Optional[str], typer.Option(help="ISO Date (YYYY-MM-DD)")] = None,
     crossover_type: Annotated[str, typer.Option("--crossover", help="Crossover (e.g., EMA-5-21)")] = "EMA-5-21",
     timeframe: Annotated[int, typer.Option(help="Timeframe in seconds")] = 180
 ):
-    """Calculate EMA crossovers for given instruments."""
+    """Calculate EMA crossovers and compare with counterpart (CE/PE)."""
     cmd = [sys.executable, "scripts/crossover_calculator.py"]
-    if instruments:
-        cmd.extend(["--instruments", instruments])
+    if instrument:
+        cmd.extend(["--instrument", instrument])
     if date:
         cmd.extend(["--date", date])
     cmd.extend(["--crossover", crossover_type])
@@ -292,7 +292,7 @@ def backtest(
     if strategy_mode == "ml" and not ml_model_path:
         ml_model_path = questionary.text("Path to ML Model (.joblib):", default="models/model.joblib").ask()
     elif strategy_mode == "python_code" and not python_strategy_path:
-        python_strategy_path = questionary.text("Path to Python Strategy (e.g. scripts/my_strategies.py:Strategy):", default="scripts/triple_lock_strategy.py:Strategy").ask()
+        python_strategy_path = questionary.text("Path to Python Strategy (e.g. packages/tradeflow/python_strategies.py:Strategy):", default="packages/tradeflow/python_strategies.py:TripleLockStrategy").ask()
 
     # 12. rule-id
     if not rule_id:
@@ -674,8 +674,8 @@ def interactive_menu():
         elif choice == "Train ML Model":
               train_model()
         elif choice == "EMA Crossover Analysis":
-            insts = questionary.text("Enter comma separated instruments (e.g. NIFTY2630225300PE,NIFTY2630225400PE):").ask()
-            if insts:
+            inst = questionary.text("Enter instrument (e.g. NIFTY2630225400CE):").ask()
+            if inst:
                 db = MongoRepository.get_db()
                 available_dates = DateUtils.get_available_dates(db, settings.NIFTY_CANDLE_COLLECTION)
                 latest = sorted(available_dates, reverse=True)[0] if available_dates else ""
@@ -685,7 +685,7 @@ def interactive_menu():
                 tf_str = questionary.text("Enter Timeframe (seconds):", default="180").ask()
                 tf = int(tf_str) if tf_str else 180
                 
-                crossover(instruments=insts, date=date, crossover_type=cross, timeframe=tf)
+                crossover(instrument=inst, date=date, crossover_type=cross, timeframe=tf)
             input("\nPress Enter to return to menu...")
 
 if __name__ == "__main__":

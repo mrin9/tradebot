@@ -5,7 +5,7 @@ import logging
 from packages.tradeflow.indicator_calculator import IndicatorCalculator
 from packages.tradeflow.rule_strategy import RuleStrategy, Signal
 from packages.tradeflow.ml_strategy import MLStrategy
-from packages.tradeflow.python_strategy import PythonStrategy
+from packages.tradeflow.python_strategy_loader import PythonStrategy
 from packages.utils.log_utils import setup_logger
 
 from packages.tradeflow.position_manager import PositionManager, MarketIntent, InstrumentType
