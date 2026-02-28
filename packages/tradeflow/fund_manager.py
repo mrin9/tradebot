@@ -150,16 +150,65 @@ class FundManager:
             self.selection_spot_price = current_spot
             
             # Resolve CE
-            ce_id, _ = self._resolve_option_contract(atm_strike, True, current_ts)
+            ce_id, ce_desc = self._resolve_option_contract(atm_strike, True, current_ts)
             if ce_id:
-                self.active_instruments["CE"] = int(ce_id)
-                self.resamplers["CE"].current_candle = None # Reset partial candle on switch
+                new_ce_id = int(ce_id)
+                if self.active_instruments.get("CE") != new_ce_id:
+                    self.active_instruments["CE"] = new_ce_id
+                    self.active_instruments["CE_DESC"] = ce_desc
+                    self.resamplers["CE"].current_candle = None # Reset partial candle on switch
+                    if self.is_backtest:
+                        self._warmup_instrument("CE", new_ce_id, current_ts)
             
             # Resolve PE
-            pe_id, _ = self._resolve_option_contract(atm_strike, False, current_ts)
+            pe_id, pe_desc = self._resolve_option_contract(atm_strike, False, current_ts)
             if pe_id:
-                self.active_instruments["PE"] = int(pe_id)
-                self.resamplers["PE"].current_candle = None # Reset partial candle on switch
+                new_pe_id = int(pe_id)
+                if self.active_instruments.get("PE") != new_pe_id:
+                    self.active_instruments["PE"] = new_pe_id
+                    self.active_instruments["PE_DESC"] = pe_desc
+                    self.resamplers["PE"].current_candle = None # Reset partial candle on switch
+                    if self.is_backtest:
+                        self._warmup_instrument("PE", new_pe_id, current_ts)
+
+    def _warmup_instrument(self, category: str, instrument_id: int, current_ts: float):
+        """
+        Fetches historical 1m candles for the new instrument and warms up the resampler/indicators.
+        """
+        logger.info(f"🔥 Warming up {category} instrument: {instrument_id} at {DateUtils.from_timestamp(current_ts)}")
+        
+        from packages.config import settings
+        # Fetch last 100 1-minute candles before current_ts
+        # 100 * 1m = 100m. If timeframe is 180s, 100m / 3m ~= 33 candles. 
+        # Typically IndicatorCalculator max_window_size is 200, but we usually only need ~50 for EMA-21.
+        history = list(self.db[settings.OPTIONS_CANDLE_COLLECTION].find(
+            {"i": instrument_id, "t": {"$lt": current_ts}}
+        ).sort("t", -1).limit(100))
+        
+        if not history:
+            logger.warning(f"⚠️ No history found for {category} ({instrument_id}) warmup.")
+            return
+            
+        # Sort chronologically
+        history.reverse()
+        
+        resampler = self.resamplers.get(category)
+        if resampler:
+            # Temporarily disable the normal callback to avoid triggering strategy logic during warmup 
+            # (though resampled candles are pushed to indicator_calculator via the callback)
+            # Actually, the callback _on_resampled_candle_closed is safe because it only 
+            # updates indicators if category != "SPOT".
+            saved_on_closed = resampler.on_candle_closed
+            
+            # We want indicators updated during warmup, so we keep the callback.
+            # But we must ensure it doesn't trigger strategy evaluation.
+            # Luckily, _on_resampled_candle_closed already check category != "SPOT"
+            
+            resampler.instrument_id = int(instrument_id)
+            for candle in history:
+                resampler.add_candle(candle)
+            
+            logger.info(f"✅ Warmup complete for {category} ({instrument_id}) with {len(history)} candles.")
 
     def _get_fallback_option_price(self, symbol_id: int, current_ts: float | None, is_entry: bool = False) -> float | None:
         """
@@ -261,7 +310,8 @@ class FundManager:
 
         # Both MLStrategy and RuleStrategy now implement on_resampled_candle_closed
         if self.strategy_mode == "rule":
-            new_indicators = self.indicator_calculator.add_candle(candle, instrument_category=category)
+            inst_id = candle.get('instrument_id', candle.get('i'))
+            new_indicators = self.indicator_calculator.add_candle(candle, instrument_category=category, instrument_id=inst_id)
             if new_indicators:
                 self.latest_indicators_state.update(new_indicators)
             
@@ -298,18 +348,20 @@ class FundManager:
                  logger.warning(f"⚠️ Signal ignored: Triggered by stale data from {ts} (>{1800}s old)")
                  return
 
+            # Signal Correction: Use period end for backtest logging & entry time
+            signal_ts = ts + self.global_timeframe if self.is_backtest else ts
             spot_price = candle.get('c', candle.get('close'))
 
             # 1. Handle Signals for existing positions
             if self.position_manager.current_position:
                 if signal == Signal.EXIT:
-                    ts_dt = DateUtils.from_timestamp(ts) if isinstance(ts, (int, float)) else datetime.now()
+                    ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
                     ts_str = ts_dt.strftime('%d-%b %H:%M')
                     formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
                     logger.info(f"Signal: EXIT ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
                     
                     pos = self.position_manager.current_position
-                    opt_price = self._get_fallback_option_price(int(pos.symbol), ts)
+                    opt_price = self._get_fallback_option_price(int(pos.symbol), signal_ts)
                     if not opt_price:
                         logger.error(f"Cannot exit {pos.symbol}, ALL fallbacks failed. Using entry price as last resort.")
                         opt_price = pos.entry_price if pos.entry_price else spot_price # Extremely rare
@@ -323,13 +375,13 @@ class FundManager:
                     return
                 
                 # Signal changed (flip) - log it and handle closure
-                ts_dt = DateUtils.from_timestamp(ts) if isinstance(ts, (int, float)) else datetime.now()
+                ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
                 formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
                 logger.info(f"Signal: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
                 
                 pos = self.position_manager.current_position
-                opt_price = self._get_fallback_option_price(int(pos.symbol), ts)
+                opt_price = self._get_fallback_option_price(int(pos.symbol), signal_ts)
                 if not opt_price: 
                     logger.error(f"Cannot exit {pos.symbol}, ALL fallbacks failed. Using entry price as last resort.")
                     opt_price = pos.entry_price if pos.entry_price else spot_price
@@ -342,7 +394,7 @@ class FundManager:
                 intent = MarketIntent.LONG if signal == Signal.LONG else MarketIntent.SHORT
                 
                 # No existing position - log new entry signal
-                ts_dt = DateUtils.from_timestamp(ts) if isinstance(ts, (int, float)) else datetime.now()
+                ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
                 formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
                 logger.info(f"Signal: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
@@ -355,6 +407,7 @@ class FundManager:
             if self.trade_instrument_type == "OPTIONS":
                 t_cat = "CE" if intent == MarketIntent.LONG else "PE"
                 resolved_id = self.active_instruments.get(t_cat)
+                resolved_desc = self.active_instruments.get(f"{t_cat}_DESC")
                 
                 # We also need the contract description if possible for the Payload.
                 # In Triple-Lock, the contract is already resolved and tracked during drift!
@@ -363,10 +416,10 @@ class FundManager:
                     return
                     
                 target_symbol = str(resolved_id)
-                target_display_symbol = f"NIFTY {t_cat} ({target_symbol})" # Simplified description
+                target_display_symbol = resolved_desc or f"NIFTY {t_cat} ({target_symbol})" # Use resolved description
                 
                 # Entry Price Cache check
-                entry_price = self._get_fallback_option_price(int(resolved_id), ts, is_entry=True)
+                entry_price = self._get_fallback_option_price(int(resolved_id), signal_ts, is_entry=True)
                 if not entry_price:
                     logger.warning(f"No active tick feed OR DB fallback for option {target_symbol}. Skipping entry.")
                     return
@@ -380,7 +433,7 @@ class FundManager:
                 'price': entry_price,
                 'symbol': target_symbol,
                 'display_symbol': target_display_symbol,
-                'timestamp': ts,
+                'timestamp': signal_ts,
                 'reason': signal.name,
                 'reason_desc': reason,
                 'nifty_price': spot_price

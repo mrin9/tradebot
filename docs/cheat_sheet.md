@@ -10,8 +10,9 @@ Quick reference for common commands.
 | **Fetch Master** | `python apps/cli/main.py master sync` |
 | **Fetch History** | `python apps/cli/main.py historical fetch --days 5` |
 | **Run Backtest**  | `python -m packages.backtest.backtest_runner --mode db --rule-id [RULE_ID] --start [DATE] --end [DATE]` |
-| **Check Data Gaps** | `python apps/cli/main.py maintenance check-gaps` |
-| **Prune Old Data** | `python apps/cli/main.py maintenance prune --days-to-keep 30` |
+| **Check Data Gaps** | `python apps/cli/main.py check-gaps` |
+| **Prune Old Data** | `python apps/cli/main.py age-out --days 30` |
+| **Analyze Crossovers**| `python apps/cli/main.py crossover --instruments NIFTY2630225300PE,NIFTY2630225400PE --date 2026-02-27 --timeframe 180` |
 
 ## Docker Commands
 

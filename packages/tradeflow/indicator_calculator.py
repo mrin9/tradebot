@@ -23,20 +23,33 @@ class IndicatorCalculator:
         
         # Dictionary of deques, keyed by instrument_category (e.g., "SPOT", "CE", "PE")
         self.category_candles: Dict[str, deque] = {}
+        # Track last instrument ID per category to detect switches
+        self.category_instrument_ids: Dict[str, int | None] = {}
         
         # Initialize deques for each unique instrument category
         for ind in self.config:
             cat = ind.get('InstrumentType', 'SPOT')
             if cat not in self.category_candles:
                 self.category_candles[cat] = deque(maxlen=self.max_window_size)
+                self.category_instrument_ids[cat] = None
                 
-    def add_candle(self, candle: Dict, instrument_category: str = "SPOT") -> Dict[str, float | str | None]:
+    def add_candle(self, candle: Dict, instrument_category: str = "SPOT", instrument_id: int | None = None) -> Dict[str, float | str | None]:
         """
         Ingests a new candle for a specific instrument category, and recalculates those indicators.
         """
         if instrument_category not in self.category_candles:
             # If we dynamically receive an unknown category or one not requested by strategy, ignore or init
             self.category_candles[instrument_category] = deque(maxlen=self.max_window_size)
+            self.category_instrument_ids[instrument_category] = None
+            
+        # Detect Instrument Switch
+        if instrument_id is not None:
+            last_id = self.category_instrument_ids.get(instrument_category)
+            if last_id is not None and last_id != instrument_id:
+                logger.info(f"🔄 Instrument switch detected for {instrument_category}: {last_id} -> {instrument_id}. Clearing indicator window.")
+                self.category_candles[instrument_category].clear()
+            
+            self.category_instrument_ids[instrument_category] = instrument_id
             
         ts = candle.get('timestamp', candle.get('t'))
         

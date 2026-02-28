@@ -259,7 +259,7 @@ class BacktestBot:
                     "cyclePnL": cycle_pnl,
                     "entry": {
                         "time": getattr(entry_chunk, 'formatted_entry_time', ''),
-                        "exchangeInstrumentId": raw_symbol,
+                        "exchangeInstrumentId": meta["symbol"], # Use description here
                         "optionType": opt_type,
                         "transaction": getattr(entry_chunk, 'entry_transaction_desc', ''),
                         "totalPrice": getattr(entry_chunk, 'initial_quantity', 0) * settings.NIFTY_LOT_SIZE * getattr(entry_chunk, 'entry_price', 0),

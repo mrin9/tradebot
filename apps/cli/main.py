@@ -159,6 +159,27 @@ def simulator(
         typer.secho(f"❌ Unknown action: {action}", fg=typer.colors.RED)
 
 @app.command()
+def crossover(
+    instruments: Annotated[str, typer.Option(help="Comma separated instrument descriptions (max 2)")] = "",
+    date: Annotated[Optional[str], typer.Option(help="ISO Date (YYYY-MM-DD)")] = None,
+    crossover_type: Annotated[str, typer.Option("--crossover", help="Crossover (e.g., EMA-5-21)")] = "EMA-5-21",
+    timeframe: Annotated[int, typer.Option(help="Timeframe in seconds")] = 180
+):
+    """Calculate EMA crossovers for given instruments."""
+    cmd = [sys.executable, "scripts/crossover_calculator.py"]
+    if instruments:
+        cmd.extend(["--instruments", instruments])
+    if date:
+        cmd.extend(["--date", date])
+    cmd.extend(["--crossover", crossover_type])
+    cmd.extend(["--timeframe", str(timeframe)])
+
+    try:
+        subprocess.run(cmd, check=True)
+    except Exception as e:
+        typer.secho(f"❌ Crossover calculation failed: {e}", fg=typer.colors.RED)
+
+@app.command()
 def backtest(
     rule_id: Annotated[Optional[str], typer.Option(help="Strategy Rule ID")] = None,
     start: Annotated[Optional[str], typer.Option(help="Start Date (YYYY-MM-DD)")] = None,
@@ -171,6 +192,7 @@ def backtest(
     trailing_sl: Annotated[Optional[float], typer.Option(help="Trailing Stop Loss Points")] = None,
     option_type: Annotated[Optional[str], typer.Option(help="Option Strike Type (ATM, ITM, OTM)")] = None,
     strategy_mode: Annotated[Optional[str], typer.Option(help="Strategy Mode: rule or ml")] = None,
+    ml_model_path: Annotated[Optional[str], typer.Option(help="Path to ML model")] = None,
     pyramid_steps: Annotated[Optional[str], typer.Option(help="Pyramid entry percentages (e.g., 25,50,25 or 100)")] = None,
     pyramid_confirm_pts: Annotated[Optional[float], typer.Option(help="Pyramid confirmation points")] = None,
     target_steps: Annotated[Optional[str], typer.Option(help="Target steps (comma separated, e.g. 15,25,50)")] = None,
@@ -265,6 +287,10 @@ def backtest(
         strategy_mode = questionary.select("Strategy Mode:", choices=["rule", "ml"]).ask()
     if not strategy_mode: return
 
+    # 11a. ML Model Path
+    if strategy_mode == "ml" and not ml_model_path:
+        ml_model_path = questionary.text("Path to ML Model (.joblib):", default="models/model.joblib").ask()
+
     # 12. rule-id
     if not rule_id:
         rules = list(db['strategy_rules'].find({}, {"ruleId": 1, "name": 1}))
@@ -303,9 +329,13 @@ def backtest(
         "--option-type", option_type,
         "--strategy-mode", strategy_mode,
         "--pyramid-steps", pyramid_steps,
+    ]
+    if ml_model_path:
+        cmd.extend(["--ml-model-path", ml_model_path])
+    cmd.extend([
         "--pyramid-confirm-pts", str(pyramid_confirm_pts),
         "--warmup-candles", str(warmup_candles)
-    ]
+    ])
     if no_break_even:
         cmd.append("--no-break-even")
 
@@ -505,14 +535,12 @@ def train_model(
 @app.command()
 def live_trade(
     rule_id: Annotated[str, typer.Option(help="Strategy Rule ID (e.g. R001)")] = "R001",
-    budget: Annotated[float, typer.Option(help="Initial Budget")] = 200000.0,
-    sl: Annotated[float, typer.Option(help="Stop Loss Points")] = 20.0,
-    target: Annotated[str, typer.Option(help="Target Points (comma separated, e.g. 5,10,15)")] = "5,10,15",
-    trailing_sl: Annotated[float, typer.Option(help="Trailing SL Points")] = 0.0,
     selection_basis: Annotated[str, typer.Option(help="Option Selection Basis (ATM, ITM, OTM)")] = "ATM",
     subscribe_to: Annotated[str, typer.Option(help="Broadcast Mode (Full, Partial)")] = "Full",
     break_even: Annotated[bool, typer.Option(help="Enable Break-even Trailing")] = True,
-    debug: Annotated[bool, typer.Option(help="Enable Socket Debug Logging")] = False
+    debug: Annotated[bool, typer.Option(help="Enable Socket Debug Logging")] = False,
+    strategy_mode: Annotated[str, typer.Option(help="Strategy Mode: rule or ml")] = "rule",
+    ml_model_path: Annotated[Optional[str], typer.Option(help="Path to ML model")] = None
 ):
     """Starts the Live Trading Engine."""
     try:
@@ -530,7 +558,9 @@ def live_trade(
             "option_type": selection_basis.upper(),
             "instrument_type": "OPTIONS", # Default for live trading in this context
             "use_break_even": break_even,
-            "symbol": "NIFTY"
+            "symbol": "NIFTY",
+            "strategy_mode": strategy_mode,
+            "ml_model_path": ml_model_path
         }
 
         engine = LiveTradeEngine(
@@ -571,6 +601,7 @@ def interactive_menu():
                 "Refresh Active Contracts",
                 "Seed Strategy Rules",
                 "Train ML Model",
+                "EMA Crossover Analysis",
                 "Exit"
             ]
         ).ask()
@@ -608,11 +639,20 @@ def interactive_menu():
              rid = questionary.select("Select Strategy Rule:", choices=rule_choices).ask()
              
              if rid:
+                 strategy_mode = questionary.select("Strategy Mode:", choices=["rule", "ml"]).ask()
+                 ml_path = None
+                 if strategy_mode == "ml":
+                     ml_path = questionary.text("ML Model Path:", default="models/model.joblib").ask()
+
                  budget = float(questionary.text("Budget:", default="200000").ask())
                  sl = float(questionary.text("Stop Loss Points:", default="20").ask())
                  target = questionary.text("Target Points:", default="5,10,15").ask()
                  mode = questionary.select("Subscribe To:", choices=["Full", "Partial"]).ask()
-                 live_trade(rule_id=rid, budget=budget, sl=sl, target=target, subscribe_to=mode)
+                 live_trade(
+                     rule_id=rid, budget=budget, sl=sl, target=target, 
+                     subscribe_to=mode, strategy_mode=strategy_mode, 
+                     ml_model_path=ml_path
+                 )
         elif choice == "Tests": tests_menu()
         elif choice == "Configuration": configuration_menu()
         elif choice == "Refresh Active Contracts":
@@ -622,6 +662,20 @@ def interactive_menu():
              seed_rules()
         elif choice == "Train ML Model":
               train_model()
+        elif choice == "EMA Crossover Analysis":
+            insts = questionary.text("Enter comma separated instruments (e.g. NIFTY2630225300PE,NIFTY2630225400PE):").ask()
+            if insts:
+                db = MongoRepository.get_db()
+                available_dates = DateUtils.get_available_dates(db, settings.NIFTY_CANDLE_COLLECTION)
+                latest = sorted(available_dates, reverse=True)[0] if available_dates else ""
+                
+                date = questionary.text("Enter Trading Date (YYYY-MM-DD):", default=latest).ask()
+                cross = questionary.text("Enter Crossover (e.g. EMA-5-21):", default="EMA-5-21").ask()
+                tf_str = questionary.text("Enter Timeframe (seconds):", default="180").ask()
+                tf = int(tf_str) if tf_str else 180
+                
+                crossover(instruments=insts, date=date, crossover_type=cross, timeframe=tf)
+            input("\nPress Enter to return to menu...")
 
 if __name__ == "__main__":
     app()

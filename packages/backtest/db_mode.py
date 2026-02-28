@@ -58,9 +58,10 @@ class DBFeeder(BacktestDataFeeder):
             )
             ticks.extend(list(opt_cursor))
             
-        # Chronological Sort
-        logger.info("Sorting interleaved ticks...")
-        ticks.sort(key=lambda x: x['t'])
+        # Chronological Sort with Priority
+        # We want NIFTY (spot) to be processed LAST for any given timestamp
+        # This ensures Option Indicators are updated before SPOT triggers strategy evaluation.
+        ticks.sort(key=lambda x: (x['t'], 1 if x['i'] == nifty_id else 0))
         if not ticks:
             logger.warning(f"No ticks found for {day_str}")
             return

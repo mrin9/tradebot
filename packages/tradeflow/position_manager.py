@@ -349,6 +349,8 @@ class PositionManager:
         fmt_time = timestamp.strftime("%d-%b-%Y %H:%M").upper()
         total_price = pyramid_qty * lot_size * price
         trans_desc = f"Purchased {pyramid_qty} lots({lot_size}) @ {price} | Total: ₹{total_price:,.2f}"
+        if self.display_symbol:
+            trans_desc = f"[{self.display_symbol}] " + trans_desc
 
         self.current_position = Position(
             symbol=self.symbol,
@@ -378,7 +380,7 @@ class PositionManager:
             side = "SELL" # This part is technically unreachable now due to the lock above
             
         step_label = f" (Pyramid 1/{len(self.pyramid_steps)})" if len(self.pyramid_steps) > 1 else ""
-        logger.info(f"🟢 [{fmt_time}] Entry: {self.display_symbol} | {trans_desc}{step_label}")
+        logger.info(f"🟢 [{fmt_time}] Entry: {trans_desc}{step_label}")
         
         if self.order_manager:
             self.order_manager.place_order(self.symbol, side, pyramid_qty)
@@ -410,11 +412,13 @@ class PositionManager:
         fmt_time = timestamp.strftime("%d-%b-%Y %H:%M").upper()
         total_price = close_qty * lot_size * price
         trans_desc = f"Sold {close_qty} lots({lot_size}) @ {price} | Total: ₹{total_price:,.2f}"
+        if self.current_position.display_symbol:
+            trans_desc = f"[{self.current_position.display_symbol}] " + trans_desc
 
         if quantity is not None and reason.startswith("TARGET"):
             logger.info(f"🟠 [{fmt_time}] {reason} Hit: {trans_desc} (Action PnL: +{chunk_pnl:,.2f})")
         else:
-            logger.info(f"🔴 [{fmt_time}] Exit {reason}: {self.display_symbol} | {trans_desc} | Action PnL: +{chunk_pnl:,.2f} | Total Trade PnL: ₹{pos.total_realized_pnl:,.2f}")
+            logger.info(f"🔴 [{fmt_time}] Exit {reason}: {trans_desc} | Action PnL: +{chunk_pnl:,.2f} | Total Trade PnL: ₹{pos.total_realized_pnl:,.2f}")
 
         closed_chunk = Position(
             symbol=pos.symbol,
