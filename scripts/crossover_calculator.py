@@ -29,15 +29,9 @@ def get_instrument_id(db, description: str) -> Optional[int]:
         return int(doc["exchangeInstrumentID"])
     return None
 
-def fetch_candles(db, instrument_id: int, date_str: str, is_index: bool = False):
-    """Fetches 1-minute candles for a specific day."""
+def fetch_candles(db, instrument_id: int, date_str: str, is_index: bool = False, warmup_candles: int = 0):
+    """Fetches candles for a specific day, including optional warmup candles from before the day."""
     collection = settings.NIFTY_CANDLE_COLLECTION if is_index else settings.OPTIONS_CANDLE_COLLECTION
-    
-    # Parse date to get start and end timestamps in IST (and convert to UTC since DB stores UTC)
-    # Actually DB 't' seems to be epoch seconds in IST (per sync_history.py logic? No, check sync_history.py)
-    # _parse_ohlc_string does: "t": int(parts[0]) - settings.XTS_TIME_OFFSET
-    # settings.XTS_TIME_OFFSET is 19800 (5.5h)
-    # XTS API returns IST time as if it's UTC. So subtracting 19800 makes it UTC epoch.
     
     start_dt = datetime.strptime(date_str, "%Y-%m-%d")
     end_dt = start_dt + timedelta(days=1)
@@ -45,12 +39,29 @@ def fetch_candles(db, instrument_id: int, date_str: str, is_index: bool = False)
     start_ts = int(start_dt.timestamp())
     end_ts = int(end_dt.timestamp())
     
+    # 1. Fetch main day data
     cursor = db[collection].find({
         "i": instrument_id,
         "t": {"$gte": start_ts, "$lt": end_ts}
     }).sort("t", 1)
     
     data = list(cursor)
+    
+    # 2. Fetch warmup data if requested
+    if warmup_candles > 0:
+        # We fetch 1m candles. If timeframe is e.g. 180s, we might need more 1m candles.
+        # But FundManager fetches 100 1m candles. Let's fetch warmup_candles * 5 to be safe 
+        # (or just a fixed amount of time).
+        # Actually, let's just fetch 'warmup_candles' count of 1m candles before start_ts.
+        warmup_cursor = db[collection].find({
+            "i": instrument_id,
+            "t": {"$lt": start_ts}
+        }).sort("t", -1).limit(warmup_candles)
+        
+        warmup_data = list(warmup_cursor)
+        warmup_data.reverse()
+        data = warmup_data + data
+
     if not data:
         return pl.DataFrame()
         
@@ -63,19 +74,22 @@ def fetch_candles(db, instrument_id: int, date_str: str, is_index: bool = False)
     df = df.with_columns(
         time_ist = df["time"].dt.convert_time_zone("Asia/Kolkata")
     )
+    # Flag to identify warmup candles for later filtering
+    df = df.with_columns(
+        is_warmup = pl.col("t") < start_ts
+    )
     return df
 
 def calculate_crossovers(df: pl.DataFrame, fast: int, slow: int, timeframe_sec: int):
     """Resamples data and calculates crossovers."""
     if df.is_empty():
-        return pl.DataFrame()
+        return pl.DataFrame(), pl.DataFrame()
 
     # Resample to timeframe_sec
-    # Polars 'group_by_dynamic' or 'upsample'
-    # We'll use sort and then group_by_dynamic
     df = df.sort("time_ist")
     
     # Resample logic
+    # Note: we include is_warmup in aggregation (if any candle in group is Not warmup, the whole group is Not warmup)
     resampled = (
         df.group_by_dynamic("time_ist", every=f"{timeframe_sec}s")
         .agg([
@@ -83,7 +97,8 @@ def calculate_crossovers(df: pl.DataFrame, fast: int, slow: int, timeframe_sec: 
             pl.col("h").max().alias("high"),
             pl.col("l").min().alias("low"),
             pl.col("c").last().alias("close"),
-            pl.col("v").sum().alias("volume")
+            pl.col("v").sum().alias("volume"),
+            pl.col("is_warmup").min().alias("is_warmup") # Only False if all are False
         ])
     )
     
@@ -100,15 +115,15 @@ def calculate_crossovers(df: pl.DataFrame, fast: int, slow: int, timeframe_sec: 
     ])
     
     # Detect Crossover
-    # Bullish: prev fast < prev slow AND curr fast > curr slow
-    # Bearish: prev fast > prev slow AND curr fast < curr slow
     resampled = resampled.with_columns(
         is_bullish = (pl.col("ema_fast_prev") < pl.col("ema_slow_prev")) & (pl.col("ema_fast") > pl.col("ema_slow")),
         is_bearish = (pl.col("ema_fast_prev") > pl.col("ema_slow_prev")) & (pl.col("ema_fast") < pl.col("ema_slow"))
     )
     
-    crossovers = resampled.filter(pl.col("is_bullish") | pl.col("is_bearish"))
-    return crossovers, resampled
+    # Filter out warmup candles for signals and return
+    actual_resampled = resampled.filter(pl.col("is_warmup") == False)
+    crossovers = actual_resampled.filter(pl.col("is_bullish") | pl.col("is_bearish"))
+    return crossovers, actual_resampled
 
 def main():
     parser = argparse.ArgumentParser(description="EMA Crossover Calculator using Polars")
@@ -116,6 +131,7 @@ def main():
     parser.add_argument("--date", type=str, help="ISO Date (YYYY-MM-DD)")
     parser.add_argument("--crossover", type=str, default="EMA-5-21", help="Crossover (e.g., EMA-5-21 or SMA-9-13)")
     parser.add_argument("--timeframe", type=int, default=180, help="Timeframe in seconds")
+    parser.add_argument("--warmup", type=int, default=100, help="Number of warmup 1m candles (default: 100)")
     
     args = parser.parse_args()
     
@@ -167,19 +183,19 @@ def main():
     console.print(f"[blue]Fetching data for {date_str}...[/blue]")
     
     # Fetch NIFTY
-    nifty_df = fetch_candles(db, nifty_id, date_str, is_index=True)
+    nifty_df = fetch_candles(db, nifty_id, date_str, is_index=True, warmup_candles=args.warmup)
     if nifty_df.is_empty():
         console.print("[red]No NIFTY data found.[/red]")
         return
         
     # Fetch Instrument 1
-    df1 = fetch_candles(db, id1, date_str)
+    df1 = fetch_candles(db, id1, date_str, warmup_candles=args.warmup)
     if df1.is_empty():
         console.print(f"[red]No data found for {name1}.[/red]")
         return
 
     # Fetch Instrument 2 if exists
-    df2 = fetch_candles(db, id2, date_str) if id2 else pl.DataFrame()
+    df2 = fetch_candles(db, id2, date_str, warmup_candles=args.warmup) if id2 else pl.DataFrame()
 
     # 3. Calculate Crossovers for Instrument 1
     console.print(f"[blue]Calculating {args.crossover} crossovers for {name1} on {args.timeframe}s timeframe...[/blue]")
@@ -196,14 +212,15 @@ def main():
         res = (
             df.group_by_dynamic("time_ist", every=f"{tf}s")
             .agg([
-                pl.col("c").last().alias("close")
+                pl.col("c").last().alias("close"),
+                pl.col("is_warmup").min().alias("is_warmup")
             ])
         )
         res = res.with_columns([
             res["close"].ewm_mean(span=fast, adjust=False).alias("ema_fast"),
             res["close"].ewm_mean(span=slow, adjust=False).alias("ema_slow")
         ])
-        return res
+        return res.filter(pl.col("is_warmup") == False)
 
     full_nifty = get_full_resampled(nifty_df, fast_period, slow_period, args.timeframe)
     full_df2 = get_full_resampled(df2, fast_period, slow_period, args.timeframe) if not df2.is_empty() else pl.DataFrame()
