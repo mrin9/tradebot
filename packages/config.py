@@ -26,8 +26,15 @@ class Settings(BaseSettings):
     
     OPTIONS_STRIKE_COUNT: int = 10  # ATM +/- 10 strikes
 
+    # 1.6 Backtesting Defaults
+    BACKTEST_STOP_LOSS: float = 15.0
+    BACKTEST_TARGET_STEPS: str = "15,25,50"
+    BACKTEST_INVEST_MODE: str = "compound"
+    BACKTEST_WARMUP_CANDLES: int = 200
+    
     # 2. Core Operation Modes
     MARKET_TIMEZONE: str = "Asia/Kolkata"
+    DEFAULT_TIMEFRAME: int = 180
 
     # 4. Socket & Simulator Settings
     SOCKET_SIMULATOR_URL: str = "http://localhost:5050"

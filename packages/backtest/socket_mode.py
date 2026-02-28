@@ -110,7 +110,7 @@ class SocketFeeder(BacktestDataFeeder):
         
         iso_start, iso_end, db = self.setup_backtest(bot, fund_manager, warmup_candles)
 
-        bot._log_config(bot.args.start, bot.args.end, None)
+        bot._log_config()
         logger.info(f"🧪 Socket Mode Backtest Started listening on '{self.socket_event}'")
 
         # Start worker thread for sequential processing

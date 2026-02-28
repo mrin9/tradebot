@@ -109,12 +109,12 @@ graph TD
 ```bash
 python -m packages.backtest.backtest_runner \
     --mode db \
-    --start 2026-02-02 \
-    --end 2026-02-02 \
+    --start 2026-02-27 \
     --rule-id triple-lock-momentum \
     --budget 200000 \
-    --sl 10.0 \
-    --target-steps "5,15,25"
+    --sl 15.0 \
+    --target-steps "15,25,50" \
+    --trailing-sl 10.0
 ```
 
 ### High-Fidelity Socket Mode
@@ -133,5 +133,56 @@ python -m packages.backtest.backtest_runner \
     --trailing-sl 5.0
 ```
 
+### Python Strategy Mode (Hybrid)
+Bypass the database DSL entirely by providing your own `.py` script. The `--rule-id` is optional here (it can be used to load standard indicators if desired, or omitted to use a default Feature Stub).
+```bash
+python -m packages.backtest.backtest_runner \
+    --mode db \
+    --start 2026-02-27 \
+    --strategy-mode python_code \
+    --python-strategy-path scripts/my_strategies.py:TripleLockStrategy \
+    --budget 200000 \
+    --sl 15.0 \
+    --target-steps "15,25,50" \
+    --trailing-sl 10.0
+```
+
+### Full Parameter Examples
+
+#### Comprehensive Rule Mode (Compound + Trailing SL)
+```bash
+python -m packages.backtest.backtest_runner \
+    --mode db \
+    --start 2026-02-27 \
+    --budget 200000 \
+    --invest-mode compound \
+    --strategy-mode rule \
+    --rule-id triple-lock-momentum \
+    --option-type ATM \
+    --sl 15.0 \
+    --target-steps "15,25,50" \
+    --trailing-sl 10.0 \
+    --warmup-candles 200
+```
+
+#### Comprehensive Python Mode (Fixed + ITM Options)
+```bash
+python -m packages.backtest.backtest_runner \
+    --mode db \
+    --start 2026-02-27 \
+    --budget 200000 \
+    --invest-mode compound \
+    --strategy-mode python_code \
+    --rule-id triple-lock-momentum \
+    --python-strategy-path scripts/my_strategies.py:TripleLockStrategy \
+    --sl 15.0 \
+    --target-steps "15,25,50" \
+    --trailing-sl 10.0 \
+    --warmup-candles 200
+```
+
 **Parameters Reference:**
+- `--end`: (Optional) Defaults to `--start` if not provided.
+- `--invest-mode`: `compound` (uses ROI to grow position size) or `fixed` (uses initial budget).
+- `--option-type`: `ATM`, `ITM`, or `OTM` strike selection.
 - See `python -m packages.backtest.backtest_runner --help` for full parameter list.

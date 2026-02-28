@@ -5,6 +5,7 @@ import logging
 from packages.tradeflow.indicator_calculator import IndicatorCalculator
 from packages.tradeflow.rule_strategy import RuleStrategy, Signal
 from packages.tradeflow.ml_strategy import MLStrategy
+from packages.tradeflow.python_strategy import PythonStrategy
 from packages.utils.log_utils import setup_logger
 
 from packages.tradeflow.position_manager import PositionManager, MarketIntent, InstrumentType
@@ -26,34 +27,48 @@ class FundManager:
             position_config (Dict, optional): Configuration for PositionManager (quantity, stop_loss, target).
             log_heartbeat (bool): If True, logs indicator state on every candle close (useful for live).
         """
+        from packages.config import settings
         self.config = strategy_config
         self.indicators_config = self.config.get('indicators', [])
         self.log_heartbeat = log_heartbeat
         self.is_backtest = is_backtest
+        self.pos_config = position_config or {}
         
         # 1. Initialize Indicator Calculator (managing multiple timeframes)
         self.indicator_calculator = IndicatorCalculator(indicators_config=self.indicators_config)
         
         # 2. Initialize Strategy Logic (Hybrid: Rule or ML)
-        pos_cfg = position_config or {}
-        self.strategy_mode = pos_cfg.get("strategy_mode", "rule")
+        self.strategy_mode = self.pos_config.get("strategy_mode", "rule")
         
         if self.strategy_mode == "ml":
             self.strategy = MLStrategy(
-                model_path=pos_cfg.get("ml_model_path"),
-                confidence_threshold=pos_cfg.get("ml_confidence", 0.65)
+                model_path=self.pos_config.get("ml_model_path"),
+                confidence_threshold=self.pos_config.get("ml_confidence", 0.65)
             )
             logger.info(f"🤖 Strategy Mode: ML (self-contained features)")
+        elif self.strategy_mode == "python_code":
+            self.strategy = PythonStrategy(script_path=self.pos_config.get("python_strategy_path"))
+            logger.info(f"🐍 Strategy Mode: Python Code ({self.pos_config.get('python_strategy_path')})")
         else:
             self.strategy = RuleStrategy(strategy_config=self.config)
             logger.info(f"📏 Strategy Mode: Rule (RuleStrategy)")
         
-        # 3. Position Manager
-        self.initial_budget = pos_cfg.get("budget", 200000.0)
-        self.invest_mode = pos_cfg.get("invest_mode", "fixed")
+        # 3. Core Parameters (using centralized defaults)
+        self.initial_budget = self.pos_config.get("budget", 200000.0)
+        self.invest_mode = self.pos_config.get("invest_mode", settings.BACKTEST_INVEST_MODE)
+        self.stop_loss_points = self.pos_config.get('stop_loss_points', settings.BACKTEST_STOP_LOSS)
         
-        self.trade_instrument_type = pos_cfg.get("instrument_type", "CASH").upper() # CASH, OPTIONS, FUTURES
-        self.trade_option_type = pos_cfg.get("option_type", "ATM").upper() # ATM, ITM, OTM
+        target_pts = self.pos_config.get('target_points', settings.BACKTEST_TARGET_STEPS)
+        if isinstance(target_pts, str):
+            self.target_points = [float(x.strip()) for x in target_pts.split(',')]
+        else:
+            self.target_points = target_pts
+            
+        self.trailing_sl_points = self.pos_config.get('trailing_sl_points', 0.0)
+        self.use_break_even = self.pos_config.get('use_break_even', True)
+        
+        self.trade_instrument_type = self.pos_config.get("instrument_type", "CASH").upper() # CASH, OPTIONS, FUTURES
+        self.trade_option_type = self.pos_config.get("option_type", "ATM").upper() # ATM, ITM, OTM
         
         # Map string to InstrumentType enum
         enum_map = {
@@ -65,23 +80,23 @@ class FundManager:
         if self.trade_instrument_type not in enum_map:
             logger.warning(f"Unrecognized instrument type '{self.trade_instrument_type}', defaulting to CASH")
         
-        # Parse pyramid steps from string "25,50,25" to list [25, 50, 25]
-        pyramid_steps_raw = pos_cfg.get("pyramid_steps", "100")
+        # Parse pyramid steps
+        pyramid_steps_raw = self.pos_config.get("pyramid_steps", "100")
         if isinstance(pyramid_steps_raw, str):
             pyramid_steps = [int(s.strip()) for s in pyramid_steps_raw.split(',')]
         else:
             pyramid_steps = pyramid_steps_raw
         
         self.position_manager = PositionManager(
-            symbol=pos_cfg.get("symbol", "NIFTY"), 
-            quantity=pos_cfg.get("quantity", 50), 
-            stop_loss_points=pos_cfg.get("stop_loss_points", 20), 
-            target_points=pos_cfg.get("target_points", 40),
+            symbol=self.pos_config.get("symbol", "NIFTY"), 
+            quantity=self.pos_config.get("quantity", 50), 
+            stop_loss_points=self.stop_loss_points, 
+            target_points=self.target_points,
             instrument_type=instr_enum,
-            trailing_sl_points=pos_cfg.get("trailing_sl_points", 0.0),
-            use_break_even=pos_cfg.get("use_break_even", True),
+            trailing_sl_points=self.trailing_sl_points,
+            use_break_even=self.use_break_even,
             pyramid_steps=pyramid_steps,
-            pyramid_confirm_pts=pos_cfg.get("pyramid_confirm_pts", 10.0)
+            pyramid_confirm_pts=self.pos_config.get("pyramid_confirm_pts", 10.0)
         )
         self.order_manager = PaperTradingOrderManager()
         self.position_manager.set_order_manager(self.order_manager)
@@ -91,7 +106,8 @@ class FundManager:
         self.latest_tick_prices: Dict[int, float] = {}
         
         # 4. Global Timeframe and Multi-Instrument Streams
-        self.global_timeframe = self.config.get('timeframe', 300)
+        from packages.config import settings
+        self.global_timeframe = self.config.get('timeframe', settings.DEFAULT_TIMEFRAME)
         
         # Track active instruments being monitored {category: instrument_id}
         self.active_instruments: Dict[str, int] = {"SPOT": 26000}
@@ -309,16 +325,16 @@ class FundManager:
         ts = candle.get('t', candle.get('timestamp'))
 
         # Both MLStrategy and RuleStrategy now implement on_resampled_candle_closed
-        if self.strategy_mode == "rule":
-            inst_id = candle.get('instrument_id', candle.get('i'))
-            new_indicators = self.indicator_calculator.add_candle(candle, instrument_category=category, instrument_id=inst_id)
-            if new_indicators:
-                self.latest_indicators_state.update(new_indicators)
-            
-            if self.log_heartbeat and new_indicators:
-                ind_str = ", ".join([f"{k}: {v:.2f}" if isinstance(v, (int, float)) else f"{k}: {v}" for k, v in new_indicators.items()])
-                ts_str = DateUtils.from_timestamp(ts).strftime('%H:%M:%S') if ts else "N/A"
-                logger.info(f"💚 HEARTBEAT [{ts_str}] 💚| Category: {category} | Indicators: {ind_str}")
+        # Update indicators for all strategy modes
+        inst_id = candle.get('instrument_id', candle.get('i'))
+        new_indicators = self.indicator_calculator.add_candle(candle, instrument_category=category, instrument_id=inst_id)
+        if new_indicators:
+            self.latest_indicators_state.update(new_indicators)
+        
+        if self.log_heartbeat and new_indicators:
+            ind_str = ", ".join([f"{k}: {v:.2f}" if isinstance(v, (int, float)) else f"{k}: {v}" for k, v in new_indicators.items()])
+            ts_str = DateUtils.from_timestamp(ts).strftime('%H:%M:%S') if ts else "N/A"
+            logger.info(f"💚 HEARTBEAT [{ts_str}] 💚| Category: {category} | Indicators: {ind_str}")
 
         # ONLY execute strategy decision synchronously when the SPOT candle acts as the anchor
         if category != "SPOT":
@@ -331,6 +347,23 @@ class FundManager:
 
         if self.strategy_mode == "ml":
             signal, reason, confidence = self.strategy.on_resampled_candle_closed(candle, self.latest_indicators_state)
+        elif self.strategy_mode == "python_code":
+            mapped_indicators = self.latest_indicators_state.copy()
+            # Default ACTIVE/INVERSE mapping based on current position
+            # This is a helper for strategies that want to be instrument-agnostic
+            effective_intent = current_intent_str or "LONG" 
+            if effective_intent == "LONG":
+                for k, v in self.latest_indicators_state.items():
+                    if k.startswith("CE_"): mapped_indicators[k.replace("CE_", "ACTIVE_", 1)] = v
+                    if k.startswith("PE_"): mapped_indicators[k.replace("PE_", "INVERSE_", 1)] = v
+            elif effective_intent == "SHORT":
+                for k, v in self.latest_indicators_state.items():
+                    if k.startswith("PE_"): mapped_indicators[k.replace("PE_", "ACTIVE_", 1)] = v
+                    if k.startswith("CE_"): mapped_indicators[k.replace("CE_", "INVERSE_", 1)] = v
+                    
+            signal, reason, confidence = self.strategy.on_resampled_candle_closed(
+                candle, mapped_indicators, current_position_intent=current_intent_str
+            )
         else:
             signal, reason, confidence = self.strategy.on_resampled_candle_closed(
                 candle, self.latest_indicators_state, current_position_intent=current_intent_str

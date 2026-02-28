@@ -255,11 +255,11 @@ RULES = [
         "explanation": "Synchronize three independent data streams (Spot, CE, PE) to filter out noise and capture high-velocity momentum.",
         "enabled": True,
         "applicableTo": ["NIFTY"],
-        "timeframe": 300,
+        "timeframe": 180,
         "indicators": [
-            { "indicatorId": "fast_ema", "displayLabel": "Fast EMA", "type": "EMA", "params": { "period": 9 }, "InstrumentType": "SPOT" },
+            { "indicatorId": "fast_ema", "displayLabel": "Fast EMA", "type": "EMA", "params": { "period": 5 }, "InstrumentType": "SPOT" },
             { "indicatorId": "slow_ema", "displayLabel": "Slow EMA", "type": "EMA", "params": { "period": 21 }, "InstrumentType": "SPOT" },
-            { "indicatorId": "opt_fast_ema", "displayLabel": "Options Fast EMA", "type": "EMA", "params": { "period": 9 }, "InstrumentType": "OPTIONS_BOTH" },
+            { "indicatorId": "opt_fast_ema", "displayLabel": "Options Fast EMA", "type": "EMA", "params": { "period": 5 }, "InstrumentType": "OPTIONS_BOTH" },
             { "indicatorId": "opt_slow_ema", "displayLabel": "Options Slow EMA", "type": "EMA", "params": { "period": 21 }, "InstrumentType": "OPTIONS_BOTH" }
         ],
         "entry": {

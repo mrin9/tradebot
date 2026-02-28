@@ -281,6 +281,7 @@ class MarketUtils:
             # Temporarily disable logging and TRADING for warmup
             original_log_heartbeat = fund_manager.log_heartbeat
             fund_manager.log_heartbeat = False
+            fund_manager.is_warming_up = True
             
             original_on_signal = fund_manager.position_manager.on_signal
             fund_manager.position_manager.on_signal = lambda x: None
@@ -289,6 +290,7 @@ class MarketUtils:
                 fund_manager.on_tick_or_base_candle(tick)
             
             fund_manager.log_heartbeat = original_log_heartbeat
+            fund_manager.is_warming_up = False
             fund_manager.position_manager.on_signal = original_on_signal
         else:
             logger.warning("No historical data found for warmup.")

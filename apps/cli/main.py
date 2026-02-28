@@ -191,7 +191,8 @@ def backtest(
     no_break_even: Annotated[Optional[bool], typer.Option(help="Disable Break-Even trailing")] = None,
     trailing_sl: Annotated[Optional[float], typer.Option(help="Trailing Stop Loss Points")] = None,
     option_type: Annotated[Optional[str], typer.Option(help="Option Strike Type (ATM, ITM, OTM)")] = None,
-    strategy_mode: Annotated[Optional[str], typer.Option(help="Strategy Mode: rule or ml")] = None,
+    strategy_mode: Annotated[Optional[str], typer.Option(help="Strategy Mode: rule, ml, or python_code")] = None,
+    python_strategy_path: Annotated[Optional[str], typer.Option(help="Path to custom python strategy file")] = None,
     ml_model_path: Annotated[Optional[str], typer.Option(help="Path to ML model")] = None,
     pyramid_steps: Annotated[Optional[str], typer.Option(help="Pyramid entry percentages (e.g., 25,50,25 or 100)")] = None,
     pyramid_confirm_pts: Annotated[Optional[float], typer.Option(help="Pyramid confirmation points")] = None,
@@ -284,12 +285,14 @@ def backtest(
 
     # 11. Strategy Mode
     if not strategy_mode:
-        strategy_mode = questionary.select("Strategy Mode:", choices=["rule", "ml"]).ask()
+        strategy_mode = questionary.select("Strategy Mode:", choices=["rule", "ml", "python_code"]).ask()
     if not strategy_mode: return
 
-    # 11a. ML Model Path
+    # 11a. ML / Python Model Path
     if strategy_mode == "ml" and not ml_model_path:
         ml_model_path = questionary.text("Path to ML Model (.joblib):", default="models/model.joblib").ask()
+    elif strategy_mode == "python_code" and not python_strategy_path:
+        python_strategy_path = questionary.text("Path to Python Strategy (e.g. scripts/my_strategies.py:Strategy):", default="scripts/triple_lock_strategy.py:Strategy").ask()
 
     # 12. rule-id
     if not rule_id:
@@ -304,11 +307,15 @@ def backtest(
                 value=r['ruleId']
             ) for r in rules
         ]
-        choices.append(questionary.Choice(title="Back", value="BACK"))
         
-        rule_id = questionary.select("Select Strategy Rule:", choices=choices).ask()
+        if strategy_mode in ["ml", "python_code"]:
+            choices.insert(0, questionary.Choice(title="Skip (Use Default Generated Feature Stub)", value="SKIP"))
+            
+        choices.append(questionary.Choice(title="Back", value="BACK"))
+        rule_id = questionary.select(f"Select Strategy Rule (Optional for {strategy_mode}):", choices=choices).ask()
     
     if not rule_id or rule_id == "BACK": return
+    if rule_id == "SKIP": rule_id = ""
 
     # 13. Default Warmup
     if warmup_candles is None:
@@ -332,6 +339,8 @@ def backtest(
     ]
     if ml_model_path:
         cmd.extend(["--ml-model-path", ml_model_path])
+    if python_strategy_path:
+        cmd.extend(["--python-strategy-path", python_strategy_path])
     cmd.extend([
         "--pyramid-confirm-pts", str(pyramid_confirm_pts),
         "--warmup-candles", str(warmup_candles)
@@ -539,7 +548,8 @@ def live_trade(
     subscribe_to: Annotated[str, typer.Option(help="Broadcast Mode (Full, Partial)")] = "Full",
     break_even: Annotated[bool, typer.Option(help="Enable Break-even Trailing")] = True,
     debug: Annotated[bool, typer.Option(help="Enable Socket Debug Logging")] = False,
-    strategy_mode: Annotated[str, typer.Option(help="Strategy Mode: rule or ml")] = "rule",
+    strategy_mode: Annotated[str, typer.Option(help="Strategy Mode: rule, ml, or python_code")] = "rule",
+    python_strategy_path: Annotated[Optional[str], typer.Option(help="Path to custom python strategy file")] = None,
     ml_model_path: Annotated[Optional[str], typer.Option(help="Path to ML model")] = None
 ):
     """Starts the Live Trading Engine."""
@@ -560,6 +570,7 @@ def live_trade(
             "use_break_even": break_even,
             "symbol": "NIFTY",
             "strategy_mode": strategy_mode,
+            "python_strategy_path": python_strategy_path,
             "ml_model_path": ml_model_path
         }
 

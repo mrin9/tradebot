@@ -86,23 +86,43 @@ class BacktestBot:
         self._last_pnl_checkpoint = current_total_pnl
         logger.info(f"📊 Recorded Daily PnL for {day_str}: ₹{daily_increment:,.2f} | Total: ₹{current_total_pnl:,.2f}")
 
-    def _log_config(self, start, end, trading_days):
-        logger.info(f"\n{'='*20} BACKTEST CONFIGURATION {'='*20}")
-        if trading_days:
-            logger.info(f"{'Period:':<16} {trading_days[0]} to {trading_days[-1]}")
-        else:
-            logger.info(f"{'Period:':<16} {start} to {end}")
+    def _log_config(self, trading_days: List[str] | None = None):
+        """
+        Displays the final configuration being used.
+        """
+        args = self.args
+        if not args:
+            return
             
-        logger.info(f"{'Budget:':<16} ₹{self.args.budget:,.2f} ({self.args.invest_mode})")
-        logger.info(f"{'Strategy:':<16} {self.args.rule_id or 'ML (self-contained)'}")
-        logger.info(f"{'Stop Loss:':<16} {self.args.sl} pts")
-        logger.info(f"{'Target Steps:':<16} {self.args.target_steps}")
-        logger.info(f"{'Trailing SL:':<16} {self.args.trailing_sl}")
-        logger.info(f"{'Break Even:':<16} {'Enabled' if not self.args.no_break_even else 'Disabled'}")
-        logger.info(f"{'Instrument:':<16} {self.args.instrument_type}")
-        if getattr(self.args, 'instrument_type', 'CASH') == "OPTIONS":
-            logger.info(f"{'Option Type:':<16} {self.args.option_type}")
-        logger.info(f"{'='*60}\n")
+        # Extract indicators from FundManager (which are now centralized)
+        indicators = self.fm.indicator_calculator.config
+        ind_summary = []
+        for ind in indicators:
+            label = ind.get('displayLabel', ind['indicatorId'])
+            params = ind.get('params', {})
+            param_str = ", ".join([f"{k}:{v}" for k, v in params.items()])
+            ind_summary.append(f"{label} ({ind.get('InstrumentType', 'SPOT')}): {param_str}")
+
+        period_str = f"{args.start} to {args.end or args.start}"
+        if trading_days:
+            period_str = f"{trading_days[0]} to {trading_days[-1]} ({len(trading_days)} days)"
+
+        msg = f"""
+========================= BACKTEST CONFIG =========================
+Mode: {args.mode.upper()} | Range: {period_str}
+Strategy: {args.rule_id or 'ML/Python'} | Mode: {args.strategy_mode.upper()}
+Budget: ₹{args.budget:,.2f} | Invest Mode: {self.fm.invest_mode.upper()}
+Stop Loss: {self.fm.stop_loss_points} pts | Targets: {self.fm.target_points} pts
+Trailing SL: {self.fm.trailing_sl_points} pts | Break-Even: {self.fm.use_break_even}
+Warmup Candles: {args.warmup_candles}
+
+Indicators:
+"""
+        for s in ind_summary:
+            msg += f" - {s}\n"
+        msg += "===================================================================="
+        
+        logger.info(msg)
 
     def _report(self):
         # Extract trades directly from the Position Manager history (Dataclass objects)
@@ -157,7 +177,10 @@ class BacktestBot:
             
             db = MongoRepository.get_db()
 
-            strategy_id = (self.args.rule_id or "ml-model")
+            if self.args.strategy_mode == "python_code" and self.args.python_strategy_path:
+                strategy_id = os.path.basename(self.args.python_strategy_path).split(':')[0].split('.')[0]
+            else:
+                strategy_id = (self.args.rule_id or "ml-model")
             prefix = strategy_id.split('-')[0][:10].lower()
             
             # Formulate date range

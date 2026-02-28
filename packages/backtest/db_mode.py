@@ -23,7 +23,7 @@ class DBFeeder(BacktestDataFeeder):
         available_days = DateUtils.get_available_dates(db, settings.NIFTY_CANDLE_COLLECTION)
         trading_days = sorted([d for d in available_days if iso_start <= d <= iso_end])
         
-        bot._log_config(bot.args.start, bot.args.end, trading_days)
+        bot._log_config(trading_days)
         
         if not trading_days:
             logger.error("No trading days found in range.")
