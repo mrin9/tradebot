@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     BACKTEST_TARGET_STEPS: str = "15,25,50"
     BACKTEST_INVEST_MODE: str = "compound"
     BACKTEST_WARMUP_CANDLES: int = 200
+    BACKTEST_PRICE_SOURCE: str = "close" # Default price source for backtest (open or close)
     
     # 2. Core Operation Modes
     MARKET_TIMEZONE: str = "Asia/Kolkata"

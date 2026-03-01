@@ -5,6 +5,7 @@ from typing import Dict, List
 from packages.utils.date_utils import DateUtils
 from packages.utils.log_utils import setup_logger
 from packages.tradeflow.types import MarketIntentType, InstrumentKindType
+from packages.config import settings
 import logging
 
 logger = setup_logger(__name__)
@@ -80,7 +81,8 @@ class PositionManager:
                  use_break_even: bool = True,
                  display_symbol: str | None = None,
                  pyramid_steps: List[int] | None = None,
-                 pyramid_confirm_pts: float = 10.0):
+                 pyramid_confirm_pts: float = 10.0,
+                 price_source: str = "close"):
         self.symbol = symbol
         self.display_symbol = display_symbol or symbol
         self.quantity = quantity
@@ -110,6 +112,7 @@ class PositionManager:
         # Pyramiding Config
         self.pyramid_steps = pyramid_steps or [100]  # Default: 100% all-in
         self.pyramid_confirm_pts = pyramid_confirm_pts
+        self.price_source = price_source.lower()
 
     def set_order_manager(self, order_manager):
         self.order_manager = order_manager
@@ -220,7 +223,16 @@ class PositionManager:
         if not self.current_position:
             return
 
-        current_price = tick.get('c', tick.get('close', tick.get('ltp')))
+        # Determine price based on source (Open vs Close) for backtests
+        if self.price_source == "open":
+             current_price = tick.get('o', tick.get('open'))
+        else:
+             current_price = tick.get('c', tick.get('close'))
+             
+        # Fallback to LTP for live/ticks
+        if current_price is None:
+            current_price = tick.get('ltp', tick.get('p'))
+            
         if not current_price:
             return
             
@@ -243,10 +255,11 @@ class PositionManager:
         # PnL Calculation: 
         # Long: (Current - Entry) * Qty
         # Short: (Entry - Current) * Qty
+        lot_size = settings.NIFTY_LOT_SIZE
         if is_long_dir:
-            pos.pnl = (current_price - pos.entry_price) * pos.remaining_quantity
+            pos.pnl = (current_price - pos.entry_price) * pos.remaining_quantity * lot_size
         else:
-            pos.pnl = (pos.entry_price - current_price) * pos.remaining_quantity
+            pos.pnl = (pos.entry_price - current_price) * pos.remaining_quantity * lot_size
         
         # Trailing Extremes and Exit Triggers
         if is_long_dir:
@@ -304,6 +317,13 @@ class PositionManager:
                 desc = f"Target {pos.achieved_targets} ({next_target:.2f}) hit at {current_price:.2f}"
                 self._close_position(next_target, exit_time, f"TARGET_{pos.achieved_targets}", reason_desc=desc, quantity=close_qty, nifty_price=nifty_price)
                 
+                # Recalculate unrealized PnL for remaining quantity
+                if self.current_position:
+                    if is_long_dir:
+                        pos.pnl = (current_price - pos.entry_price) * pos.remaining_quantity * lot_size
+                    else:
+                        pos.pnl = (pos.entry_price - current_price) * pos.remaining_quantity * lot_size
+                
                 if not self.current_position:
                     break
             else:
@@ -340,7 +360,6 @@ class PositionManager:
         step_pct = self.pyramid_steps[0]  # First step percentage
         pyramid_qty = max(1, (self.quantity * step_pct) // 100)
         
-        from packages.config import settings
         lot_size = settings.NIFTY_LOT_SIZE
         fmt_time = timestamp.strftime("%d-%b-%Y %H:%M").upper()
         total_price = pyramid_qty * lot_size * price
@@ -395,15 +414,15 @@ class PositionManager:
         is_long_dir = (self.instrument_type == InstrumentKindType.OPTIONS) or (pos.intent == MarketIntentType.LONG)
         exit_side = "SELL" if is_long_dir else "BUY"
         
+        lot_size = settings.NIFTY_LOT_SIZE
         # PnL is (Exit - Entry) for Long, (Entry - Exit) for Short
         if is_long_dir:
-            chunk_pnl = (price - pos.entry_price) * close_qty
+            chunk_pnl = (price - pos.entry_price) * close_qty * lot_size
         else:
-            chunk_pnl = (pos.entry_price - price) * close_qty
+            chunk_pnl = (pos.entry_price - price) * close_qty * lot_size
         
         pos.total_realized_pnl += chunk_pnl
         
-        from packages.config import settings
         lot_size = settings.NIFTY_LOT_SIZE
         fmt_time = timestamp.strftime("%d-%b-%Y %H:%M").upper()
         total_price = close_qty * lot_size * price

@@ -36,6 +36,7 @@ def get_parser():
     parser.add_argument("--pyramid-steps", type=str, default="100", help="Comma-separated entry percentages (e.g., 25,50,25 or 100 for all-in)")
     parser.add_argument("--pyramid-confirm-pts", type=float, default=10.0, help="Points price must move in our favor before next pyramid step")
     parser.add_argument("--warmup-candles", type=int, default=settings.BACKTEST_WARMUP_CANDLES, help="Number of candles to use for indicator warmup")
+    parser.add_argument("--price-source", type=str, choices=["open", "close"], default=settings.BACKTEST_PRICE_SOURCE, help="Price source for backtest entry/exit (open or close)")
     return parser
 
 def fetch_strategy_rule(rule_id: str, strategy_mode: str = "rule"):
@@ -88,7 +89,8 @@ def setup_fund_manager(args, rule_config):
         "ml_confidence": args.ml_confidence,
         # Pyramiding
         "pyramid_steps": args.pyramid_steps,
-        "pyramid_confirm_pts": args.pyramid_confirm_pts
+        "pyramid_confirm_pts": args.pyramid_confirm_pts,
+        "price_source": args.price_source
     }
     
     logger.info(f"Initializing FundManager with Rule: {args.rule_id} and Position Config: {pos_config}")

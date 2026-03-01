@@ -71,6 +71,13 @@ class DateUtils:
         return ts
 
     @staticmethod
+    def to_kolkata_iso(ts: Union[int, float]) -> str:
+        """Converts a UTC epoch timestamp to Asia/Kolkata ISO string (YYYY-MM-DDTHH:MM:SS)."""
+        dt = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+        dt_kolkata = dt.astimezone(MARKET_TZ)
+        return dt_kolkata.strftime(DATETIME_FORMAT)
+
+    @staticmethod
     def from_timestamp(ts: Union[int, float]) -> datetime.datetime:
         """Converts a UNIX timestamp to a localized datetime object."""
         return datetime.datetime.fromtimestamp(ts, tz=MARKET_TZ)

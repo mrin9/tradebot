@@ -229,6 +229,7 @@ class MarketUtils:
         return {
             "i": int(str(inst_id).split('_')[-1]) if inst_id else 0,
             "t": utc_ts,
+            "isoDt": DateUtils.to_kolkata_iso(utc_ts),
             "p": ltp,
             "v": last_qty,
             "q": total_qty,
@@ -248,6 +249,7 @@ class MarketUtils:
         return {
             "i": int(inst_id) if inst_id else 0,
             "t": utc_ts,
+            "isoDt": DateUtils.to_kolkata_iso(utc_ts),
             "o": MarketUtils._get_val(data, 'Open', 'o'),
             "h": MarketUtils._get_val(data, 'High', 'h'),
             "l": MarketUtils._get_val(data, 'Low', 'l'),

@@ -48,6 +48,13 @@ class IndicatorCalculator:
         """
         Ingests a new candle for a specific instrument category, and recalculates those indicators.
         """
+        if isinstance(instrument_category, str):
+            try:
+                instrument_category = InstrumentCategoryType(instrument_category)
+            except ValueError:
+                logger.warning(f"Unrecognized instrument category string '{instrument_category}', defaulting to SPOT")
+                instrument_category = InstrumentCategoryType.SPOT
+
         if instrument_category not in self.category_candles:
             self.category_candles[instrument_category] = deque(maxlen=self.max_window_size)
             self.category_instrument_ids[instrument_category] = None
@@ -106,7 +113,8 @@ class IndicatorCalculator:
             last_row = df.row(-1, named=True)
             prev_row = df.row(-2, named=True) if df.height >= 2 else None
             
-            prefix = "NIFTY_" if instrument_category == InstrumentCategoryType.SPOT else f"{instrument_category.value}_"
+            cat_val = instrument_category.value if hasattr(instrument_category, "value") else str(instrument_category)
+            prefix = "NIFTY_" if instrument_category == InstrumentCategoryType.SPOT else f"{cat_val}_"
             
             for ind in indicators_to_calc:
                 orig_key = ind['indicatorId']

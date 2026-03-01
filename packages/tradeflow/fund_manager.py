@@ -97,10 +97,13 @@ class FundManager:
             trailing_sl_points=self.trailing_sl_points,
             use_break_even=self.use_break_even,
             pyramid_steps=pyramid_steps,
-            pyramid_confirm_pts=self.pos_config.get("pyramid_confirm_pts", 10.0)
+            pyramid_confirm_pts=self.pos_config.get("pyramid_confirm_pts", 10.0),
+            price_source=self.pos_config.get("price_source", settings.BACKTEST_PRICE_SOURCE)
         )
         self.order_manager = PaperTradingOrderManager()
         self.position_manager.set_order_manager(self.order_manager)
+        
+        self.price_source = self.pos_config.get("price_source", settings.BACKTEST_PRICE_SOURCE).lower() # "open" or "close"
         
         self.on_signal: Callable[[Dict], None] | None = None
         self.db = MongoRepository.get_db()
@@ -200,7 +203,7 @@ class FundManager:
         # 100 * 1m = 100m. If timeframe is 180s, 100m / 3m ~= 33 candles. 
         # Typically IndicatorCalculator max_window_size is 200, but we usually only need ~50 for EMA-21.
         history = list(self.db[settings.OPTIONS_CANDLE_COLLECTION].find(
-            {"i": instrument_id, "t": {"$lt": current_ts}}
+            {"i": instrument_id, "t": {"$lte": current_ts}}
         ).sort("t", -1).limit(100))
         
         if not history:
@@ -273,7 +276,18 @@ class FundManager:
         """
         # 1. Update Tick Price Cache
         inst_id = market_data.get('i', market_data.get('instrument_id'))
-        price = market_data.get('c', market_data.get('close', market_data.get('p')))
+        
+        # In Backtest mode, we use the configured price source (Open or Close)
+        # In Live/Socket mode (ticks), we use 'p' (LTP)
+        is_candle = 'c' in market_data or 'close' in market_data
+        
+        if self.is_backtest and is_candle:
+            if self.price_source == "open":
+                price = market_data.get('o', market_data.get('open'))
+            else:
+                price = market_data.get('c', market_data.get('close'))
+        else:
+            price = market_data.get('c', market_data.get('close', market_data.get('p')))
         
         if price is None:
             return

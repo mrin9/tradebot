@@ -6,7 +6,8 @@ import sys
 import logging
 from datetime import datetime
 from io import StringIO
-from packages.tradeflow.position_manager import PositionManager, MarketIntent, InstrumentType
+from packages.tradeflow.position_manager import PositionManager
+from packages.tradeflow.types import MarketIntentType as MarketIntent, InstrumentKindType as InstrumentType
 
 class MockOrderManager:
     def __init__(self):
@@ -49,7 +50,7 @@ def test_options_long_intent_cycle(pm_setup, capsys):
     assert om.orders[0]['side'] == 'BUY'
     
     output = capsys.readouterr().out + held_output.getvalue()
-    assert "🟢 [11-FEB-2026 09:15] Entry: NIFTY | Purchased 50 lots(65) @ 100.0" in output
+    assert "🟢 [11-FEB-2026 09:15] Entry: [NIFTY] Purchased 50 lots(65) @ 100.0 | Total: ₹325,000.00" in output
 
     # 2. Break-Even
     pm.update_tick({'ltp': 141.0, 'timestamp': now.timestamp() + 180}) # +3 mins
@@ -66,7 +67,7 @@ def test_options_long_intent_cycle(pm_setup, capsys):
     assert pm.current_position is None
     
     output = capsys.readouterr().out + held_output.getvalue()
-    assert "🔴 [11-FEB-2026 09:30] Exit SIGNAL_EXIT: NIFTY | Sold 34 lots(65) @ 120.0" in output
+    assert "🔴 [11-FEB-2026 09:30] Exit SIGNAL_EXIT: [NIFTY] Sold 34 lots(65) @ 120.0 | Total: ₹265,200.00 | Action PnL: +44,200.00 | Total Trade PnL: ₹85,800.00" in output
 
 def test_options_short_intent_entry(pm_setup):
     """Tests SHORT intent (Buy Put) for Options."""
@@ -109,7 +110,7 @@ def test_fractional_exit(pm_setup, capsys):
     assert pm.current_position.remaining_quantity == 25
     
     output = capsys.readouterr().out + held_output.getvalue()
-    assert "🟠 [11-FEB-2026 09:18] TARGET_3 Hit: Sold 25 lots(65) @ 130.0" in output
+    assert "🟠 [11-FEB-2026 09:18] TARGET_3 Hit: [NIFTY] Sold 25 lots(65) @ 130.0 | Total: ₹211,250.00 (Action PnL: +48,750.00)" in output
 
 def test_cash_short_blocking(pm_setup):
     """Verifies that SHORT intent is blocked for CASH/FUTURES."""

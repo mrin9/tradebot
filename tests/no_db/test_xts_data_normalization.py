@@ -44,6 +44,7 @@ def test_1501_full_json():
     assert norm['v'] == 20
     assert norm['q'] == 253453
     assert norm['t'] == 1205662451 # 1205682251 - 19800
+    assert norm['isoDt'] == "2008-03-16T15:44:11"
     assert norm['bid'] == 1567.95
     assert norm['ask'] is None
     print("✅ 1501 Full JSON Passed.")
@@ -58,6 +59,7 @@ def test_1501_partial_string():
     assert norm['v'] == 20
     assert norm['q'] == 253453
     assert norm['t'] == 1205662310 # 1205682110 - 19800
+    assert norm['isoDt'] == "2008-03-16T15:41:50"
     assert norm['bid'] == 0.0
     assert norm['ask'] == 1428.0
     print("✅ 1501 Partial String Passed.")
@@ -79,6 +81,7 @@ def test_1512_full_json():
     assert norm['v'] == 100
     assert norm['q'] == 1500000
     assert norm['t'] == 1708416000
+    assert norm['isoDt'] == "2024-02-20T13:30:00"
     print("✅ 1512 Full JSON Passed.")
 
 def test_1512_partial_string():
@@ -90,6 +93,7 @@ def test_1512_partial_string():
     assert norm['v'] == 100
     assert norm['q'] == 1500000
     assert norm['t'] == 1708416000
+    assert norm['isoDt'] == "2024-02-20T13:30:00"
     print("✅ 1512 Partial String Passed.")
 
 # --- 1505 (CANDLE) ---
@@ -110,6 +114,7 @@ def test_1505_full_json():
     assert norm['c'] == 22050
     assert norm['v'] == 5000
     assert norm['t'] == 1708416000
+    assert norm['isoDt'] == "2024-02-20T13:30:00"
     print("✅ 1505 Full JSON Passed.")
 
 def test_1505_partial_string():
@@ -123,6 +128,7 @@ def test_1505_partial_string():
     assert norm['c'] == 22050
     assert norm['v'] == 5000
     assert norm['t'] == 1708416000
+    assert norm['isoDt'] == "2024-02-20T13:30:00"
     print("✅ 1505 Partial String Passed.")
 
 if __name__ == "__main__":

@@ -150,9 +150,11 @@ class HistoricalDataCollector:
                 if len(parts) < 6: continue
                 
                 # Schema matching old project
+                tick_ts = int(parts[0]) - settings.XTS_TIME_OFFSET
                 tick = {
                     "i": instrument_id,
-                    "t": int(parts[0]) - settings.XTS_TIME_OFFSET,
+                    "t": tick_ts,
+                    "isoDt": DateUtils.to_kolkata_iso(tick_ts),
                     "p": float(parts[4]), # Close
                     "o": float(parts[1]),
                     "h": float(parts[2]),

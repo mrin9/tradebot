@@ -98,10 +98,10 @@ class BacktestBot:
         indicators = self.fm.indicator_calculator.config
         ind_summary = []
         for ind in indicators:
-            label = ind.get('displayLabel', ind['indicatorId'])
             params = ind.get('params', {})
-            param_str = ", ".join([f"{k}:{v}" for k, v in params.items()])
-            ind_summary.append(f"{label} ({ind.get('InstrumentType', 'SPOT')}): {param_str}")
+            # Simplified format: InstrumentType | Type | PeriodValues
+            param_values = "-".join([str(v) for v in params.values()])
+            ind_summary.append(f"{ind.get('InstrumentType', 'SPOT')} | {ind.get('type', 'N/A')} | {param_values}")
 
         period_str = f"{args.start} to {args.end or args.start}"
         if trading_days:
@@ -114,6 +114,7 @@ Strategy: {args.rule_id or 'ML/Python'} | Mode: {args.strategy_mode.upper()}
 Budget: ₹{args.budget:,.2f} | Invest Mode: {self.fm.invest_mode.upper()}
 Stop Loss: {self.fm.stop_loss_points} pts | Targets: {self.fm.target_points} pts
 Trailing SL: {self.fm.trailing_sl_points} pts | Break-Even: {self.fm.use_break_even}
+Option Selection: {getattr(args, 'option_type', 'ATM')} | Price Source: {getattr(args, 'price_source', 'close').upper()}
 Warmup Candles: {args.warmup_candles}
 
 Indicators:
@@ -310,15 +311,24 @@ Indicators:
 
                 trade_cycles.append(cycle_obj)
 
+            # Simplify indicator format for database storage
+            simplified_indicators = []
+            indicators = self.fm.indicator_calculator.config
+            for ind in indicators:
+                params = ind.get('params', {})
+                param_vals = "-".join([str(v) for v in params.values()])
+                simplified_indicators.append(f"{ind.get('InstrumentType', 'SPOT')} | {ind.get('type', 'N/A')} | {param_vals}")
+
             result_doc = {
                 "resultId": result_id,
                 "timestamp": DateUtils.to_utc(DateUtils.get_market_time()).replace(tzinfo=None).isoformat(timespec='seconds'),
                 "config": {
                     "strategy": self.args.rule_id or "ml-model",
+                    "strategyMode": self.args.strategy_mode,
                     "startDate": start_dt.strftime("%Y-%m-%d"),
                     "endDate": end_dt.strftime("%Y-%m-%d"),
                     "timeframe": getattr(self.fm, 'global_timeframe', 300),
-                    "indicators": getattr(self.fm, 'indicators_config', []),
+                    "indicators": simplified_indicators,
                     "budget": self.args.budget,
                     "stopLoss": self.args.sl,
                     "targets": self.args.target_steps,
@@ -327,6 +337,7 @@ Indicators:
                     "instrumentType": getattr(self.args, 'instrument_type', 'CASH'),
                     "selectionBasis": getattr(self.args, 'option_type', 'ATM'),
                     "investMode": getattr(self.args, 'invest_mode', 'compound'),
+                    "priceSource": getattr(self.args, 'price_source', 'close'),
                     "mlModelPath": getattr(self.args, 'ml_model_path', None)
                 },
                 "summary": {
@@ -341,7 +352,7 @@ Indicators:
             }
 
             db["backtest_results"].insert_one(result_doc)
-            logger.info(f"📊 Backtest '{result_id}' saved to backtest_results ({len(trade_cycles)} cycles)")
+            logger.info(f"✅ Backtest saved! resultId: {result_id} ({len(trade_cycles)} cycles)")
             # Return result_id so runner can potentially show it
             return result_id
         except Exception as e:
