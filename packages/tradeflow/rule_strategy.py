@@ -1,14 +1,11 @@
-from typing import Dict, Optional, Any, List
-from enum import Enum
+from typing import Dict, Any, List, Optional, Tuple
+from packages.tradeflow.types import CandleType, SignalType, MarketIntentType, SignalReturnType
 import logging
 
 logger = logging.getLogger(__name__)
 
-class Signal(Enum):
-    LONG = 1
-    SHORT = -1
-    NEUTRAL = 0
-    EXIT = 2
+# SignalType Enum moved to tradeflow.types as SignalType
+# SignalTypeReturnType moved to tradeflow.types
 
 class RuleStrategy:
     """
@@ -24,28 +21,33 @@ class RuleStrategy:
         self.entry_config = self.config.get('entry', {})
         self.exit_config = self.config.get('exit', {})
         
-    def on_resampled_candle_closed(self, candle: Dict, indicators: Dict[str, float], current_position_intent: Optional[str] = None) -> tuple[Signal, str, float]:
+    def on_resampled_candle_closed(
+        self, 
+        candle: CandleType, 
+        indicators: Dict[str, Any], 
+        current_position_intent: Optional[MarketIntentType] = None
+    ) -> SignalTypeReturnType:
         """
-        Evaluates the current state and returns a signal, reason, and confidence.
+        Evaluates the dynamic Rule Engine against the latest market data.
         
         Args:
-            candle (Dict): The finalized resampled candle.
-            indicators (Dict): Dictionary containing all required indicators for all timeframes
-                                produced by IndicatorCalculator. Example: {'SPOT_fast_ema': 15000, 'CE_rsi': 60}
-            current_position_intent (str, optional): 'LONG' or 'SHORT' if evaluating for an active position exit.
+            candle: The finalized resampled candle.
+            indicators: Dictionary containing all required indicators for all timeframes
+                                produced by IndicatorCalculator. Example: {'NIFTY_fast_ema': 15000, 'CE_rsi': 60}
+            current_position_intent: The intent of the currently open position (MarketIntentType.LONG or MarketIntentType.SHORT).
             
         Returns:
-            tuple[Signal, str, float]: Signal (LONG/SHORT/NEUTRAL/EXIT), reason string, and confidence.
+            SignalTypeReturnType: A tuple of (SignalType, Reason, Confidence).
         """
         if not indicators:
-            return Signal.NEUTRAL, "N/A", 0.0
+            return SignalType.NEUTRAL, "N/A", 0.0
             
         # 1. Check Explicit Exits if we are in a position
         if current_position_intent and self.exit_config:
-            is_pos_short = (current_position_intent == 'SHORT')
+            is_pos_short = (current_position_intent == MarketIntentType.SHORT)
             match_exit, reason_exit = self._evaluate_flat_config(self.exit_config, indicators, is_short=is_pos_short)
             if match_exit:
-                return Signal.EXIT, reason_exit, 1.0
+                return SignalType.EXIT, reason_exit, 1.0
                 
         # 2. Evaluate Entries
         intent = self.entry_config.get('intent', 'AUTO')
@@ -60,11 +62,11 @@ class RuleStrategy:
             match_short, reason_short = self._evaluate_flat_config(self.entry_config, indicators, is_short=True)
             
         if match_long:
-            return Signal.LONG, reason_long, 1.0
+            return SignalType.LONG, reason_long, 1.0
         elif match_short:
-            return Signal.SHORT, reason_short, 1.0
+            return SignalType.SHORT, reason_short, 1.0
             
-        return Signal.NEUTRAL, "N/A", 0.0
+        return SignalType.NEUTRAL, "N/A", 0.0
 
     def _evaluate_flat_config(self, config_block: Dict[str, Any], indicators: Dict[str, float], is_short: bool = False, parent_evaluate_spot: bool = True, parent_evaluate_inverse: bool = True) -> tuple[bool, str]:
         """

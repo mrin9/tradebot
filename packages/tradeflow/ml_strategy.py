@@ -14,15 +14,15 @@ import logging
 import numpy as np
 import polars as pl
 
-from packages.tradeflow.rule_strategy import Signal
-from packages.utils.log_utils import setup_logger
 from packages.tradeflow.indicator_calculator import IndicatorCalculator
+from packages.tradeflow.types import CandleType, SignalType, MarketIntentType
+from packages.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__)
 
 # Label mapping (must match train.py)
 CLASS_TO_LABEL = {0: -1, 1: 0, 2: 1}   # 0=SHORT, 1=NEUTRAL, 2=LONG
-LABEL_TO_SIGNAL = {1: Signal.LONG, -1: Signal.SHORT, 0: Signal.NEUTRAL}
+LABEL_TO_SIGNAL = {1: SignalType.LONG, -1: SignalType.SHORT, 0: SignalType.NEUTRAL}
 
 # Minimum candles needed before prediction
 MIN_CANDLE_WINDOW = 30
@@ -60,9 +60,22 @@ class MLStrategy:
 
     # ── Public API ──────────────────────────────────────────────────────
 
-    def on_resampled_candle_closed(self, candle: Dict, indicators: Dict | None = None) -> tuple[Signal, str, float]:
+    def on_resampled_candle_closed(
+        self, 
+        candle: CandleType, 
+        indicators: Optional[Dict[str, Any]] = None,
+        current_position_intent: Optional[MarketIntentType] = None
+    ) -> Tuple[SignalType, str, float]:
         """
-        Standardized interface for processing a resampled candle.
+        ML Inference Entry Point.
+        
+        Args:
+            candle: Finalized candle data (CandleType).
+            indicators: Optional external indicators (MLStrategy usually calculates its own).
+            current_position_intent: Direction of open trade (MarketIntentType).
+            
+        Returns:
+            Tuple[SignalType, str, float]: (SignalType, Reason, Confidence)
         """
         c = {
             'open': candle.get('open', candle.get('o')),
@@ -75,21 +88,21 @@ class MLStrategy:
         self._candles.append(c)
 
         if len(self._candles) < MIN_CANDLE_WINDOW:
-            return Signal.NEUTRAL, "ML_WARMING_UP", 0.0
+            return SignalType.NEUTRAL, "ML_WARMING_UP", 0.0
 
         if self.model is None:
-             return Signal.NEUTRAL, "ML_NO_MODEL", 0.0
+             return SignalType.NEUTRAL, "ML_NO_MODEL", 0.0
 
         return self._predict_from_candles()
 
     # ── Internal Prediction ─────────────────────────────────────────────
 
-    def _predict_from_candles(self) -> tuple[Signal, str, float]:
+    def _predict_from_candles(self) -> Tuple[SignalType, str, float]:
         """Compute features from internal candle window, run model prediction."""
         try:
             feature_vec = self._compute_features()
             if feature_vec is None:
-                return Signal.NEUTRAL, "ML_FEATURE_ERROR", 0.0
+                return SignalType.NEUTRAL, "ML_FEATURE_ERROR", 0.0
 
             proba = self.model.predict_proba(feature_vec.reshape(1, -1))[0]
             best_class = int(np.argmax(proba))
@@ -100,14 +113,14 @@ class MLStrategy:
             logger.debug(f"🔮 ML Proba: SHORT={proba[0]:.3f}, NEUTRAL={proba[1]:.3f}, LONG={proba[2]:.3f} | Best: {CLASS_TO_LABEL[best_class]} ({best_prob:.3f})")
 
             if best_prob < self.confidence_threshold:
-                return Signal.NEUTRAL, "ML_LOW_CONFIDENCE", best_prob
+                return SignalType.NEUTRAL, "ML_LOW_CONFIDENCE", best_prob
 
             reason = f"ML_PREDICTION ({os.path.basename(self.model_path)})" if self.model_path else "ML_PREDICTION"
             return signal, reason, best_prob
 
         except Exception as e:
             logger.error(f"ML prediction error: {e}")
-            return Signal.NEUTRAL, "ML_ERROR", 0.0
+            return SignalType.NEUTRAL, "ML_ERROR", 0.0
 
     def _compute_features(self) -> np.ndarray | None:
         """

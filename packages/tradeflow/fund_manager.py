@@ -2,13 +2,14 @@ from typing import Dict, Callable, Any, List
 from packages.utils.date_utils import DateUtils
 from datetime import datetime
 import logging
-from packages.tradeflow.indicator_calculator import IndicatorCalculator, InstrumentCategory
-from packages.tradeflow.rule_strategy import RuleStrategy, Signal
+from packages.tradeflow.indicator_calculator import IndicatorCalculator
+from packages.tradeflow.rule_strategy import RuleStrategy
 from packages.tradeflow.ml_strategy import MLStrategy
 from packages.tradeflow.python_strategy_loader import PythonStrategy
 from packages.utils.log_utils import setup_logger
+from packages.tradeflow.types import SignalType, MarketIntentType, InstrumentKindType, InstrumentCategoryType
 
-from packages.tradeflow.position_manager import PositionManager, MarketIntent, InstrumentType
+from packages.tradeflow.position_manager import PositionManager
 from packages.tradeflow.order_manager import PaperTradingOrderManager
 from packages.tradeflow.candle_resampler import CandleResampler
 from packages.utils.mongo import MongoRepository
@@ -70,13 +71,13 @@ class FundManager:
         self.trade_instrument_type = self.pos_config.get("instrument_type", "CASH").upper() # CASH, OPTIONS, FUTURES
         self.trade_option_type = self.pos_config.get("option_type", "ATM").upper() # ATM, ITM, OTM
         
-        # Map string to InstrumentType enum
+        # Map string to InstrumentKindType enum
         enum_map = {
-            "CASH": InstrumentType.CASH,
-            "OPTIONS": InstrumentType.OPTIONS,
-            "FUTURES": InstrumentType.FUTURES
+            "CASH": InstrumentKindType.CASH,
+            "OPTIONS": InstrumentKindType.OPTIONS,
+            "FUTURES": InstrumentKindType.FUTURES
         }
-        instr_enum = enum_map.get(self.trade_instrument_type, InstrumentType.CASH)
+        instr_enum = enum_map.get(self.trade_instrument_type, InstrumentKindType.CASH)
         if self.trade_instrument_type not in enum_map:
             logger.warning(f"Unrecognized instrument type '{self.trade_instrument_type}', defaulting to CASH")
         
@@ -115,7 +116,7 @@ class FundManager:
         
         # Initialize Resamplers per category
         self.resamplers: Dict[str, CandleResampler] = {}
-        for category in [InstrumentCategory.SPOT, InstrumentCategory.CE, InstrumentCategory.PE]:
+        for category in [InstrumentCategoryType.SPOT, InstrumentCategoryType.CE, InstrumentCategoryType.PE]:
             cat_val = category.value
             self.resamplers[cat_val] = CandleResampler(
                 instrument_id=0, # Will be set dynamically during data ingestion
@@ -318,7 +319,7 @@ class FundManager:
             resampler.instrument_id = int(inst_id)
             resampler.add_candle(market_data)
 
-    def _on_resampled_candle_closed(self, candle: Dict, category: InstrumentCategory):
+    def _on_resampled_candle_closed(self, candle: Dict, category: InstrumentCategoryType):
         """
         Callback triggered when a specific Category Resampler finalizes a candle.
         For Triple-Lock, we evaluate the unified state ONLY when the SPOT candle closes.
@@ -338,61 +339,67 @@ class FundManager:
             logger.info(f"💚 HEARTBEAT [{ts_str}] 💚| Category: {category} | Indicators: {ind_str}")
 
         # ONLY execute strategy decision synchronously when the SPOT candle acts as the anchor
-        if category != InstrumentCategory.SPOT:
+        if category != InstrumentCategoryType.SPOT:
             return
             
         # Pass the current position intent to explicitly evaluate Exit Rules if configured
+        # Determine current intent for strategy evaluation
         current_intent_str = None
+        intent_enum = None
         if self.position_manager.current_position:
-            current_intent_str = "LONG" if self.position_manager.current_position.intent == MarketIntent.LONG else "SHORT"
+            current_intent_str = "LONG" if self.position_manager.current_position.intent == MarketIntentType.LONG else "SHORT"
+            intent_enum = self.position_manager.current_position.intent
 
+        # Execute Strategy
         if self.strategy_mode == "ml":
-            signal, reason, confidence = self.strategy.on_resampled_candle_closed(candle, self.latest_indicators_state)
+            signal, reason, confidence = self.strategy.on_resampled_candle_closed(
+                candle, self.latest_indicators_state, current_position_intent=intent_enum
+            )
         elif self.strategy_mode == "python_code":
             mapped_indicators = self.latest_indicators_state.copy()
             # Default ACTIVE/INVERSE mapping based on current position
             # This is a helper for strategies that want to be instrument-agnostic
-            effective_intent = current_intent_str or "LONG" 
-            if effective_intent == "LONG":
+            effective_intent_str = current_intent_str or "LONG" 
+            if effective_intent_str == "LONG":
                 for k, v in self.latest_indicators_state.items():
                     if k.startswith("CE_"): mapped_indicators[k.replace("CE_", "ACTIVE_", 1)] = v
                     if k.startswith("PE_"): mapped_indicators[k.replace("PE_", "INVERSE_", 1)] = v
-            elif effective_intent == "SHORT":
+            elif effective_intent_str == "SHORT":
                 for k, v in self.latest_indicators_state.items():
                     if k.startswith("PE_"): mapped_indicators[k.replace("PE_", "ACTIVE_", 1)] = v
                     if k.startswith("CE_"): mapped_indicators[k.replace("CE_", "INVERSE_", 1)] = v
                     
             signal, reason, confidence = self.strategy.on_resampled_candle_closed(
-                candle, mapped_indicators, current_position_intent=current_intent_str
+                candle, mapped_indicators, current_position_intent=intent_enum
             )
         else:
             signal, reason, confidence = self.strategy.on_resampled_candle_closed(
-                candle, self.latest_indicators_state, current_position_intent=current_intent_str
+                candle, self.latest_indicators_state, current_position_intent=intent_enum
             )
         
-        if signal != Signal.NEUTRAL:
+        if signal != SignalType.NEUTRAL:
             if self.is_warming_up:
                 # No signals/trades during warmup!
                 return
             
-            # 0. Stale Signal Protection (Max 30 minutes)
+            # 0. Stale SignalType Protection (Max 30 minutes)
             # This prevents the bot from acting on "catch-up" data right after startup
             import time
             if not self.is_backtest and ts and time.time() - ts > 1800:
-                 logger.warning(f"⚠️ Signal ignored: Triggered by stale data from {ts} (>{1800}s old)")
+                 logger.warning(f"⚠️ SignalType ignored: Triggered by stale data from {ts} (>{1800}s old)")
                  return
 
-            # Signal Correction: Use period end for backtest logging & entry time
+            # SignalType Correction: Use period end for backtest logging & entry time
             signal_ts = ts + self.global_timeframe if self.is_backtest else ts
             spot_price = candle.get('c', candle.get('close'))
 
-            # 1. Handle Signals for existing positions
+            # 1. Handle SignalTypes for existing positions
             if self.position_manager.current_position:
-                if signal == Signal.EXIT:
+                if signal == SignalType.EXIT:
                     ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
                     ts_str = ts_dt.strftime('%d-%b %H:%M')
                     formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
-                    logger.debug(f"Signal: EXIT ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
+                    logger.debug(f"SignalType: EXIT ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
                     
                     pos = self.position_manager.current_position
                     opt_price = self._get_fallback_option_price(int(pos.symbol), signal_ts)
@@ -402,17 +409,17 @@ class FundManager:
                     self.position_manager._close_position(opt_price, ts_dt, "STRATEGY_EXIT", reason_desc=reason, nifty_price=spot_price)
                     return
             
-                intent = MarketIntent.LONG if signal == Signal.LONG else MarketIntent.SHORT
+                intent = MarketIntentType.LONG if signal == SignalType.LONG else MarketIntentType.SHORT
                 
                 # If current intent matches signal, do nothing (already in position)
                 if self.position_manager.current_position.intent == intent:
                     return
                 
-                # Signal changed (flip) - log it and handle closure
+                # SignalType changed (flip) - log it and handle closure
                 ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
                 formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
-                logger.info(f"Signal: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
+                logger.info(f"SignalType: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
                 
                 pos = self.position_manager.current_position
                 opt_price = self._get_fallback_option_price(int(pos.symbol), signal_ts)
@@ -422,16 +429,16 @@ class FundManager:
                 
                 self.position_manager._close_position(opt_price, ts_dt, "SIGNAL_FLIP", reason_desc=reason, nifty_price=spot_price)
             else:
-                if signal == Signal.EXIT:
+                if signal == SignalType.EXIT:
                     return # Ignore lone exit signals when not in position
                 
-                intent = MarketIntent.LONG if signal == Signal.LONG else MarketIntent.SHORT
+                intent = MarketIntentType.LONG if signal == SignalType.LONG else MarketIntentType.SHORT
                 
                 # No existing position - log new entry signal
                 ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
                 formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
-                logger.debug(f"Signal: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
+                logger.debug(f"SignalType: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
                 
             # 2. Handle Entries
             target_symbol = "26000" # default spot
@@ -439,7 +446,7 @@ class FundManager:
             entry_price = spot_price
             
             if self.trade_instrument_type == "OPTIONS":
-                t_cat = "CE" if intent == MarketIntent.LONG else "PE"
+                t_cat = "CE" if intent == MarketIntentType.LONG else "PE"
                 resolved_id = self.active_instruments.get(t_cat)
                 resolved_desc = self.active_instruments.get(f"{t_cat}_DESC")
                 
@@ -502,7 +509,7 @@ class FundManager:
             if self.on_signal:
                 payload.update({
                     'indicators': self.latest_indicators_state.copy(),
-                    'is_buy': signal == Signal.LONG
+                    'is_buy': signal == SignalType.LONG
                 })
                 self.on_signal(payload)
 

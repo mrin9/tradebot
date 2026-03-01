@@ -1,7 +1,7 @@
 import importlib.util
 import logging
 import os
-from packages.tradeflow.rule_strategy import Signal
+from packages.tradeflow.types import SignalType, CandleType, MarketIntentType
 
 logger = logging.getLogger(__name__)
 

@@ -3,15 +3,12 @@ import numpy as np
 from typing import Dict, List, Any
 from collections import deque
 from enum import Enum
+from packages.tradeflow.types import InstrumentCategoryType
 import logging
 
 logger = logging.getLogger(__name__)
 
-class InstrumentCategory(Enum):
-    SPOT = "SPOT"
-    CE = "CE"
-    PE = "PE"
-    OPTIONS_BOTH = "OPTIONS_BOTH" # Pseudo-category for Rule seeding
+# InstrumentCategory Enum removed - now imported as InstrumentCategoryType from tradeflow.types
 
 class IndicatorCalculator:
     """
@@ -28,25 +25,26 @@ class IndicatorCalculator:
         self.config = indicators_config
         self.max_window_size = max_window_size
         
-        # Dictionary of deques, keyed by instrument_category (e.g., InstrumentCategory.SPOT)
-        self.category_candles: Dict[InstrumentCategory, deque] = {}
+        # Dictionary of deques, keyed by instrument_category (e.g., InstrumentCategoryType.SPOT)
+        self.category_candles: Dict[InstrumentCategoryType, deque] = {}
         # Track last instrument ID per category to detect switches
-        self.category_instrument_ids: Dict[InstrumentCategory, int | None] = {}
+        self.category_instrument_ids: Dict[InstrumentCategoryType, int | None] = {}
         
         # Initialize deques for each unique instrument category
         for ind in self.config:
             cat_str = ind.get('InstrumentType', 'SPOT')
             try:
-                cat = InstrumentCategory(cat_str)
+                cat = InstrumentCategoryType(cat_str)
             except ValueError:
                 logger.warning(f"Unrecognized InstrumentType '{cat_str}' in config, defaulting to SPOT")
-                cat = InstrumentCategory.SPOT
+                # InstrumentCategoryType Enum removed - now imported as InstrumentCategoryTypeType from tradeflow.types
+                cat = InstrumentCategoryType.SPOT
 
             if cat not in self.category_candles:
                 self.category_candles[cat] = deque(maxlen=self.max_window_size)
                 self.category_instrument_ids[cat] = None
                 
-    def add_candle(self, candle: Dict, instrument_category: InstrumentCategory = InstrumentCategory.SPOT, instrument_id: int | None = None) -> Dict[str, float | str | None]:
+    def add_candle(self, candle: Dict, instrument_category: InstrumentCategoryType = InstrumentCategoryType.SPOT, instrument_id: int | None = None) -> Dict[str, float | str | None]:
         """
         Ingests a new candle for a specific instrument category, and recalculates those indicators.
         """
@@ -90,13 +88,13 @@ class IndicatorCalculator:
         for ind in self.config:
             itype_str = ind.get('InstrumentType', 'SPOT')
             try:
-                itype = InstrumentCategory(itype_str)
+                itype = InstrumentCategoryType(itype_str)
             except ValueError:
-                itype = InstrumentCategory.SPOT
+                itype = InstrumentCategoryType.SPOT
 
             if itype == instrument_category:
                 indicators_to_calc.append(ind)
-            elif itype == InstrumentCategory.OPTIONS_BOTH and instrument_category in [InstrumentCategory.CE, InstrumentCategory.PE]:
+            elif itype == InstrumentCategoryType.OPTIONS_BOTH and instrument_category in [InstrumentCategoryType.CE, InstrumentCategoryType.PE]:
                 indicators_to_calc.append(ind)
         
         try:
@@ -108,7 +106,7 @@ class IndicatorCalculator:
             last_row = df.row(-1, named=True)
             prev_row = df.row(-2, named=True) if df.height >= 2 else None
             
-            prefix = "NIFTY_" if instrument_category == InstrumentCategory.SPOT else f"{instrument_category.value}_"
+            prefix = "NIFTY_" if instrument_category == InstrumentCategoryType.SPOT else f"{instrument_category.value}_"
             
             for ind in indicators_to_calc:
                 orig_key = ind['indicatorId']

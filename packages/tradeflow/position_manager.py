@@ -4,18 +4,14 @@ from enum import Enum, auto
 from typing import Dict, List
 from packages.utils.date_utils import DateUtils
 from packages.utils.log_utils import setup_logger
+from packages.tradeflow.types import MarketIntentType, InstrumentKindType
 import logging
 
 logger = setup_logger(__name__)
 
-class MarketIntent(Enum):
-    LONG = auto()
-    SHORT = auto()
+# MarketIntent Enum moved to tradeflow.types as MarketIntentType
 
-class InstrumentType(Enum):
-    CASH = auto()
-    FUTURES = auto()
-    OPTIONS = auto()
+# InstrumentType Enum moved to tradeflow.types as InstrumentKindType
 
 class OrderStatus(Enum):
     PENDING = auto()
@@ -27,7 +23,7 @@ class OrderStatus(Enum):
 class Position:
     symbol: str
     display_symbol: str
-    intent: MarketIntent
+    intent: MarketIntentType
     entry_price: float
     initial_quantity: int
     entry_time: datetime
@@ -79,7 +75,7 @@ class PositionManager:
     - PnL Calculation
     """
     def __init__(self, symbol: str, quantity: int, stop_loss_points: float = 0, target_points: List[float] | None = None,
-                 instrument_type: InstrumentType = InstrumentType.OPTIONS, 
+                 instrument_type: InstrumentKindType = InstrumentKindType.OPTIONS, 
                  trailing_sl_points: float = 0.0,
                  use_break_even: bool = True,
                  display_symbol: str | None = None,
@@ -121,7 +117,7 @@ class PositionManager:
     def on_signal(self, signal_dict: Dict):
         """
         Processes a New Signal. 
-        Accepts: {'signal': MarketIntent.LONG, 'price': 100.0, 'timestamp': datetime, 'symbol': '48215', 'display_symbol': 'NIFTY...'}
+        Accepts: {'signal': MarketIntentType.LONG, 'price': 100.0, 'timestamp': datetime, 'symbol': '48215', 'display_symbol': 'NIFTY...'}
         """
         intent = signal_dict['signal']
         price = signal_dict['price']
@@ -178,7 +174,7 @@ class PositionManager:
             return  # All pyramid steps exhausted
         
         # Check price confirmation
-        is_long_dir = (self.instrument_type == InstrumentType.OPTIONS) or (pos.intent == MarketIntent.LONG)
+        is_long_dir = (self.instrument_type == InstrumentKindType.OPTIONS) or (pos.intent == MarketIntentType.LONG)
         if is_long_dir:
             price_moved = price - pos.entry_price
         else:
@@ -242,7 +238,7 @@ class PositionManager:
         # 1. Any Option position is 'Long' the contract itself.
         # 2. CASH/FUTURE LONG is 'Long' the underlying.
         # 3. CASH/FUTURE SHORT is 'Short' the underlying.
-        is_long_dir = (self.instrument_type == InstrumentType.OPTIONS) or (pos.intent == MarketIntent.LONG)
+        is_long_dir = (self.instrument_type == InstrumentKindType.OPTIONS) or (pos.intent == MarketIntentType.LONG)
         
         # PnL Calculation: 
         # Long: (Current - Entry) * Qty
@@ -313,7 +309,7 @@ class PositionManager:
             else:
                 break
 
-    def _open_position(self, intent: MarketIntent, price: float, timestamp: datetime, 
+    def _open_position(self, intent: MarketIntentType, price: float, timestamp: datetime, 
                       symbol: str | None = None, display_symbol: str | None = None,
                       cycle_id: str = "N/A", reason: str = "N/A", reason_desc: str = "", nifty_price: float = 0.0):
         """
@@ -323,12 +319,12 @@ class PositionManager:
         if display_symbol: self.display_symbol = display_symbol
 
         # Disable Shorting for Futures/Cash
-        if self.instrument_type in [InstrumentType.CASH, InstrumentType.FUTURES] and intent == MarketIntent.SHORT:
+        if self.instrument_type in [InstrumentKindType.CASH, InstrumentKindType.FUTURES] and intent == MarketIntentType.SHORT:
             # logger.info(f"skipping SHORT signal for {self.instrument_type.name}") # Avoid noise
             return
 
         # Determine direction logic
-        is_long_dir = (self.instrument_type == InstrumentType.OPTIONS) or (intent == MarketIntent.LONG)
+        is_long_dir = (self.instrument_type == InstrumentKindType.OPTIONS) or (intent == MarketIntentType.LONG)
         
         # Set SL and Targets based on Direction
         if is_long_dir:
@@ -376,7 +372,7 @@ class PositionManager:
         # For OPTIONS: Always BUY
         # For CASH/FUTURES: BUY (Shorts are disabled)
         side = "BUY"
-        if self.instrument_type != InstrumentType.OPTIONS and intent == MarketIntent.SHORT:
+        if self.instrument_type != InstrumentKindType.OPTIONS and intent == MarketIntentType.SHORT:
             side = "SELL" # This part is technically unreachable now due to the lock above
             
         step_label = f" (Pyramid 1/{len(self.pyramid_steps)})" if len(self.pyramid_steps) > 1 else ""
@@ -396,7 +392,7 @@ class PositionManager:
             return
             
         # Determine exit side
-        is_long_dir = (self.instrument_type == InstrumentType.OPTIONS) or (pos.intent == MarketIntent.LONG)
+        is_long_dir = (self.instrument_type == InstrumentKindType.OPTIONS) or (pos.intent == MarketIntentType.LONG)
         exit_side = "SELL" if is_long_dir else "BUY"
         
         # PnL is (Exit - Entry) for Long, (Entry - Exit) for Short

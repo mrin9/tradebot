@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional, List
 from packages.config import settings
 from packages.data.connectors.xts_wrapper import XTSManager
 from packages.tradeflow.fund_manager import FundManager
-from packages.tradeflow.position_manager import MarketIntent
+from packages.tradeflow.types import MarketIntentType
 from packages.utils.market_utils import MarketUtils
 from packages.utils.log_utils import setup_logger
 from packages.utils.mongo import MongoRepository
