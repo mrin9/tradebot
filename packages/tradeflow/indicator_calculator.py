@@ -2,9 +2,16 @@ import polars as pl
 import numpy as np
 from typing import Dict, List, Any
 from collections import deque
+from enum import Enum
 import logging
 
 logger = logging.getLogger(__name__)
+
+class InstrumentCategory(Enum):
+    SPOT = "SPOT"
+    CE = "CE"
+    PE = "PE"
+    OPTIONS_BOTH = "OPTIONS_BOTH" # Pseudo-category for Rule seeding
 
 class IndicatorCalculator:
     """
@@ -21,24 +28,29 @@ class IndicatorCalculator:
         self.config = indicators_config
         self.max_window_size = max_window_size
         
-        # Dictionary of deques, keyed by instrument_category (e.g., "SPOT", "CE", "PE")
-        self.category_candles: Dict[str, deque] = {}
+        # Dictionary of deques, keyed by instrument_category (e.g., InstrumentCategory.SPOT)
+        self.category_candles: Dict[InstrumentCategory, deque] = {}
         # Track last instrument ID per category to detect switches
-        self.category_instrument_ids: Dict[str, int | None] = {}
+        self.category_instrument_ids: Dict[InstrumentCategory, int | None] = {}
         
         # Initialize deques for each unique instrument category
         for ind in self.config:
-            cat = ind.get('InstrumentType', 'SPOT')
+            cat_str = ind.get('InstrumentType', 'SPOT')
+            try:
+                cat = InstrumentCategory(cat_str)
+            except ValueError:
+                logger.warning(f"Unrecognized InstrumentType '{cat_str}' in config, defaulting to SPOT")
+                cat = InstrumentCategory.SPOT
+
             if cat not in self.category_candles:
                 self.category_candles[cat] = deque(maxlen=self.max_window_size)
                 self.category_instrument_ids[cat] = None
                 
-    def add_candle(self, candle: Dict, instrument_category: str = "SPOT", instrument_id: int | None = None) -> Dict[str, float | str | None]:
+    def add_candle(self, candle: Dict, instrument_category: InstrumentCategory = InstrumentCategory.SPOT, instrument_id: int | None = None) -> Dict[str, float | str | None]:
         """
         Ingests a new candle for a specific instrument category, and recalculates those indicators.
         """
         if instrument_category not in self.category_candles:
-            # If we dynamically receive an unknown category or one not requested by strategy, ignore or init
             self.category_candles[instrument_category] = deque(maxlen=self.max_window_size)
             self.category_instrument_ids[instrument_category] = None
             
@@ -46,7 +58,7 @@ class IndicatorCalculator:
         if instrument_id is not None:
             last_id = self.category_instrument_ids.get(instrument_category)
             if last_id is not None and last_id != instrument_id:
-                logger.info(f"🔄 Instrument switch detected for {instrument_category}: {last_id} -> {instrument_id}. Clearing indicator window.")
+                logger.info(f"🔄 Instrument switch detected for {instrument_category.value}: {last_id} -> {instrument_id}. Clearing indicator window.")
                 self.category_candles[instrument_category].clear()
             
             self.category_instrument_ids[instrument_category] = instrument_id
@@ -76,10 +88,15 @@ class IndicatorCalculator:
         # Calculate indicators for this specific category
         indicators_to_calc = []
         for ind in self.config:
-            itype = ind.get('InstrumentType', 'SPOT')
+            itype_str = ind.get('InstrumentType', 'SPOT')
+            try:
+                itype = InstrumentCategory(itype_str)
+            except ValueError:
+                itype = InstrumentCategory.SPOT
+
             if itype == instrument_category:
                 indicators_to_calc.append(ind)
-            elif itype == 'OPTIONS_BOTH' and instrument_category in ['CE', 'PE']:
+            elif itype == InstrumentCategory.OPTIONS_BOTH and instrument_category in [InstrumentCategory.CE, InstrumentCategory.PE]:
                 indicators_to_calc.append(ind)
         
         try:
@@ -91,7 +108,7 @@ class IndicatorCalculator:
             last_row = df.row(-1, named=True)
             prev_row = df.row(-2, named=True) if df.height >= 2 else None
             
-            prefix = "" if instrument_category == "SPOT" else f"{instrument_category}_"
+            prefix = "NIFTY_" if instrument_category == InstrumentCategory.SPOT else f"{instrument_category.value}_"
             
             for ind in indicators_to_calc:
                 orig_key = ind['indicatorId']

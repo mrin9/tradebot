@@ -2,7 +2,7 @@ from typing import Dict, Callable, Any, List
 from packages.utils.date_utils import DateUtils
 from datetime import datetime
 import logging
-from packages.tradeflow.indicator_calculator import IndicatorCalculator
+from packages.tradeflow.indicator_calculator import IndicatorCalculator, InstrumentCategory
 from packages.tradeflow.rule_strategy import RuleStrategy, Signal
 from packages.tradeflow.ml_strategy import MLStrategy
 from packages.tradeflow.python_strategy_loader import PythonStrategy
@@ -115,8 +115,9 @@ class FundManager:
         
         # Initialize Resamplers per category
         self.resamplers: Dict[str, CandleResampler] = {}
-        for category in ["SPOT", "CE", "PE"]:
-            self.resamplers[category] = CandleResampler(
+        for category in [InstrumentCategory.SPOT, InstrumentCategory.CE, InstrumentCategory.PE]:
+            cat_val = category.value
+            self.resamplers[cat_val] = CandleResampler(
                 instrument_id=0, # Will be set dynamically during data ingestion
                 interval_seconds=self.global_timeframe,
                 on_candle_closed=lambda c, cat=category: self._on_resampled_candle_closed(c, cat)
@@ -159,7 +160,7 @@ class FundManager:
             needs_update = True
         elif abs(current_spot - self.selection_spot_price) > 25:
             # Price drifted significantly, recalculate ATM and re-map
-            logger.info(f"🔄 Spot drifted to {current_spot} (prev {self.selection_spot_price}). Recalculating Active Options.")
+            logger.debug(f"🔄 Spot drifted to {current_spot} (prev {self.selection_spot_price}). Recalculating Active Options.")
             needs_update = True
             
         if needs_update:
@@ -191,7 +192,7 @@ class FundManager:
         """
         Fetches historical 1m candles for the new instrument and warms up the resampler/indicators.
         """
-        logger.info(f"🔥 Warming up {category} instrument: {instrument_id} at {DateUtils.from_timestamp(current_ts)}")
+        logger.debug(f"🔥 Warming up {category} instrument: {instrument_id} at {DateUtils.from_timestamp(current_ts)}")
         
         from packages.config import settings
         # Fetch last 100 1-minute candles before current_ts
@@ -224,7 +225,7 @@ class FundManager:
             for candle in history:
                 resampler.add_candle(candle)
             
-            logger.info(f"✅ Warmup complete for {category} ({instrument_id}) with {len(history)} candles.")
+            logger.debug(f"✅ Warmup complete for {category} ({instrument_id}) with {len(history)} candles.")
 
     def _get_fallback_option_price(self, symbol_id: int, current_ts: float | None, is_entry: bool = False) -> float | None:
         """
@@ -317,7 +318,7 @@ class FundManager:
             resampler.instrument_id = int(inst_id)
             resampler.add_candle(market_data)
 
-    def _on_resampled_candle_closed(self, candle: Dict, category: str):
+    def _on_resampled_candle_closed(self, candle: Dict, category: InstrumentCategory):
         """
         Callback triggered when a specific Category Resampler finalizes a candle.
         For Triple-Lock, we evaluate the unified state ONLY when the SPOT candle closes.
@@ -337,7 +338,7 @@ class FundManager:
             logger.info(f"💚 HEARTBEAT [{ts_str}] 💚| Category: {category} | Indicators: {ind_str}")
 
         # ONLY execute strategy decision synchronously when the SPOT candle acts as the anchor
-        if category != "SPOT":
+        if category != InstrumentCategory.SPOT:
             return
             
         # Pass the current position intent to explicitly evaluate Exit Rules if configured
@@ -391,7 +392,7 @@ class FundManager:
                     ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
                     ts_str = ts_dt.strftime('%d-%b %H:%M')
                     formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
-                    logger.info(f"Signal: EXIT ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
+                    logger.debug(f"Signal: EXIT ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
                     
                     pos = self.position_manager.current_position
                     opt_price = self._get_fallback_option_price(int(pos.symbol), signal_ts)
@@ -430,7 +431,7 @@ class FundManager:
                 ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
                 formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
-                logger.info(f"Signal: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
+                logger.debug(f"Signal: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
                 
             # 2. Handle Entries
             target_symbol = "26000" # default spot
@@ -490,9 +491,9 @@ class FundManager:
                 if new_qty > 0:
                     self.position_manager.quantity = new_qty
                     if self.invest_mode == "compound":
-                        logger.info(f"📈 [COMPOUND] Recalculated Qty: {new_qty} based on Capital: ₹{current_capital:,.2f} and Price: {entry_price}")
+                        logger.debug(f"📈 [COMPOUND] Recalculated Qty: {new_qty} based on Capital: ₹{current_capital:,.2f} and Price: {entry_price}")
                     else:
-                        logger.info(f"💰 [FIXED] Calculated Qty: {new_qty} based on Budget: ₹{self.initial_budget:,.2f} and Price: {entry_price}")
+                        logger.debug(f"💰 [FIXED] Calculated Qty: {new_qty} based on Budget: ₹{self.initial_budget:,.2f} and Price: {entry_price}")
                 else:
                     logger.warning(f"⚠️ Insufficient budget (₹{capital_to_use:,.2f}) for entry at {entry_price}. Qty remains {self.position_manager.quantity}")
 

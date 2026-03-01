@@ -124,6 +124,9 @@ class RuleStrategy:
                         val = val.replace("ACTIVE_", active_prefix, 1)
                     elif val.startswith("INVERSE_"):
                         val = val.replace("INVERSE_", inverse_prefix, 1)
+                    elif not val.startswith(("CE_", "PE_", "NIFTY_")):
+                        # Auto-apply NIFTY_ prefix for spot indicators
+                        val = f"NIFTY_{val}"
                     eval_cond[key] = val
                     
             # Options (ACTIVE/INVERSE) cross the SAME way for both Calls and Puts (price goes up = good)

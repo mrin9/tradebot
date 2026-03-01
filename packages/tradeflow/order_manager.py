@@ -47,7 +47,7 @@ class PaperTradingOrderManager(OrderManager):
         }
         
         self.orders[order_id] = order
-        logger.info(f"[PAPER TRADE] Placing Order: {side} {quantity} {symbol} @ {order_type} | ID: {order_id}")
+        logger.debug(f"[PAPER TRADE] Placing Order: {side} {quantity} {symbol} @ {order_type} | ID: {order_id}")
         return order
 
     def cancel_order(self, order_id: str) -> bool:

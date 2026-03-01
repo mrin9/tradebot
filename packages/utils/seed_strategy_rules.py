@@ -259,8 +259,8 @@ RULES = [
         "indicators": [
             { "indicatorId": "fast_ema", "displayLabel": "Fast EMA", "type": "EMA", "params": { "period": 5 }, "InstrumentType": "SPOT" },
             { "indicatorId": "slow_ema", "displayLabel": "Slow EMA", "type": "EMA", "params": { "period": 21 }, "InstrumentType": "SPOT" },
-            { "indicatorId": "opt_fast_ema", "displayLabel": "Options Fast EMA", "type": "EMA", "params": { "period": 5 }, "InstrumentType": "OPTIONS_BOTH" },
-            { "indicatorId": "opt_slow_ema", "displayLabel": "Options Slow EMA", "type": "EMA", "params": { "period": 21 }, "InstrumentType": "OPTIONS_BOTH" }
+            { "indicatorId": "fast_ema", "displayLabel": "Options Fast EMA", "type": "EMA", "params": { "period": 5 }, "InstrumentType": "OPTIONS_BOTH" },
+            { "indicatorId": "slow_ema", "displayLabel": "Options Slow EMA", "type": "EMA", "params": { "period": 21 }, "InstrumentType": "OPTIONS_BOTH" }
         ],
         "entry": {
             "intent": "AUTO",
@@ -268,8 +268,8 @@ RULES = [
             "evaluateInverse": True,
             "operator": "AND",
             "conditions": [
-                { "type": "crossover", "fastIndicatorId": "ACTIVE_opt_fast_ema", "slowIndicatorId": "ACTIVE_opt_slow_ema" },
-                { "type": "threshold", "indicatorId": "INVERSE_opt_fast_ema", "op": "<", "valueIndicatorId": "INVERSE_opt_slow_ema" },
+                { "type": "crossover", "fastIndicatorId": "ACTIVE_fast_ema", "slowIndicatorId": "ACTIVE_slow_ema" },
+                { "type": "threshold", "indicatorId": "INVERSE_fast_ema", "op": "<", "valueIndicatorId": "INVERSE_slow_ema" },
                 { "type": "threshold", "indicatorId": "fast_ema", "op": ">", "valueIndicatorId": "slow_ema" }
             ]
         },
@@ -278,7 +278,7 @@ RULES = [
             "evaluateInverse": False,
             "operator": "AND",
             "conditions": [
-                { "type": "crossunder", "fastIndicatorId": "ACTIVE_opt_fast_ema", "slowIndicatorId": "ACTIVE_opt_slow_ema" }
+                { "type": "crossunder", "fastIndicatorId": "ACTIVE_fast_ema", "slowIndicatorId": "ACTIVE_slow_ema" }
             ]
         },
         "restrictions": {}

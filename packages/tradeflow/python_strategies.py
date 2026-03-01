@@ -3,26 +3,26 @@ from packages.tradeflow.rule_strategy import Signal
 class TripleLockStrategy:
     """Target this via CLI: --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy"""
     def on_resampled_candle_closed(self, candle, indicators, current_position_intent=None):
-        spot_fast = indicators.get("fast_ema")
-        spot_slow = indicators.get("slow_ema")
+        spot_fast = indicators.get("NIFTY_fast_ema")
+        spot_slow = indicators.get("NIFTY_slow_ema")
 
         # FundManager pre-populates ACTIVE and INVERSE keys for you based on current_position_intent!
-        active_fast = indicators.get("ACTIVE_opt_fast_ema")
-        active_slow = indicators.get("ACTIVE_opt_slow_ema")
-        inverse_fast = indicators.get("INVERSE_opt_fast_ema")
-        inverse_slow = indicators.get("INVERSE_opt_slow_ema")
+        active_fast = indicators.get("ACTIVE_fast_ema")
+        active_slow = indicators.get("ACTIVE_slow_ema")
+        inverse_fast = indicators.get("INVERSE_fast_ema")
+        inverse_slow = indicators.get("INVERSE_slow_ema")
 
         # Wait for warmup
         # 1. Gather Required Data
-        ce_fast = indicators.get("CE_opt_fast_ema")
-        ce_slow = indicators.get("CE_opt_slow_ema")
-        ce_f_prev = indicators.get("CE_opt_fast_ema_prev")
-        ce_s_prev = indicators.get("CE_opt_slow_ema_prev")
+        ce_fast = indicators.get("CE_fast_ema")
+        ce_slow = indicators.get("CE_slow_ema")
+        ce_f_prev = indicators.get("CE_fast_ema_prev")
+        ce_s_prev = indicators.get("CE_slow_ema_prev")
 
-        pe_fast = indicators.get("PE_opt_fast_ema")
-        pe_slow = indicators.get("PE_opt_slow_ema")
-        pe_f_prev = indicators.get("PE_opt_fast_ema_prev")
-        pe_s_prev = indicators.get("PE_opt_slow_ema_prev")
+        pe_fast = indicators.get("PE_fast_ema")
+        pe_slow = indicators.get("PE_slow_ema")
+        pe_f_prev = indicators.get("PE_fast_ema_prev")
+        pe_s_prev = indicators.get("PE_slow_ema_prev")
 
         # Wait for history
         if ce_f_prev is None or pe_f_prev is None:
@@ -60,8 +60,8 @@ class SimpleMACDStrategy:
 
     def on_resampled_candle_closed(self, candle, indicators, current_position_intent=None):
         # Use explicit CE and PE prefixes
-        ce_hist = indicators.get("CE_opt_macd_hist")
-        pe_hist = indicators.get("PE_opt_macd_hist")
+        ce_hist = indicators.get("CE_macd_hist")
+        pe_hist = indicators.get("PE_macd_hist")
 
         # Wait for warmup
         if ce_hist is None or pe_hist is None:
