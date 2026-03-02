@@ -67,7 +67,18 @@ docker run --rm --env-file .env <image-name> python <path/to/script.py> [args]
 docker run --rm --env-file .env trade-bot-api:latest python tests/backtest/test_xts_socket.py --events all
 ```
 
-## 5. Registry Workflow
+## 5. Shell Access
+To debug or run manual scripts inside a running container:
+```bash
+docker compose exec -it api bash
+```
+
+## 6. Database Access
+- **Service Name**: `mongo` (Use this when connecting from the `api` container).
+- **External Port**: `27017` (Mapped to host for Compass access).
+- **Connection URI**: `mongodb://localhost:27017/`
+
+## 7. Registry Workflow
 
 To maintain a clean production environment, images are built locally and pushed to a registry.
 

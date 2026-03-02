@@ -93,7 +93,38 @@ If you want to run a one-off script (like a connection test) without a full comp
 docker run --rm --env-file .env yourusername/trade-bot-api:latest python tests/backtest/test_xts_socket.py --events 1501-partial
 ```
 
-## 6. Security (Optional but Recommended)
+### Running the CLI (Interactive)
+To run data collection or other interactive CLI commands:
+
+```bash
+# Enter the container shell
+docker compose exec -it api bash
+
+# Inside the container, run the CLI
+python apps/cli/main.py --help
+python apps/cli/main.py historical fetch --days 5
+```
+
+## 6. Database Access (MongoDB Compass)
+
+To connect MongoDB Compass to the database running in Docker:
+
+### Local Machine (Docker Desktop)
+- **Connection String**: `mongodb://localhost:27017/`
+- **Username/Password**: None (unless you configured them in compose)
+
+### VPS (Remote Access)
+1. **SSH Tunnel (Recommended)**:
+   - In Compass, go to **Advanced Connection Options** -> **SSH Tunnel**.
+   - Set **SSH Host** to your VPS IP.
+   - Set **SSH Username** to your VPS user (e.g., `ubuntu`).
+   - Use your SSH Key.
+   - **Connection String**: `mongodb://localhost:27017/` (Compass will tunnel this to the VPS).
+2. **Direct Connection (Not Recommended)**:
+   - Ensure port `27017` is open in UFW.
+   - **Connection String**: `mongodb://YOUR_VPS_IP:27017/`
+
+## 7. Security (Optional but Recommended)
 
 ### Setup UFW Firewall
 ```bash
