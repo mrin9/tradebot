@@ -7,7 +7,7 @@ Uses IndicatorCalculator for centralized indicator logic.
 """
 
 import os
-from typing import Dict, List
+from typing import Dict, List, Any, Tuple, Optional
 from collections import deque
 from datetime import datetime
 import logging

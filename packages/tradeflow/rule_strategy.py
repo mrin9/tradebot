@@ -4,8 +4,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# SignalType Enum moved to tradeflow.types as SignalType
-# SignalTypeReturnType moved to tradeflow.types
+# SignalType Enum moved to tradeflow.types
+# SignalReturnType moved to tradeflow.types
 
 class RuleStrategy:
     """
