@@ -13,6 +13,8 @@ sudo apt install -y docker.io docker-buildx-plugin docker-compose-plugin
 sudo systemctl enable --now docker
 
 # 1. Grant Permission (Fix: "permission denied while trying to connect to the docker API")
+# Note: If your user doesn't have sudo rights for usermod, run this as root:
+# usermod -aG docker pradeep
 sudo usermod -aG docker $USER
 
 # 2. LOG OUT and Log in again for the group change to take effect!
