@@ -30,7 +30,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { init, dispose } from 'klinecharts';
-import { registerCustomIndicators } from '~/lib/indicators';
 import Button from 'primevue/button';
 
 const chartRef = ref(null);

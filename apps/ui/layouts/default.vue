@@ -60,7 +60,7 @@
             <div class="flex align-items-center gap-2">
               <i class="pi pi-microchip"></i>
               <span><strong>ML Model:</strong> {{ extractFilename(backtestStore.selectedBacktest.config.mlModelPath)
-              }}</span>
+                }}</span>
             </div>
           </Tag>
         </div>
@@ -192,8 +192,6 @@ import Timeline from 'primevue/timeline';
 import Tag from 'primevue/tag';
 import Tree from 'primevue/tree';
 import ThemeSwitcherComp from '~/components/ThemeSwitcherComp.vue';
-import { backtestStore } from '~/lib/store';
-import { parseSafeTimestamp } from '~/lib/trade-utils';
 
 const getDateYYYYMMDD = (tObj) => {
   if (!tObj) return 'Unknown';
