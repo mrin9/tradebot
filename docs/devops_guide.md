@@ -104,8 +104,21 @@ docker build -t yourusername/trade-bot-web:latest .
 docker push yourusername/trade-bot-web:latest
 ```
 
-## 5. Maintenance
+## 8. Maintenance & Cleanup
+
 ```bash
-# Prune old images
-docker system prune -a
+# Remove all stopped containers
+docker container prune
+
+# Remove all unused images (not just dangling ones)
+docker image prune -a
+
+# Remove all unused networks
+docker network prune
+
+# Full System Cleanup (removes stopped containers, unused networks, and dangling images/build cache)
+docker system prune
+
+# Full System Cleanup (including unused images)
+docker system prune -a --volumes
 ```

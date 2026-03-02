@@ -11,7 +11,13 @@ sudo apt update && sudo apt upgrade -y
 # Install Docker & Compose
 sudo apt install -y docker.io docker-buildx-plugin docker-compose-plugin
 sudo systemctl enable --now docker
+
+# 1. Grant Permission (Fix: "permission denied while trying to connect to the docker API")
 sudo usermod -aG docker $USER
+
+# 2. LOG OUT and Log in again for the group change to take effect!
+# If you don't want to log out, you can run:
+newgrp docker
 ```
 
 ## 2. Pre-deployment (Local Machine)
@@ -173,6 +179,12 @@ source .venv/bin/activate
 # 4. NOW install requirements
 pip install -r requirements.txt
 ```
+
+### Troubleshooting: "XTS_ROOT_URL is not set"
+If you see warnings about unset variables when running `docker compose`:
+1.  Ensure you have a `.env` file in the same directory as `docker-compose.yml`.
+2.  Check that the variable is correctly defined (it must match exactly).
+3.  If running via `docker run`, make sure to pass `--env-file .env`.
 
 ### Troubleshooting: "Command insert requires authentication"
 If you see this error, it means your MongoDB instance has security enabled. You need to provide a username and password in your `MONGODB_URI`.
