@@ -14,12 +14,20 @@ You can run tests from the project root using the following commands:
 
 #### Run All Tests
 ```bash
+# Local
 pytest tests/
+
+# Docker (VPS/Container)
+docker compose exec api pytest tests/
 ```
 
 #### Run a Specific Test File
 ```bash
+# Local
 pytest tests/test_fund_manager.py
+
+# Docker (VPS/Container)
+docker compose exec api pytest tests/backtest/test_xts_socket.py
 ```
 
 #### Run a Specific Test Case

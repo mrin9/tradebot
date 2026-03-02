@@ -24,8 +24,11 @@ docker login
 ```
 
 ### 2. Build and Tag Images
+> [!IMPORTANT]
+> You **must** set your Docker Hub username for the commands below to work. If you see an `invalid reference format` error, it means this variable is empty.
+
 ```bash
-# Set your Docker Hub username
+# Replace "yourusername" with your actual Docker Hub ID
 export DOCKER_USER="yourusername"
 
 # Build Backend
@@ -67,13 +70,22 @@ Instead of building on the VPS, use the production compose file which pulls pre-
 docker compose up -d
 ```
 
-### Manual Build on VPS (Alternative)
-If you prefer building directly on the VPS:
-```bash
 docker compose up -d --build
 ```
 
-## 4. Security (Optional but Recommended)
+## 5. Verification (Running Tests)
+
+Once the containers are running, you should verify the installation by running the automated tests inside the container.
+
+```bash
+# Run all tests
+docker compose exec api pytest tests/
+
+# Run specific XTS Socket test
+docker compose exec api pytest tests/backtest/test_xts_socket.py
+```
+
+## 6. Security (Optional but Recommended)
 
 ### Setup UFW Firewall
 ```bash

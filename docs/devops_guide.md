@@ -45,6 +45,17 @@ docker compose logs -f
 docker compose logs -f api
 ```
 
+## 4. Running Tests
+You can run automated tests directly inside the backend container:
+
+```bash
+# Run all tests
+docker compose exec api pytest tests/
+
+# Run a specific test
+docker compose exec api pytest tests/backtest/test_xts_socket.py
+```
+
 ## 4. Registry Workflow
 
 To maintain a clean production environment, images are built locally and pushed to a registry.
