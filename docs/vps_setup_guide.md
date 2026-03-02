@@ -85,6 +85,14 @@ docker compose exec api pytest tests/
 docker compose exec api pytest tests/backtest/test_xts_socket.py
 ```
 
+### Running Standalone Scripts
+If you want to run a one-off script (like a connection test) without a full compose stack:
+
+```bash
+# Using docker run (requires .env file)
+docker run --rm --env-file .env yourusername/trade-bot-api:latest python tests/backtest/test_xts_socket.py --events 1501-partial
+```
+
 ## 6. Security (Optional but Recommended)
 
 ### Setup UFW Firewall

@@ -56,7 +56,18 @@ docker compose exec api pytest tests/
 docker compose exec api pytest tests/backtest/test_xts_socket.py
 ```
 
-## 4. Registry Workflow
+### Running One-off Scripts
+You can run any script from the project root inside a temporary container:
+
+```bash
+# General Pattern
+docker run --rm --env-file .env <image-name> python <path/to/script.py> [args]
+
+# Example: Run XTS Socket Tester
+docker run --rm --env-file .env trade-bot-api:latest python tests/backtest/test_xts_socket.py --events all
+```
+
+## 5. Registry Workflow
 
 To maintain a clean production environment, images are built locally and pushed to a registry.
 
