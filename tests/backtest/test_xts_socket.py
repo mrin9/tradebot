@@ -21,8 +21,12 @@ class XTSSocketTester:
     def __init__(self, store_in_db=False, events_mode="1501-partial"):
         self.store_in_db = store_in_db
         self.events_mode = events_mode
-        self.db = MongoRepository.get_db()
+        self.db = None
         self.collection_name = "xts_socket_data_collection_test"
+        
+        if self.store_in_db:
+            self.db = MongoRepository.get_db()
+            logger.info("MongoDB Connection initialized for storage.")
         
         # Set broadcast mode based on requested events
         if "partial" in events_mode.lower():

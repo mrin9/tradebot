@@ -57,7 +57,11 @@ Isolation is handled automatically. If you create a new test, it will safely use
 ### Seeding the Frozen Database
 Before running E2E tests, ensure the frozen data is seeded:
 ```bash
+# Local
 python3 scripts/seed_test_data.py
+
+# Docker
+docker compose exec api python scripts/seed_test_data.py
 ```
 
 ---

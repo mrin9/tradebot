@@ -48,10 +48,18 @@ docker push $DOCKER_USER/trade-bot-web:latest
 
 ## 3. VPS Project Setup
 
+> [!IMPORTANT]
+> GitHub no longer supports account passwords for Git operations. You must use a **Personal Access Token (PAT)** or **SSH Keys**.
+
 ```bash
-# Clone Repository
-git clone https://github.com/your-repo/trade-bot-v2.git
-cd trade-bot-v2
+# Clone Repository (Replace <TOKEN> and <USERNAME> or use SSH)
+# Option A: HTTPS with PAT
+git clone https://<USERNAME>:<TOKEN>@github.com/mrin9/tradebot.git
+
+# Option B: SSH (Recommended if SSH keys are setup)
+git clone git@github.com:mrin9/tradebot.git
+
+cd tradebot
 
 # Create Environment File
 cp .env.example .env
@@ -100,9 +108,19 @@ To run data collection or other interactive CLI commands:
 # Enter the container shell
 docker compose exec -it api bash
 
-# Inside the container, run the CLI
 python apps/cli/main.py --help
 python apps/cli/main.py historical fetch --days 5
+```
+
+### Seeding Test Data
+If you need mock data for backtesting:
+
+```bash
+# Docker
+docker compose exec api python scripts/seed_test_data.py
+
+# Manual
+python scripts/seed_test_data.py
 ```
 
 ## 6. Database Access (MongoDB Compass)
@@ -135,5 +153,36 @@ sudo ufw allow 4321/tcp # Dashboard
 sudo ufw enable
 ```
 
-### SSL with Nginx Proxy Manager
-For production, it is recommended to run Nginx Proxy Manager or simple Nginx with Certbot to serve the UI over HTTPS.
+## 8. Manual Setup (Non-Docker)
+
+If you chose to run the app directly on the host (not recommended compared to Docker), you may encounter the `externally-managed-environment` error. 
+
+### To Fix:
+You **must** use a virtual environment. Modern Linux prohibits `pip install` globally.
+
+```bash
+# 1. Install venv if missing
+sudo apt update && sudo apt install -y python3-venv
+
+# 2. Create the environment
+python3 -m venv .venv
+
+# 3. Activate it
+source .venv/bin/activate
+
+# 4. NOW install requirements
+pip install -r requirements.txt
+```
+
+### Troubleshooting: "Command insert requires authentication"
+If you see this error, it means your MongoDB instance has security enabled. You need to provide a username and password in your `MONGODB_URI`.
+
+**Update your `.env` file**:
+```bash
+# Format: mongodb://username:password@host:port/database
+MONGODB_URI=mongodb://admin:yourpassword@localhost:27017/trade_bot?authSource=admin
+```
+
+---
+
+## 9. Security (Optional but Recommended)

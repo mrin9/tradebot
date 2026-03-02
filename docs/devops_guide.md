@@ -67,6 +67,12 @@ docker run --rm --env-file .env <image-name> python <path/to/script.py> [args]
 docker run --rm --env-file .env trade-bot-api:latest python tests/backtest/test_xts_socket.py --events all
 ```
 
+### Seeding Data
+To populate the `tradebot_frozen_test` database with mock data:
+```bash
+docker compose exec api python scripts/seed_test_data.py
+```
+
 ## 5. Shell Access
 To debug or run manual scripts inside a running container:
 ```bash
