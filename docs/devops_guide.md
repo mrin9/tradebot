@@ -45,7 +45,27 @@ docker compose logs -f
 docker compose logs -f api
 ```
 
-### maintenance
+## 4. Registry Workflow
+
+To maintain a clean production environment, images are built locally and pushed to a registry.
+
+### Tagging Strategy
+- `latest`: Always points to the most recent stable build.
+- `vX.Y.Z`: Semantic versioning for production releases.
+
+### Publishing Images
+```bash
+# API
+docker build -t yourusername/trade-bot-api:latest .
+docker push yourusername/trade-bot-api:latest
+
+# UI
+cd apps/ui
+docker build -t yourusername/trade-bot-web:latest .
+docker push yourusername/trade-bot-web:latest
+```
+
+## 5. Maintenance
 ```bash
 # Prune old images
 docker system prune -a

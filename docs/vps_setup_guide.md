@@ -14,7 +14,36 @@ sudo systemctl enable --now docker
 sudo usermod -aG docker $USER
 ```
 
-## 2. Project Setup
+## 2. Pre-deployment (Local Machine)
+
+Before deploying to the VPS, you should build and push your images to a registry like Docker Hub.
+
+### 1. Login to Docker Hub
+```bash
+docker login
+```
+
+### 2. Build and Tag Images
+```bash
+# Set your Docker Hub username
+export DOCKER_USER="yourusername"
+
+# Build Backend
+docker build -t $DOCKER_USER/trade-bot-api:latest .
+
+# Build Frontend
+cd apps/ui
+docker build -t $DOCKER_USER/trade-bot-web:latest .
+cd ../..
+```
+
+### 3. Push to Docker Hub
+```bash
+docker push $DOCKER_USER/trade-bot-api:latest
+docker push $DOCKER_USER/trade-bot-web:latest
+```
+
+## 3. VPS Project Setup
 
 ```bash
 # Clone Repository
@@ -27,14 +56,21 @@ nano .env
 # Fill in your XTS Credentials and Mongo URI (if external)
 ```
 
-## 3. Deployment
+## 4. Deployment (using Images)
+
+Instead of building on the VPS, use the production compose file which pulls pre-built images.
 
 ```bash
-# Build and Run Containers
-docker compose up -d --build
+# 1. Transfer docker-compose.prod.yml to VPS
+# 2. Rename it to docker-compose.yml on VPS
+# 3. Run:
+docker compose up -d
+```
 
-# Verify Running Containers
-docker ps
+### Manual Build on VPS (Alternative)
+If you prefer building directly on the VPS:
+```bash
+docker compose up -d --build
 ```
 
 ## 4. Security (Optional but Recommended)
