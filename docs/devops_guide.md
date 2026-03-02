@@ -7,29 +7,31 @@ Instructions for building, maintaining, and troubleshooting the Dockerized appli
 - **Backend Container (`trade-bot-api`)**:
     - Base Image: `python:3.11-slim`
     - Runs: `uvicorn` server for API and Socket.IO.
+    - Health Check: Verifies health via `/api/status`.
     - Volumes: Maps project root for code access (in dev).
 
 - **Frontend Container (`trade-bot-web`)**:
-    - Base Image: `nginx:alpine`
-    - Build Stage: `node:18-alpine` builds the Static Assets.
-    - Configuration: `nginx.conf` proxies `/api` requests to the Backend.
+    - Build Stage: `node:18-alpine` (Nuxt `generate`).
+    - Final Image: `nginx:alpine` serving static assets.
+    - Configuration: `nginx.conf` handles routing and API proxying.
 
 - **Database Container (`trade-bot-mongo`)**:
     - Image: `mongo:latest`
-    - Volume: `mongo_data` persists data across restarts.
+    - Health Check: Verifies health via `mongosh --eval`.
+    - Volume: `mongo_data` persists data.
 
 ## 2. Build Instructions
 
 ### Rebuild specific service
 ```bash
-docker-compose build api
-docker-compose up -d api
+docker compose build api
+docker compose up -d api
 ```
 
 ### Full Rebuild (No Cache)
 ```bash
-docker-compose build --no-cache
-docker-compose up -d
+docker compose build --no-cache
+docker compose up -d --build
 ```
 
 ## 3. Logging & Monitoring
@@ -37,10 +39,10 @@ docker-compose up -d
 ### View Logs
 ```bash
 # Stream logs for all services
-docker-compose logs -f
+docker compose logs -f
 
 # Stream logs for API only
-docker-compose logs -f api
+docker compose logs -f api
 ```
 
 ### maintenance

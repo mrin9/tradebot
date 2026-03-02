@@ -283,11 +283,16 @@ Indicators:
                     "cyclePnL": cycle_pnl,
                     "entry": {
                         "time": getattr(entry_chunk, 'formatted_entry_time', ''),
-                        "exchangeInstrumentId": meta["symbol"], # Use description here
+                        "epochTime": int(getattr(entry_chunk, 'entry_time').timestamp()) if hasattr(entry_chunk, 'entry_time') else 0,
+                        "exchangeInstrumentId": raw_symbol,
+                        "instrumentDescription": meta["symbol"],
                         "optionType": opt_type,
                         "transaction": getattr(entry_chunk, 'entry_transaction_desc', ''),
+                        "price": getattr(entry_chunk, 'entry_price', 0.0),
+                        "lotCount": getattr(entry_chunk, 'initial_quantity', 0),
                         "totalPrice": getattr(entry_chunk, 'initial_quantity', 0) * settings.NIFTY_LOT_SIZE * getattr(entry_chunk, 'entry_price', 0),
-                        "signal": f"{getattr(entry_chunk, 'entry_signal', 'N/A')} ({getattr(entry_chunk, 'entry_reason_description', '')})"
+                        "signal": getattr(entry_chunk, 'entry_signal', 'N/A'),
+                        "signalDescription": getattr(entry_chunk, 'entry_reason_description', '')
                     }
                 }
 
@@ -295,8 +300,11 @@ Indicators:
                 for i, tch in enumerate(target_chunks, 1):
                     cycle_obj[f"target{i}"] = {
                         "time": getattr(tch, 'formatted_exit_time', ''),
+                        "epochTime": int(getattr(tch, 'exit_time').timestamp()) if hasattr(tch, 'exit_time') else 0,
                         "actionPnL": getattr(tch, 'pnl', 0),
                         "transaction": getattr(tch, 'exit_transaction_desc', ''),
+                        "price": getattr(tch, 'exit_price', 0.0),
+                        "lotCount": getattr(tch, 'quantity', 0),
                         "totalPrice": getattr(tch, 'quantity', 0) * settings.NIFTY_LOT_SIZE * getattr(tch, 'exit_price', 0)
                     }
 
@@ -304,8 +312,12 @@ Indicators:
                 if exit_chunk:
                     cycle_obj["exit"] = {
                         "time": getattr(exit_chunk, 'formatted_exit_time', ''),
+                        "epochTime": int(getattr(exit_chunk, 'exit_time').timestamp()) if hasattr(exit_chunk, 'exit_time') else 0,
                         "transaction": getattr(exit_chunk, 'exit_transaction_desc', ''),
-                        "reason": getattr(exit_chunk, 'status', 'N/A'),
+                        "price": getattr(exit_chunk, 'exit_price', 0.0),
+                        "lotCount": getattr(exit_chunk, 'quantity', 0),
+                        "signal": getattr(exit_chunk, 'status', 'N/A'),
+                        "signalDescription": getattr(exit_chunk, 'exit_reason_description', ''),
                         "totalPrice": getattr(exit_chunk, 'quantity', 0) * settings.NIFTY_LOT_SIZE * getattr(exit_chunk, 'exit_price', 0)
                     }
 

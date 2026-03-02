@@ -193,6 +193,18 @@ import Tag from 'primevue/tag';
 import Tree from 'primevue/tree';
 import ThemeSwitcherComp from '~/components/ThemeSwitcherComp.vue';
 import { backtestStore } from '~/lib/store';
+import { parseSafeTimestamp } from '~/lib/trade-utils';
+
+const getDateYYYYMMDD = (tObj) => {
+  if (!tObj) return 'Unknown';
+  let epoch = tObj.epochTime;
+  if (!epoch && tObj.time) epoch = parseSafeTimestamp(tObj.time);
+  if (!epoch && typeof tObj === 'string') epoch = parseSafeTimestamp(tObj);
+  if (!epoch) return 'Unknown';
+  
+  const d = new Date(epoch * 1000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 const route = useRoute();
 const sidebarVisible = ref(true);
@@ -221,38 +233,40 @@ const isAnalysisRoute = computed(() =>
 );
 
 const treeNodes = computed(() => {
-  const trades = backtestStore.selectedBacktest?.trades || [];
+  const trades = backtestStore.selectedBacktest?.instrumentsTraded || backtestStore.selectedBacktest?.tradeCycles || backtestStore.selectedBacktest?.trades || [];
   const instrumentGroups = {};
 
   trades.forEach((t, index) => {
-    const symbol = t.symbol || t.instrumentDesc || t.id || 'Unknown';
+    const symbol = t.entry?.instrumentDescription || t.entry?.exchangeInstrumentId || t.symbol || t.instrumentDesc || t.id || 'Unknown';
     if (!instrumentGroups[symbol]) {
       instrumentGroups[symbol] = {
         key: symbol,
         label: symbol,
-        data: { type: 'instrument', id: t.instrumentId || t.symbol, desc: symbol },
+        data: { type: 'instrument', id: t.entry?.instrumentDescription || t.entry?.exchangeInstrumentId || t.instrumentId || t.symbol, desc: symbol },
         children: {} // Temp object to group by cycle
       };
     }
 
-    const cycleId = t.tradeCycle || 'N/A';
+    const cycleId = t.cycleId || t.tradeCycle || 'N/A';
+    const entryTimeStr = formatTimeLocalized(t.entry);
     if (!instrumentGroups[symbol].children[cycleId]) {
-      const entryTimeStr = formatTimeLocalized(t.entryTime);
       instrumentGroups[symbol].children[cycleId] = {
         key: `${symbol}-${cycleId}`,
         label: `${cycleId} (${entryTimeStr})`,
-        data: { type: 'cycle', instrumentId: t.instrumentId || t.symbol, cycleId: cycleId },
+        data: { type: 'cycle', instrumentId: t.entry?.instrumentDescription || t.entry?.exchangeInstrumentId || t.instrumentId || t.symbol, cycleId: cycleId },
         children: []
       };
     }
 
-    const exitTimeStr = formatTimeLocalized(t.exitTime);
-    const label = `${exitTimeStr} [${t.exitReason || 'OPEN'}]`;
+    const exitTimeStr = formatTimeLocalized(t.exit || t.exitTime);
+    const exitReason = t.exit?.signal || t.exit?.reason || t.exitReason || 'OPEN';
+    const label = `${exitTimeStr} [${exitReason}]`;
+    const pnl = t.cyclePnL !== undefined ? t.cyclePnL : t.pnl;
 
     instrumentGroups[symbol].children[cycleId].children.push({
       key: `trade-${index}`,
       label: label,
-      data: { type: 'trade', index: index, pnl: t.pnl }
+      data: { type: 'trade', index: index, pnl: pnl }
     });
   });
 
@@ -263,11 +277,12 @@ const treeNodes = computed(() => {
 });
 
 const availableDates = computed(() => {
-  const trades = backtestStore.selectedBacktest?.trades || [];
+  const trades = backtestStore.selectedBacktest?.tradeCycles || backtestStore.selectedBacktest?.trades || [];
   const dates = new Set();
   trades.forEach(t => {
-    if (t.entryTime) {
-      dates.add(t.entryTime.split('T')[0]);
+    const entryObj = t.entry || t.entryTime;
+    if (entryObj) {
+      dates.add(getDateYYYYMMDD(entryObj));
     }
   });
   const sorted = Array.from(dates).sort((a, b) => b.localeCompare(a));
@@ -278,53 +293,81 @@ const availableDates = computed(() => {
 });
 
 const groupedTradesByDate = computed(() => {
-  const trades = backtestStore.selectedBacktest?.trades || [];
+  const trades = backtestStore.selectedBacktest?.tradeCycles || backtestStore.selectedBacktest?.trades || [];
   const groups = {};
 
   trades.forEach(t => {
-    const date = t.entryTime ? t.entryTime.split('T')[0] : 'Unknown';
+    const entryObj = t.entry || t.entryTime;
+    const exitObj = t.exit || t.exitTime;
+    
+    // Determine timestamps once here to reuse
+    let entryEp = t.entry?.epochTime || parseSafeTimestamp(t.entry?.time || t.entryTime);
+    let exitEp = t.exit?.epochTime || parseSafeTimestamp(t.exit?.time || t.exitTime);
+    
+    const date = entryObj ? getDateYYYYMMDD(entryObj) : 'Unknown';
     if (!groups[date]) groups[date] = {};
 
-    const symbol = t.symbol || t.id || 'Unknown';
+    const symbol = t.entry?.instrumentDescription || t.entry?.exchangeInstrumentId || t.symbol || t.id || 'Unknown';
     if (!groups[date][symbol]) groups[date][symbol] = { totalPnl: 0, cycles: {} };
 
-    const cycleId = t.tradeCycle || 'N/A';
+    const cycleId = t.cycleId || t.tradeCycle || 'N/A';
     if (!groups[date][symbol].cycles[cycleId]) {
       groups[date][symbol].cycles[cycleId] = {
         id: cycleId,
         totalPnl: 0,
-        startTime: t.entryTime,
-        endTime: t.exitTime,
+        startTime: entryT,
+        endTime: exitT,
         executions: []
       };
     }
 
     const cycle = groups[date][symbol].cycles[cycleId];
-    cycle.totalPnl += (t.pnl || 0);
-    groups[date][symbol].totalPnl += (t.pnl || 0);
+    const pnl = t.cyclePnL !== undefined ? t.cyclePnL : (t.pnl || 0);
+    cycle.totalPnl += pnl;
+    groups[date][symbol].totalPnl += pnl;
 
     // Update cycle boundaries
-    if (t.entryTime && (!cycle.startTime || t.entryTime < cycle.startTime)) cycle.startTime = t.entryTime;
-    if (t.exitTime && (!cycle.endTime || t.exitTime > cycle.endTime)) cycle.endTime = t.exitTime;
+    if (entryEp && (!cycle.startTime || entryEp < cycle.startTime)) cycle.startTime = entryEp;
+    if (exitEp && (!cycle.endTime || exitEp > cycle.endTime)) cycle.endTime = exitEp;
 
-    // Add Entry execution (if not already added for this cycle)
+    // Add Entry execution
     if (!cycle.executions.some(e => e.type === 'ENTRY')) {
+      let entryPrice = t.entryPrice;
+      if (t.entry && !entryPrice) {
+        entryPrice = t.entry.price || 0;
+        if (!entryPrice && t.entry.transaction) {
+          const m = t.entry.transaction.match(/(?:@|at)\s+([\d.]+)/);
+          if (m) entryPrice = parseFloat(m[1]);
+        }
+        if (!entryPrice && t.entry.totalPrice) entryPrice = t.entry.totalPrice / 65;
+      }
+
       cycle.executions.push({
         type: 'ENTRY',
-        time: t.entryTime,
-        price: t.entryPrice,
-        reason: t.signal,
-        reasonDesc: t.entryReasonDescription
+        time: entryEp,
+        price: entryPrice,
+        reason: t.entry?.signal || t.signal,
+        reasonDesc: t.entry?.signalDescription || t.entryReasonDescription
       });
     }
 
     // Add Exit execution
+    let exitPrice = t.exitPrice;
+    if (t.exit && !exitPrice) {
+      exitPrice = t.exit.price || 0;
+      if (!exitPrice && t.exit.transaction) {
+        const m = t.exit.transaction.match(/(?:@|at)\s+([\d.]+)/);
+        if (m) exitPrice = parseFloat(m[1]);
+      }
+      if (!exitPrice && t.exit.totalPrice) exitPrice = t.exit.totalPrice / 65;
+    }
+
     cycle.executions.push({
-      type: t.exitReason || 'EXIT',
-      time: t.exitTime,
-      price: t.exitPrice,
-      reason: t.exitReason,
-      reasonDesc: t.exitReasonDescription
+      type: t.exit?.signal || t.exit?.reason || t.exitReason || 'EXIT',
+      time: exitEp,
+      price: exitPrice,
+      reason: t.exit?.signal || t.exit?.reason || t.exitReason,
+      reasonDesc: t.exit?.signalDescription || t.exitReasonDescription
     });
   });
 
@@ -333,21 +376,19 @@ const groupedTradesByDate = computed(() => {
     Object.keys(groups[date]).forEach(symbol => {
       const instr = groups[date][symbol];
       instr.cycles = Object.values(instr.cycles).map(cycle => {
-        cycle.executions.sort((a, b) => new Date(a.time) - new Date(b.time));
+        cycle.executions.sort((a, b) => a.time - b.time);
         cycle.duration = calculateDuration(cycle.startTime, cycle.endTime);
         return cycle;
-      }).sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+      }).sort((a, b) => a.startTime - b.startTime);
     });
   });
 
   return groups;
 });
 
-const calculateDuration = (start, end) => {
-  if (!start || !end) return 'N/A';
-  const s = new Date(start.endsWith('Z') ? start : start + 'Z');
-  const e = new Date(end.endsWith('Z') ? end : end + 'Z');
-  const diffMs = e - s;
+const calculateDuration = (sEp, eEp) => {
+  if (!sEp || !eEp) return 'N/A';
+  const diffMs = (eEp - sEp) * 1000;
 
   const totalMinutes = Math.floor(diffMs / 60000);
   const hours = Math.floor(totalMinutes / 60);
@@ -359,9 +400,9 @@ const calculateDuration = (start, end) => {
   return `${mins} min${mins !== 1 ? 's' : ''}`;
 };
 
-const formatTimeOnly = (isoStr) => {
-  if (!isoStr) return '';
-  const date = new Date(isoStr.endsWith('Z') ? isoStr : isoStr + 'Z');
+const formatTimeOnly = (ep) => {
+  if (!ep) return '';
+  const date = new Date(ep * 1000);
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 };
 
@@ -409,14 +450,19 @@ const selectTrade = (index) => {
   backtestStore.selectedTradeIndex = index;
 };
 
-const formatTimeLocalized = (isoStr) => {
-  if (!isoStr) return '';
+const formatTimeLocalized = (tObj) => {
+  if (!tObj) return '';
   try {
-    // Handle both Unix timestamp (if legacy) and ISO string
-    const date = (typeof isoStr === 'number') ? new Date(isoStr * 1000) : new Date(isoStr + 'Z');
+    let epoch = 0;
+    if (typeof tObj === 'object') {
+       epoch = tObj.epochTime || parseSafeTimestamp(tObj.time);
+    } else {
+       epoch = parseSafeTimestamp(tObj);
+    }
+    const date = new Date(epoch * 1000);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   } catch (e) {
-    return isoStr;
+    return tObj?.time || tObj;
   }
 };
 

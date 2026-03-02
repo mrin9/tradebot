@@ -10,6 +10,7 @@ async def get_backtests():
     projection = {
         "_id": 1, # Keep _id to fallback if needed
         "trades": 0,
+        "tradeCycles": 0,
         "dailyPnl": 0
     }
     # Sort by timestamp or createdAt (whichever is present)

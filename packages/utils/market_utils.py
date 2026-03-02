@@ -203,6 +203,8 @@ class MarketUtils:
         raw_ts = MarketUtils._get_val(data, 'ExchangeTimeStamp', 'ltt')
         if raw_ts is None:
             raw_ts = MarketUtils._get_val(data, 'LastTradedTime', 'lut')
+        if raw_ts is None:
+            raw_ts = MarketUtils._get_val(data, 'LastUpdateTime', 'lut')
             
         utc_ts = DateUtils.xts_epoch_to_utc(raw_ts)
         

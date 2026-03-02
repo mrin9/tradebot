@@ -27,7 +27,7 @@ def get_parser():
     parser.add_argument("--instrument-type", type=str, choices=["CASH", "OPTIONS"], default="OPTIONS", help="Instrument to trade")
     parser.add_argument("--option-type", type=str, choices=["ITM", "ATM", "OTM"], default="ATM", help="Option Strike selection")
     parser.add_argument("--invest-mode", type=str, choices=["compound", "fixed"], default=settings.BACKTEST_INVEST_MODE)
-    parser.add_argument("--socket-event", type=str, choices=["1505-json-full", "1501-json-full", "1501-json-partial"], default="1505-json-full", help="Event to listen to on socket mode")
+    parser.add_argument("--socket-event", type=str, choices=["1505-json-full", "1501-json-full", "1501-json-partial", "1512-json-full", "1512-json-partial"], default="1501-json-partial", help="Event to listen to on socket mode")
     # Hybrid Strategy & Pyramiding
     parser.add_argument("--strategy-mode", type=str, choices=["rule", "ml", "python_code"], default="rule", help="Strategy engine: rule (JSON-DSL), ml, or python_code")
     parser.add_argument("--python-strategy-path", type=str, default=None, help="Path to custom python strategy file")

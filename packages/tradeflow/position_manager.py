@@ -154,8 +154,9 @@ class PositionManager:
             entry_reason = signal_dict.get('reason', 'N/A')
             nifty_price = signal_dict.get('nifty_price', 0.0)
             
+            date_prefix = trade_date.strftime("%Y%m%d")
             self._open_position(intent, price, timestamp, symbol, display_symbol, 
-                               cycle_id=f"cycle-{self.cycle_count}", 
+                               cycle_id=f"{date_prefix}-cycle-{self.cycle_count}", 
                                reason=entry_reason,
                                reason_desc=signal_dict.get('reason_desc', ''),
                                nifty_price=nifty_price)

@@ -9,6 +9,11 @@ services:
       - "27017:27017" # Exposed for local tools (Compass)
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - trade-net
 
@@ -19,18 +24,27 @@ services:
       dockerfile: Dockerfile
     container_name: trade-bot-api
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
     ports:
       - "8000:8000"
     environment:
-      - MONGODB_URI=mongodb://mongo:27017/
+      - MONGODB_URI=mongodb://mongo:27017/trade_bot
       - DB_NAME=trade_bot
       - XTS_API_KEY=${XTS_API_KEY}
       - XTS_API_SECRET=${XTS_API_SECRET}
       - XTS_ROOT_URL=${XTS_ROOT_URL}
+      - MARKET_API_KEY=${MARKET_API_KEY}
+      - MARKET_API_SECRET=${MARKET_API_SECRET}
+      - INTERACTIVE_API_KEY=${INTERACTIVE_API_KEY}
+      - INTERACTIVE_API_SECRET=${INTERACTIVE_API_SECRET}
     volumes:
-      - .:/app # Hot Reload
-    command: uvicorn apps.api.main:socket_app --host 0.0.0.0 --port 8000 --reload
+      - .:/app # Hot Reload for development
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/api/status" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - trade-net
 
@@ -41,9 +55,10 @@ services:
       dockerfile: Dockerfile
     container_name: trade-bot-web
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
-      - "4321:80" # Map to standard HTTP or 4321 as user prefers
+      - "4321:80"
     networks:
       - trade-net
 

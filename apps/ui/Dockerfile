@@ -10,12 +10,13 @@ RUN npm ci
 # Copy Source
 COPY . .
 
-# Build
-RUN npm run build
+# Build Static
+RUN npm run generate
 
 # Serve Stage
 FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
+# Nuxt 3 generate outputs to .output/public by default
+COPY --from=builder /app/.output/public /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

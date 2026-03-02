@@ -41,7 +41,7 @@ python apps/cli/main.py interactive
 
 ### Build & Run
 ```bash
-docker-compose up --build -d
+docker compose up -d --build
 ```
 
 ### Access Points
@@ -59,7 +59,7 @@ python apps/cli/main.py historical fetch --days 5
 
 ### Running a Simulation
 1. Ensure you have data in `nifty_candle`.
-2. Start the API (`docker-compose up`).
+2. Start the stack (`docker compose up -d`).
 3. Open Dashboard -> Tick Monitor.
 4. Select Date and Click **Start**.
 

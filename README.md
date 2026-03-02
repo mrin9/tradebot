@@ -24,10 +24,10 @@
     ```
 3.  **Run with Docker** (Easiest):
     ```bash
-    docker-compose up --build
+    docker compose up -d --build
     ```
     - **Dashboard**: [http://localhost:4321](http://localhost:4321)
-    - **API**: [http://localhost:8000](http://localhost:8000)
+    - **API Status**: [http://localhost:8000/api/status](http://localhost:8000/api/status)
 
 ### 3. Run Manually (Dev Mode)
 See [Operational Guide](docs/operational_guide.md) for detailed local setup.

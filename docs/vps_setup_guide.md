@@ -9,7 +9,7 @@ Guide to deploying Trade Bot on a Linux VPS (Ubuntu 22.04+).
 sudo apt update && sudo apt upgrade -y
 
 # Install Docker & Compose
-sudo apt install -y docker.io docker-compose
+sudo apt install -y docker.io docker-buildx-plugin docker-compose-plugin
 sudo systemctl enable --now docker
 sudo usermod -aG docker $USER
 ```
@@ -31,7 +31,7 @@ nano .env
 
 ```bash
 # Build and Run Containers
-docker-compose up --build -d
+docker compose up -d --build
 
 # Verify Running Containers
 docker ps
