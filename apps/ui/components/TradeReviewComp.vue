@@ -24,14 +24,14 @@
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import ReviewChartComp from './ReviewChartComp.vue';
-import { backtestStore } from '../lib/store.js';
+import { backtestStore } from '~/lib/store';
 import {
     generateMarkersFromTrade,
     parseTradeCycle,
     formatTimeframe,
     GetMaxTimestampOfTrade,
     getIndicatorsFromConfig
-} from '../lib/trade-utils.js';
+} from '~/lib/trade-utils';
 
 const currentTrade = computed(() => backtestStore.currentTrade);
 

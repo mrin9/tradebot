@@ -1,10 +1,6 @@
 import Aura from '@primeuix/themes/aura';
 
 export default defineNuxtConfig({
-    srcDir: './',
-    alias: {
-        '~': './'
-    },
     compatibilityDate: '2024-04-03',
     devtools: { enabled: true },
     modules: [

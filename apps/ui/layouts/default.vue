@@ -192,8 +192,8 @@ import Timeline from 'primevue/timeline';
 import Tag from 'primevue/tag';
 import Tree from 'primevue/tree';
 import ThemeSwitcherComp from '~/components/ThemeSwitcherComp.vue';
-import { backtestStore } from '../lib/store.js';
-import { parseSafeTimestamp } from '../lib/trade-utils.js';
+import { backtestStore } from '~/lib/store';
+import { parseSafeTimestamp } from '~/lib/trade-utils';
 
 const getDateYYYYMMDD = (tObj) => {
   if (!tObj) return 'Unknown';
@@ -201,7 +201,7 @@ const getDateYYYYMMDD = (tObj) => {
   if (!epoch && tObj.time) epoch = parseSafeTimestamp(tObj.time);
   if (!epoch && typeof tObj === 'string') epoch = parseSafeTimestamp(tObj);
   if (!epoch) return 'Unknown';
-  
+
   const d = new Date(epoch * 1000);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
@@ -299,11 +299,11 @@ const groupedTradesByDate = computed(() => {
   trades.forEach(t => {
     const entryObj = t.entry || t.entryTime;
     const exitObj = t.exit || t.exitTime;
-    
+
     // Determine timestamps once here to reuse
     let entryEp = t.entry?.epochTime || parseSafeTimestamp(t.entry?.time || t.entryTime);
     let exitEp = t.exit?.epochTime || parseSafeTimestamp(t.exit?.time || t.exitTime);
-    
+
     const date = entryObj ? getDateYYYYMMDD(entryObj) : 'Unknown';
     if (!groups[date]) groups[date] = {};
 
@@ -455,9 +455,9 @@ const formatTimeLocalized = (tObj) => {
   try {
     let epoch = 0;
     if (typeof tObj === 'object') {
-       epoch = tObj.epochTime || parseSafeTimestamp(tObj.time);
+      epoch = tObj.epochTime || parseSafeTimestamp(tObj.time);
     } else {
-       epoch = parseSafeTimestamp(tObj);
+      epoch = parseSafeTimestamp(tObj);
     }
     const date = new Date(epoch * 1000);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
