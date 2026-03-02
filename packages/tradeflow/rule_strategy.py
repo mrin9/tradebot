@@ -26,7 +26,7 @@ class RuleStrategy:
         candle: CandleType, 
         indicators: Dict[str, Any], 
         current_position_intent: Optional[MarketIntentType] = None
-    ) -> SignalTypeReturnType:
+    ) -> SignalReturnType:
         """
         Evaluates the dynamic Rule Engine against the latest market data.
         
@@ -37,7 +37,7 @@ class RuleStrategy:
             current_position_intent: The intent of the currently open position (MarketIntentType.LONG or MarketIntentType.SHORT).
             
         Returns:
-            SignalTypeReturnType: A tuple of (SignalType, Reason, Confidence).
+            SignalReturnType: A tuple of (SignalType, Reason, Confidence).
         """
         if not indicators:
             return SignalType.NEUTRAL, "N/A", 0.0
