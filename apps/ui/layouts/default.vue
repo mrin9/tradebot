@@ -192,8 +192,8 @@ import Timeline from 'primevue/timeline';
 import Tag from 'primevue/tag';
 import Tree from 'primevue/tree';
 import ThemeSwitcherComp from '~/components/ThemeSwitcherComp.vue';
-import { backtestStore } from '~/lib/store.js';
-import { parseSafeTimestamp } from '~/lib/trade-utils.js';
+import { backtestStore } from '../lib/store.js';
+import { parseSafeTimestamp } from '../lib/trade-utils.js';
 
 const getDateYYYYMMDD = (tObj) => {
   if (!tObj) return 'Unknown';
