@@ -2,7 +2,7 @@ services:
   # MongoDB Database
   mongo:
     image: mongo:latest
-    container_name: trade-bot-mongo
+    container_name: mongo
     ports:
       - "127.0.0.1:27017:27017" # Restricted to localhost for security
     volumes:
@@ -20,7 +20,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: trade-bot-api
+    container_name: tradebot
     depends_on:
       mongo:
         condition: service_healthy
@@ -45,7 +45,7 @@ services:
     build:
       context: ./apps/ui
       dockerfile: Dockerfile
-    container_name: trade-bot-web
+    container_name: ui
     depends_on:
       api:
         condition: service_healthy
