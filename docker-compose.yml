@@ -28,6 +28,8 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/tradebot
     volumes:
       - .:/app # Hot Reload for development
     healthcheck:
