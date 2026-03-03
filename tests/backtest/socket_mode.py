@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 from packages.utils.log_utils import setup_logger
 from packages.utils.date_utils import DateUtils
-from packages.backtest.backtest_base import BacktestDataFeeder
+from tests.backtest.backtest_base import BacktestDataFeeder
 from packages.config import settings
 from packages.utils.mongo import MongoRepository
 from packages.simulator.socket_server import SocketDataService
@@ -160,6 +160,9 @@ class SocketFeeder(BacktestDataFeeder):
         @self.sio.on('simulation_complete')
         def on_complete(data):
             logger.info("🏁 Simulator Finished Batch.")
+            # Ensure worker processes all pending ticks before settlement
+            self.tick_queue.join()
+            
             # Trigger EOD settlement
             eod_ts = DateUtils.to_timestamp(DateUtils.parse_iso(bot.args.end), end_of_day=True)
             fund_manager.handle_eod_settlement(eod_ts)

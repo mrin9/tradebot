@@ -323,7 +323,7 @@ def backtest(
 
     # Construct and run the command
     cmd = [
-        sys.executable, "-m", "packages.backtest.backtest_runner",
+        sys.executable, "-m", "tests.backtest.backtest_runner",
         "--mode", mode,
         "--rule-id", rule_id,
         "--start", start,

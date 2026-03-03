@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from packages.utils.log_utils import setup_logger
 from packages.utils.date_utils import DateUtils
 from packages.utils.mongo import MongoRepository
-from packages.backtest.backtest_base import BacktestDataFeeder
+from tests.backtest.backtest_base import BacktestDataFeeder
 from packages.config import settings
 from packages.utils.market_utils import MarketUtils
 
@@ -28,7 +28,7 @@ class DBFeeder(BacktestDataFeeder):
         if not trading_days:
             logger.error("No trading days found in range.")
             return
-
+        
         logger.info(f"🧪 DB Mode Backtest Started: {len(trading_days)} days.")
 
         for day_str in trading_days:
@@ -66,9 +66,6 @@ class DBFeeder(BacktestDataFeeder):
             logger.warning(f"No ticks found for {day_str}")
             return
             
-        # Reset position internally (not supported natively by FundManager PM today)
-        # FundManager PM keeps a running total. We'll let it run continuously.
-        
         for tick in ticks:
             # Route tick to FundManager (which resamples and calculates indicators internally)
             fund_manager.on_tick_or_base_candle(tick)

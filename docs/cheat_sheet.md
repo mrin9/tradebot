@@ -9,7 +9,7 @@ Quick reference for common commands.
 | **Launch Interactive** | `python apps/cli/main.py interactive` |
 | **Fetch Master** | `python apps/cli/main.py master sync` |
 | **Fetch History** | `python apps/cli/main.py historical fetch --days 5` |
-| **Run Backtest**  | `python -m packages.backtest.backtest_runner --mode db --rule-id [RULE_ID] --start [DATE] --end [DATE]` |
+| **Run Backtest**  | `python -m tests.backtest.backtest_runner --mode db --rule-id [RULE_ID] --start [DATE] --end [DATE]` |
 | **Check Data Gaps** | `python apps/cli/main.py check-gaps` |
 | **Prune Old Data** | `python apps/cli/main.py age-out --days 30` |
 | **Analyze Crossovers**| `python apps/cli/main.py crossover --instrument NIFTY2630225400CE --date 2026-02-27 --timeframe 180` |

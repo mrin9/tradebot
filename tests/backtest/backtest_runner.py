@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from packages.utils.log_utils import setup_logger
 from packages.utils.mongo import MongoRepository
 from packages.tradeflow.fund_manager import FundManager
-from packages.backtest.backtest_base import BacktestBot
+from tests.backtest.backtest_base import BacktestBot
 from packages.config import settings
 
 logger = setup_logger("BacktestRunner")
@@ -110,14 +110,14 @@ def main():
     
     if args.mode == "db":
         try:
-            from packages.backtest.db_mode import DBFeeder
+            from tests.backtest.db_mode import DBFeeder
             feeder = DBFeeder()
         except ImportError:
             logger.error("DBFeeder not implemented yet.")
             sys.exit(1)
     else:
         try:
-            from packages.backtest.socket_mode import SocketFeeder
+            from tests.backtest.socket_mode import SocketFeeder
             feeder = SocketFeeder(socket_event=args.socket_event)
         except ImportError:
             logger.error("SocketFeeder not implemented yet.")

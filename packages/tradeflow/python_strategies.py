@@ -45,9 +45,14 @@ class TripleLockStrategy:
         pe_f_prev = indicators.get("PE_fast_ema_prev")
         pe_s_prev = indicators.get("PE_slow_ema_prev")
 
-        # Wait for history
-        if ce_f_prev is None or pe_f_prev is None:
-            return SignalType.NEUTRAL, "PYTHON: WAITING FOR PREV DATA", 0.0
+        # Wait for history and ensure all indicators are non-None
+        required_indicators = [
+            ce_fast, ce_slow, ce_f_prev, ce_s_prev,
+            pe_fast, pe_slow, pe_f_prev, pe_s_prev,
+            spot_fast, spot_slow
+        ]
+        if any(v is None for v in required_indicators):
+            return SignalType.NEUTRAL, "PYTHON: WAITING FOR INDICATOR WARMUP", 0.0
 
         # 2. Entry Logic (Bidirectional)
         if current_position_intent is None:

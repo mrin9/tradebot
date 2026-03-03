@@ -60,11 +60,12 @@ class CandleResampler:
                 
         self.last_period_start = period_start
         
-        # Extract values
-        o = candle.get('o', candle.get('open'))
-        h = candle.get('h', candle.get('high'))
-        l = candle.get('l', candle.get('low'))
-        c = candle.get('c', candle.get('close'))
+        # Extract values with safe fallbacks
+        # If 'o', 'h', 'l', 'c' are missing, we fall back to 'p' (LTP) or each other
+        c = candle.get('c', candle.get('close', candle.get('p', candle.get('ltp'))))
+        o = candle.get('o', candle.get('open', c))
+        h = candle.get('h', candle.get('high', c))
+        l = candle.get('l', candle.get('low', c))
         v = candle.get('v', candle.get('volume', 0))
         
         # Initialize or Update
@@ -81,8 +82,10 @@ class CandleResampler:
             }
         else:
             can = self.current_candle
-            can['high'] = max(can['high'], h)
-            can['low'] = min(can['low'], l)
+            if h is not None:
+                can['high'] = max(can['high'], h) if can['high'] is not None else h
+            if l is not None:
+                can['low'] = min(can['low'], l) if can['low'] is not None else l
             can['close'] = c # Close is always the latest close
             can['volume'] += v
             

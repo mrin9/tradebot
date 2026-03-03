@@ -64,17 +64,22 @@ class SocketDataProvider:
             options_cursor = options_coll.find(query).sort("t", 1)
 
             # Use heapq.merge to union and sort by time 't'
+            # We add a priority (0 for options, 1 for nifty) to ensure 
+            # Option indicators are updated before the Spot candle close triggers strategy evaluation.
             merged_stream = heapq.merge(
-                ((doc['t'], doc) for doc in nifty_cursor),
-                ((doc['t'], doc) for doc in options_cursor),
-                key=lambda x: x[0]
+                ((doc['t'], 1, doc) for doc in nifty_cursor),
+                ((doc['t'], 0, doc) for doc in options_cursor),
+                key=lambda x: (x[0], x[1])
             )
 
             logger.info(f"Replaying {mode} from {start_dt} to {end_dt}...")
             
             count = 0
-            for timestamp, doc in merged_stream:
+            for timestamp, priority, doc in merged_stream:
                 if not self.running: break
+                
+                if count % 1000 == 0:
+                    logger.info(f"Replay progress: {count} docs emitted. Current T: {timestamp}")
                 
                 inst_id = doc['i']
                 base_t = doc['t']
@@ -85,32 +90,34 @@ class SocketDataProvider:
                     if delay > 0: await asyncio.sleep(delay)
                 else:
                     # Tick Breakdown logic (4 sub-ticks per 1-min bar)
+                    # Note: base_t in our DB is end-of-minute (XX:XX:59)
+                    start_t = base_t - 59
                     vol_chunk = doc.get('v', 0) // 4
                     
                     # 1. Open
-                    await self._emit_1501_tick(inst_id, doc['o'], base_t, vol_chunk)
+                    await self._emit_1501_tick(inst_id, doc['o'], start_t, vol_chunk)
                     if delay > 0: await asyncio.sleep(delay)
                     
                     # 2. High
                     if not self.running: break
-                    await self._emit_1501_tick(inst_id, doc['h'], base_t + 15, vol_chunk)
+                    await self._emit_1501_tick(inst_id, doc['h'], start_t + 15, vol_chunk)
                     if delay > 0: await asyncio.sleep(delay)
                     
                     # 3. Low
                     if not self.running: break
-                    await self._emit_1512_snapshot(inst_id, doc['l'], base_t + 30, vol_chunk)
+                    await self._emit_1512_snapshot(inst_id, doc['l'], start_t + 30, vol_chunk)
                     if delay > 0: await asyncio.sleep(delay)
                     
                     # 4. Close
                     if not self.running: break
-                    await self._emit_1501_tick(inst_id, doc['c'], base_t + 59, vol_chunk)
+                    await self._emit_1501_tick(inst_id, doc['c'], base_t, vol_chunk)
                     if delay > 0: await asyncio.sleep(delay)
                 
                 count += 1
-                if count % 10 == 0:
+                if count % 100 == 0:
                     await asyncio.sleep(0) # Yield control
 
-            logger.info("Replay Finished.")
+            logger.info(f"Replay Finished. Total docs emitted: {count}")
             await self.sio.emit('simulation_complete', {'status': 'done'})
             self.running = False
             

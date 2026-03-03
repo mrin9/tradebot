@@ -89,49 +89,78 @@ docker compose up -d
 docker compose up -d --build
 ```
 
-## 5. Verification (Running Tests)
+## 5. Using the App (The Docker Way) 🚀
 
-Once the containers are running, you should verify the installation by running the automated tests inside the container.
+It is **highly recommended** to run all commands inside the Docker environment. This ensures you have the correct Python version, dependencies, and database access without installing anything on your host machine.
 
+### 1. Run the CLI (One-off)
+Use `docker compose exec` to run commands without leaving your shell:
+```bash
+# Check CLI Help
+docker compose exec api python apps/cli/main.py --help
+
+# Sync History (Example)
+docker compose exec api python apps/cli/main.py sync-history --days 5
+```
+
+### 2. Enter Interactive Shell
+If you need to run many commands, you can "log in" to the container:
+```bash
+docker compose exec -it api bash
+
+# Now you are inside the container
+python apps/cli/main.py --help
+exit
+```
+
+### 3. Running Tests & Scripts
 ```bash
 # Run all tests
 docker compose exec api pytest tests/
 
-# Run specific XTS Socket test
-docker compose exec api pytest tests/backtest/test_xts_socket.py
-```
-
-### Running Standalone Scripts
-If you want to run a one-off script (like a connection test) without a full compose stack:
-
-```bash
-# Using docker run (requires .env file)
-docker run --rm --env-file .env yourusername/trade-bot-api:latest python tests/backtest/test_xts_socket.py --events 1501-partial
-```
-
-### Running the CLI (Interactive)
-To run data collection or other interactive CLI commands:
-
-```bash
-# Enter the container shell
-docker compose exec -it api bash
-
-python apps/cli/main.py --help
-python apps/cli/main.py historical fetch --days 5
-```
-
-### Seeding Test Data
-If you need mock data for backtesting:
-
-```bash
-# Docker
+# Run Seed script
 docker compose exec api python scripts/seed_test_data.py
-
-# Manual
-python scripts/seed_test_data.py
 ```
 
-## 6. Database Access (MongoDB Compass)
+## 6. Managing Configuration (.env)
+
+Your environment variables are stored in the `.env` file. 
+
+### How to Edit
+The `.env` file is mounted as a volume, so changes made on the VPS will be seen by the container. However, **Python processes only read environment variables on startup.**
+
+1.  **Edit the file on the VPS**:
+    ```bash
+    nano .env
+    ```
+2.  **Restart the containers to apply changes**:
+    ```bash
+    docker compose up -d
+    ```
+
+> [!WARNING]
+> Editing the `.env` file *inside* the container via `bash` is possible but **not recommended**. Always maintain the `.env` file on your VPS host disk as the source of truth.
+
+## 7. Applying Code Changes
+
+Thanks to Docker volumes (`.:/app`), your changes to Python or Javascript files on the VPS disk are instantly reflected inside the container.
+
+### For CLI & Scripts (Immediate)
+When you run commands via `docker compose exec`, they **always** use the latest version of your code on the disk. **No rebuild or restart is needed.**
+
+### For API & Web Services (Restart Required)
+The background services load code into memory. If you modify the API logic or Nuxt components, you must restart the service to see the changes:
+```bash
+# Quick restart (takes < 2 seconds)
+docker compose restart api web
+```
+
+### When to Rebuild?
+You only need to run `docker compose up -d --build` if:
+1.  You changed `requirements.txt` or `package.json` (new dependencies).
+2.  You modified a `Dockerfile`.
+
+## 8. Database Access (MongoDB Compass)
 
 To connect MongoDB Compass to the database running in Docker:
 

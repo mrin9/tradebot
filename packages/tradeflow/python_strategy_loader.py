@@ -65,4 +65,4 @@ class PythonStrategy:
             )
         except Exception as e:
             logger.error(f"❌ Error during Python Strategy evaluation: {e}")
-            return Signal.NEUTRAL, f"PYTHON STRATEGY EXCEPTION: {e}", 0.0
+            return SignalType.NEUTRAL, f"PYTHON STRATEGY EXCEPTION: {e}", 0.0

@@ -119,7 +119,7 @@ graph TD
 
 ### Fast DB Mode
 ```bash
-python -m packages.backtest.backtest_runner \
+python -m tests.backtest.backtest_runner \
     --mode db \
     --start 2026-02-27 \
     --rule-id triple-lock-momentum \
@@ -131,7 +131,7 @@ python -m packages.backtest.backtest_runner \
 
 ### High-Fidelity Socket Mode
 ```bash
-python -m packages.backtest.backtest_runner \
+python -m tests.backtest.backtest_runner \
     --mode socket \
     --socket-event 1505-json-full \
     --start 2026-02-02 \
@@ -148,7 +148,7 @@ python -m packages.backtest.backtest_runner \
 ### Python Strategy Mode (Hybrid)
 Bypass the database DSL entirely by providing your own `.py` script. The `--rule-id` is optional here (it can be used to load standard indicators if desired, or omitted to use a default Feature Stub).
 ```bash
-python -m packages.backtest.backtest_runner \
+python -m tests.backtest.backtest_runner \
     --mode db \
     --start 2026-02-27 \
     --strategy-mode python_code \
@@ -163,7 +163,7 @@ python -m packages.backtest.backtest_runner \
 
 #### Comprehensive Rule Mode (Compound + Trailing SL)
 ```bash
-python -m packages.backtest.backtest_runner \
+python -m tests.backtest.backtest_runner \
     --mode db \
     --start 2026-02-27 \
     --budget 200000 \
@@ -179,7 +179,7 @@ python -m packages.backtest.backtest_runner \
 
 #### Comprehensive Python Mode (Fixed + ITM Options)
 ```bash
-python -m packages.backtest.backtest_runner \
+python -m tests.backtest.backtest_runner \
     --mode db \
     --start 2026-02-27 \
     --budget 200000 \

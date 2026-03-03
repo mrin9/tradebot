@@ -200,8 +200,8 @@ class FundManager:
         
         from packages.config import settings
         # Fetch last 100 1-minute candles before current_ts
-        # 100 * 1m = 100m. If timeframe is 180s, 100m / 3m ~= 33 candles. 
-        # Typically IndicatorCalculator max_window_size is 200, but we usually only need ~50 for EMA-21.
+        # Use $lt current_ts to avoid "look-ahead" leakage and ensure we get 
+        # previous day's data if market just opened at 09:15.
         history = list(self.db[settings.OPTIONS_CANDLE_COLLECTION].find(
             {"i": instrument_id, "t": {"$lte": current_ts}}
         ).sort("t", -1).limit(100))
@@ -274,13 +274,13 @@ class FundManager:
         Args:
             market_data (Dict): OHLCV data or Tick data.
         """
-        # 1. Update Tick Price Cache
         inst_id = market_data.get('i', market_data.get('instrument_id'))
         
         # In Backtest mode, we use the configured price source (Open or Close)
         # In Live/Socket mode (ticks), we use 'p' (LTP)
-        is_candle = 'c' in market_data or 'close' in market_data
-        
+        is_candle = any(k in market_data for k in ['c', 'close', 'o', 'open'])
+        is_spot = (inst_id == 26000) or getattr(self, 'spot_instrument_id', 26000) == inst_id
+
         if self.is_backtest and is_candle:
             if self.price_source == "open":
                 price = market_data.get('o', market_data.get('open'))
@@ -293,7 +293,7 @@ class FundManager:
             return
 
         # 0. Tick Normalization: If this is a raw tick (no OHLC), populate OHLC for downstream compatibility
-        if 'p' in market_data and 'c' not in market_data:
+        if 'p' in market_data and any(k not in market_data for k in ['o', 'h', 'l', 'c']):
             market_data.update({
                 'o': price,
                 'h': price,
@@ -311,12 +311,32 @@ class FundManager:
         if is_spot and ts:
             self._check_and_update_monitored_instruments(price, ts)
 
-        # 2. Update Position Manager immediately for Stop Loss / Target checks
+        # 2. Update Position Manager immediately for Stop Loss / Target Checks
         if self.position_manager.current_position:
             # Only update position if the tick belongs to the active traded instrument
             if str(inst_id) == self.position_manager.current_position.symbol:
                 nifty_price = self.latest_tick_prices.get(26000)
-                self.position_manager.update_tick(market_data, nifty_price=nifty_price)
+                
+                # In Backtest Mode, if we receive a 1-minute Candle, we explode it into 
+                # 4 virtual ticks (O, H, L, C) to match Socket/Live granularity.
+                if self.is_backtest and is_candle:
+                    o = market_data.get('o', market_data.get('open', price))
+                    h = market_data.get('h', market_data.get('high', price))
+                    l = market_data.get('l', market_data.get('low', price))
+                    c = price
+                    
+                    base_t = ts
+                    start_t = base_t - 59
+
+                    # Sequence: Open (0s) -> High (15s) -> Low (30s) -> Close (59s)
+                    # (Matching SocketDataProvider's fidelity)
+                    for p_val, t_val in [(o, start_t), (h, start_t+15), (l, start_t+30), (c, base_t)]:
+                        if not self.position_manager.current_position:
+                            break
+                        v_tick = {'i': inst_id, 'p': p_val, 't': t_val}
+                        self.position_manager.update_tick(v_tick, nifty_price=nifty_price)
+                else:
+                    self.position_manager.update_tick(market_data, nifty_price=nifty_price)
 
         # 3. Route to Resamplers based on Category
         category = None
@@ -355,6 +375,17 @@ class FundManager:
         # ONLY execute strategy decision synchronously when the SPOT candle acts as the anchor
         if category != InstrumentCategoryType.SPOT:
             return
+            
+        # 0. Synchronize other resamplers (CE/PE) to current SPOT timestamp
+        # This ensures that if Option ticks arrived slightly late, they are still 
+        # processed into the current or previous candle before we run indicators.
+        for cat_val, r in self.resamplers.items():
+            if cat_val != InstrumentCategoryType.SPOT.value:
+                # If resampler is lagging behind current SPOT timestamp, flush it
+                if r.last_period_start is not None and r.last_period_start < ts:
+                    r.add_candle({'t': ts, 'is_flush': True}) # Dummy tick to force close if needed
+                    # Note: add_candle logic handles period jumps internally
+
             
         # Pass the current position intent to explicitly evaluate Exit Rules if configured
         # Determine current intent for strategy evaluation

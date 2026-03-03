@@ -307,7 +307,7 @@ python apps/cli/main.py train-model --help
 ML mode is fully self-contained — no `--rule-id` needed:
 
 ```bash
-python -m packages.backtest.backtest_runner --mode db \
+python -m tests.backtest.backtest_runner --mode db \
   --start 2026-02-16 --end 2026-02-16 \
   --strategy-mode ml --ml-confidence 0.45 --ml-model-path models/xgb_v1.joblib
 ```

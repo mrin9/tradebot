@@ -27,8 +27,8 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - MONGODB_URI=mongodb://mongo:27017/trade_bot
-      - DB_NAME=trade_bot
+      - MONGODB_URI=mongodb://mongo:27017/tradebot
+      - DB_NAME=tradebot
       - XTS_API_KEY=${XTS_API_KEY}
       - XTS_API_SECRET=${XTS_API_SECRET}
       - XTS_ROOT_URL=${XTS_ROOT_URL}

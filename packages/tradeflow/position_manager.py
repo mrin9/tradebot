@@ -113,6 +113,7 @@ class PositionManager:
         self.pyramid_steps = pyramid_steps or [100]  # Default: 100% all-in
         self.pyramid_confirm_pts = pyramid_confirm_pts
         self.price_source = price_source.lower()
+        self.session_realized_pnl = 0.0
 
     def set_order_manager(self, order_manager):
         self.order_manager = order_manager
@@ -253,58 +254,60 @@ class PositionManager:
         # 3. CASH/FUTURE SHORT is 'Short' the underlying.
         is_long_dir = (self.instrument_type == InstrumentKindType.OPTIONS) or (pos.intent == MarketIntentType.LONG)
         
-        # PnL Calculation: 
-        # Long: (Current - Entry) * Qty
-        # Short: (Entry - Current) * Qty
+        # Extract OHLC for "Wide Check" (Backtest fidelity)
+        # If h/l are missing, they fall back to current_price (LTP)
+        h = tick.get('h', tick.get('high', current_price))
+        l = tick.get('l', tick.get('low', current_price))
+
+        # PnL Calculation (based on latest Close/LTP)
         lot_size = settings.NIFTY_LOT_SIZE
         if is_long_dir:
             pos.pnl = (current_price - pos.entry_price) * pos.remaining_quantity * lot_size
         else:
             pos.pnl = (pos.entry_price - current_price) * pos.remaining_quantity * lot_size
         
-        # Trailing Extremes and Exit Triggers
+        # 1. Stop Loss execution (Highest priority)
+        # For LONG: check if Low hit SL. For SHORT: check if High hit SL.
         if is_long_dir:
-            # LONG direction: Profit when High increases, SL when Low decreases
-            if current_price > pos.highest_price:
-                pos.highest_price = current_price
+            if l <= pos.stop_loss:
+                reason = "TRAILING_SL" if pos.highest_price > pos.entry_price else "STOP_LOSS"
+                desc = f"{reason} hit at {l:.2f} (SL: {pos.stop_loss:.2f})"
+                self._close_position(pos.stop_loss, exit_time, reason, reason_desc=desc, nifty_price=nifty_price)
+                return
+        else:
+            if h >= pos.stop_loss:
+                reason = "TRAILING_SL" if pos.lowest_price < pos.entry_price else "STOP_LOSS"
+                desc = f"{reason} hit at {h:.2f} (SL: {pos.stop_loss:.2f})"
+                self._close_position(pos.stop_loss, exit_time, reason, reason_desc=desc, nifty_price=nifty_price)
+                return
+
+        # 2. Update Extremes and Trailing SL
+        if is_long_dir:
+            if h > pos.highest_price:
+                pos.highest_price = h
                 if self.trailing_sl_points > 0:
                     new_sl = pos.highest_price - self.trailing_sl_points
                     if new_sl > pos.stop_loss:
                         pos.stop_loss = new_sl
-            
-            # Stop Loss execution (price drops below SL)
-            if current_price <= pos.stop_loss:
-                reason = "TRAILING_SL" if pos.highest_price > pos.entry_price else "STOP_LOSS"
-                desc = f"{reason} hit at {current_price:.2f} (SL: {pos.stop_loss:.2f})"
-                self._close_position(pos.stop_loss, exit_time, reason, reason_desc=desc, nifty_price=nifty_price)
-                return
         else:
-            # SHORT direction: Profit when Low decreases, SL when High increases
-            if current_price < pos.lowest_price:
-                pos.lowest_price = current_price
+            if l < pos.lowest_price:
+                pos.lowest_price = l
                 if self.trailing_sl_points > 0:
                     new_sl = pos.lowest_price + self.trailing_sl_points
                     if new_sl < pos.stop_loss:
                         pos.stop_loss = new_sl
             
-            # Stop Loss execution (price rises above SL)
-            if current_price >= pos.stop_loss:
-                reason = "TRAILING_SL" if pos.lowest_price < pos.entry_price else "STOP_LOSS"
-                desc = f"{reason} hit at {current_price:.2f} (SL: {pos.stop_loss:.2f})"
-                self._close_position(pos.stop_loss, exit_time, reason, reason_desc=desc, nifty_price=nifty_price)
-                return
-            
-        # Targets execution
+        # 3. Targets execution (using High for LONG, Low for SHORT)
+        target_reference_price = h if is_long_dir else l
         while pos.achieved_targets < len(pos.targets):
             next_target = pos.targets[pos.achieved_targets]
-            hit = (current_price >= next_target) if is_long_dir else (current_price <= next_target)
+            hit = (target_reference_price >= next_target) if is_long_dir else (target_reference_price <= next_target)
             
             if hit:
                 pos.achieved_targets += 1
                 
                 # Move SL to Break-Even if first target hit
                 if pos.achieved_targets == 1 and self.use_break_even:
-                    # For Long: Entry > SL | For Short: Entry < SL
                     is_far = (pos.entry_price > pos.stop_loss) if is_long_dir else (pos.entry_price < pos.stop_loss)
                     if is_far:
                         pos.stop_loss = pos.entry_price
@@ -312,13 +315,10 @@ class PositionManager:
                         time_str = exit_time.strftime("%d-%b %H:%M").upper()
                         logger.info(f"🤟 [{time_str}] Break-Even Triggered! SL moved to Entry ({pos.stop_loss})")
                 
-                # fractional exit: close 1/(N+1) of initial quantity per target hit
-                # leaving 1/(N+1) for signal/SL exit.
                 close_qty = self.quantity // (len(pos.targets) + 1)
-                desc = f"Target {pos.achieved_targets} ({next_target:.2f}) hit at {current_price:.2f}"
+                desc = f"Target {pos.achieved_targets} ({next_target:.2f}) hit at {target_reference_price:.2f}"
                 self._close_position(next_target, exit_time, f"TARGET_{pos.achieved_targets}", reason_desc=desc, quantity=close_qty, nifty_price=nifty_price)
                 
-                # Recalculate unrealized PnL for remaining quantity
                 if self.current_position:
                     if is_long_dir:
                         pos.pnl = (current_price - pos.entry_price) * pos.remaining_quantity * lot_size
@@ -423,6 +423,7 @@ class PositionManager:
             chunk_pnl = (pos.entry_price - price) * close_qty * lot_size
         
         pos.total_realized_pnl += chunk_pnl
+        self.session_realized_pnl += chunk_pnl
         
         lot_size = settings.NIFTY_LOT_SIZE
         fmt_time = timestamp.strftime("%d-%b-%Y %H:%M").upper()
@@ -432,9 +433,9 @@ class PositionManager:
             trans_desc = f"[{self.current_position.display_symbol}] " + trans_desc
 
         if quantity is not None and reason.startswith("TARGET"):
-            logger.info(f"🟠 [{fmt_time}] {reason} Hit: {trans_desc} (Action PnL: +{chunk_pnl:,.2f})")
+            logger.info(f"🟠 [{fmt_time}] {reason} Hit: {trans_desc} (Action PnL: {chunk_pnl:>+10,.2f})")
         else:
-            logger.info(f"🔴 [{fmt_time}] Exit {reason}: {trans_desc} | Action PnL: +{chunk_pnl:,.2f} | Total Trade PnL: ₹{pos.total_realized_pnl:,.2f}")
+            logger.info(f"🔴 [{fmt_time}] Exit {reason}: {trans_desc} | Action PnL: {chunk_pnl:>+10,.2f} | Cycle PnL: ₹{pos.total_realized_pnl:>+10,.2f} | Session PnL: ₹{self.session_realized_pnl:>+10,.2f}")
 
         closed_chunk = Position(
             symbol=pos.symbol,
