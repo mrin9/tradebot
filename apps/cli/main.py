@@ -48,6 +48,16 @@ def run_pytest(test_path: str):
     input()
 
 @app.command()
+def ensure_indexes():
+    """Verify and create all necessary MongoDB indexes for performance."""
+    try:
+        from packages.utils.db_manager import DatabaseManager
+        DatabaseManager.ensure_all_indexes()
+        typer.secho("✅ Index synchronization complete.", fg=typer.colors.GREEN)
+    except Exception as e:
+        typer.secho(f"❌ Error: {e}", fg=typer.colors.RED)
+
+@app.command()
 def update_master():
     """Sync the internal instrument database with XTS."""
     typer.echo("Syncing Master Instruments...")
@@ -613,6 +623,7 @@ def interactive_menu():
                 "Seed Strategy Rules",
                 "Train ML Model",
                 "EMA Crossover Analysis",
+                "Ensure DB Indexes",
                 "Exit"
             ]
         ).ask()
@@ -687,6 +698,8 @@ def interactive_menu():
                 
                 crossover(instrument=inst, date=date, crossover_type=cross, timeframe=tf)
             input("\nPress Enter to return to menu...")
+        elif choice == "Ensure DB Indexes":
+            ensure_indexes()
 
 if __name__ == "__main__":
     app()
