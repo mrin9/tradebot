@@ -1,4 +1,5 @@
 from typing import Literal
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
 
@@ -55,6 +56,13 @@ class Settings(BaseSettings):
     MARKET_API_SECRET: str | None = None
     INTERACTIVE_API_KEY: str | None = None
     INTERACTIVE_API_SECRET: str | None = None
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def unescape_dollar_signs(cls, v):
+        if isinstance(v, str):
+            return v.replace("$$", "$")
+        return v
 
     model_config = SettingsConfigDict(
         env_file=".env", 
