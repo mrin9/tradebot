@@ -29,8 +29,6 @@ services:
     environment:
       - MONGODB_URI=mongodb://mongo:27017/tradebot
       - DB_NAME=tradebot
-      - XTS_API_KEY=${XTS_API_KEY}
-      - XTS_API_SECRET=${XTS_API_SECRET}
       - XTS_ROOT_URL=${XTS_ROOT_URL}
       - MARKET_API_KEY=${MARKET_API_KEY}
       - MARKET_API_SECRET=${MARKET_API_SECRET}

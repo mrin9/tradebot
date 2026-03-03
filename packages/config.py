@@ -50,8 +50,7 @@ class Settings(BaseSettings):
     XTS_TIME_OFFSET: int = 19800
 
     # 7. Sensitive API Credentials (Stored in .env)
-    XTS_API_KEY: str | None = None
-    XTS_API_SECRET: str | None = None
+    MARKET_API_KEY: str | None = None
     MARKET_API_KEY: str | None = None
     MARKET_API_SECRET: str | None = None
     INTERACTIVE_API_KEY: str | None = None
