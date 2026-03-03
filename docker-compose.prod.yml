@@ -26,14 +26,8 @@ services:
         condition: service_healthy
     ports:
       - "8000:8000"
-    environment:
-      - MONGODB_URI=mongodb://mongo:27017/tradebot
-      - DB_NAME=tradebot
-      - XTS_ROOT_URL=${XTS_ROOT_URL}
-      - MARKET_API_KEY=${MARKET_API_KEY}
-      - MARKET_API_SECRET=${MARKET_API_SECRET}
-      - INTERACTIVE_API_KEY=${INTERACTIVE_API_KEY}
-      - INTERACTIVE_API_SECRET=${INTERACTIVE_API_SECRET}
+    env_file:
+      - .env
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/api/status" ]
       interval: 30s
