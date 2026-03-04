@@ -62,9 +62,8 @@ def test_engine_initialization():
     with patch('packages.data.connectors.xts_wrapper.XTSManager.get_market_client'), \
          patch('packages.data.connectors.xts_wrapper.XTSManager.get_market_data_socket'):
         
-        engine = LiveTradeEngine(mock_strategy, pos_cfg, subscribe_to="Partial")
+        engine = LiveTradeEngine(mock_strategy, pos_cfg)
         assert engine.session_id.startswith("live-")
-        assert engine.subscribe_to == "Partial"
         assert engine.fund_manager.initial_budget == 100000
         
     print("✅ Engine Initialization Passed.")

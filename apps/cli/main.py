@@ -553,14 +553,17 @@ def train_model(
 
 @app.command()
 def live_trade(
-    rule_id: Annotated[str, typer.Option(help="Strategy Rule ID (e.g. R001)")] = "R001",
+    strategy_mode: Annotated[str, typer.Option(help="Strategy Mode: rule, ml, or python_code")] = "python_code",
+    python_strategy_path: Annotated[Optional[str], typer.Option(help="Path to custom python strategy file")] = "packages/tradeflow/python_strategies.py:TripleLockStrategy",
+    rule_id: Annotated[str, typer.Option(help="Strategy Rule ID (e.g. R001)")] = "triple-lock-momentum",
     selection_basis: Annotated[str, typer.Option(help="Option Selection Basis (ATM, ITM, OTM)")] = "ATM",
-    subscribe_to: Annotated[str, typer.Option(help="Broadcast Mode (Full, Partial)")] = "Full",
+    budget: Annotated[float, typer.Option(help="Initial Budget for Live Trading")] = 200000.0,
+    sl: Annotated[float, typer.Option(help="Stop Loss Points")] = 15.0,
+    target: Annotated[str, typer.Option(help="Target Points (Comma separated)")] = "15,25,45",
+    trailing_sl: Annotated[float, typer.Option(help="Trailing Stop Loss Points")] = 15.0,
     break_even: Annotated[bool, typer.Option(help="Enable Break-even Trailing")] = True,
-    debug: Annotated[bool, typer.Option(help="Enable Socket Debug Logging")] = False,
-    strategy_mode: Annotated[str, typer.Option(help="Strategy Mode: rule, ml, or python_code")] = "rule",
-    python_strategy_path: Annotated[Optional[str], typer.Option(help="Path to custom python strategy file")] = None,
-    ml_model_path: Annotated[Optional[str], typer.Option(help="Path to ML model")] = None
+    ml_model_path: Annotated[Optional[str], typer.Option(help="Path to ML model")] = None,
+    debug: Annotated[bool, typer.Option(help="Enable Socket Debug Logging")] = False
 ):
     """Starts the Live Trading Engine."""
     try:
@@ -587,7 +590,6 @@ def live_trade(
         engine = LiveTradeEngine(
             strategy_config=rule,
             position_config=pos_cfg,
-            subscribe_to=subscribe_to.capitalize(),
             debug=debug
         )
         engine.start()
@@ -669,10 +671,9 @@ def interactive_menu():
                  budget = float(questionary.text("Budget:", default="200000").ask())
                  sl = float(questionary.text("Stop Loss Points:", default="20").ask())
                  target = questionary.text("Target Points:", default="5,10,15").ask()
-                 mode = questionary.select("Subscribe To:", choices=["Full", "Partial"]).ask()
                  live_trade(
                      rule_id=rid, budget=budget, sl=sl, target=target, 
-                     subscribe_to=mode, strategy_mode=strategy_mode, 
+                     strategy_mode=strategy_mode, 
                      ml_model_path=ml_path
                  )
         elif choice == "Tests": tests_menu()

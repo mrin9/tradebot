@@ -18,9 +18,8 @@ from packages.utils.mongo import MongoRepository
 logger = setup_logger("XTS_Socket_Test")
 
 class XTSSocketTester:
-    def __init__(self, store_in_db=False, events_mode="1501-partial"):
+    def __init__(self, store_in_db=False):
         self.store_in_db = store_in_db
-        self.events_mode = events_mode
         self.db = None
         self.collection_name = "xts_socket_data_collection_test"
         
@@ -28,12 +27,8 @@ class XTSSocketTester:
             self.db = MongoRepository.get_db()
             logger.info("MongoDB Connection initialized for storage.")
         
-        # Set broadcast mode based on requested events
-        if "partial" in events_mode.lower():
-            settings.XTS_BROADCAST_MODE = "Partial"
-        else:
-            settings.XTS_BROADCAST_MODE = "Full"
-            
+        # Hardcode broadcast mode
+        settings.XTS_BROADCAST_MODE = "Full"
         logger.info(f"Setting XTS Broadcast Mode: {settings.XTS_BROADCAST_MODE}")
         
         # Reset socket client to pick up new settings if it was already initialized
@@ -61,10 +56,6 @@ class XTSSocketTester:
 
     def _handle_market_event(self, event_code, data):
         """Generic handler for all market events."""
-        # Check if we should ignore this event based on user args
-        if self.events_mode != "all" and self.events_mode not in str(event_code):
-            return
-
         logger.info(f"🎯 Market Event: {event_code} | Data: {data}")
         
         parsed_data = MarketUtils.normalize_xts_event(str(event_code), data)
@@ -93,12 +84,6 @@ class XTSSocketTester:
         logger.info(f"Sending subscriptions for NIFTY (26000)...")
         # 1501: Touchline/LTP
         self.xt_market.send_subscription([{'exchangeSegment': 1, 'exchangeInstrumentID': nifty_id}], 1501)
-        # 1502: Market Data
-        self.xt_market.send_subscription([{'exchangeSegment': 1, 'exchangeInstrumentID': nifty_id}], 1502)
-        # 1505: Candle Data
-        self.xt_market.send_subscription([{'exchangeSegment': 1, 'exchangeInstrumentID': nifty_id}], 1505)
-        # 1512: LTP
-        self.xt_market.send_subscription([{'exchangeSegment': 1, 'exchangeInstrumentID': nifty_id}], 1512)
 
     def run(self):
         # Setup callbacks
@@ -108,13 +93,8 @@ class XTSSocketTester:
         # Commented out to avoid duplicate logs for everything
         # self.soc.on_message = self._on_message
         
-        # Register handlers for ALL possible event formats to ensure we don't miss anything
-        # We exclude 1105 as it is just instrument property change noise
-        codes = ["1501", "1502", "1504", "1505", "1507", "1510", "1512"]
-        for code in codes:
-            # We map both full and partial to our handler
-            setattr(self.soc, f"on_message{code}_json_full", lambda d, c=code: self._handle_market_event(f"{c}-full", d))
-            setattr(self.soc, f"on_message{code}_json_partial", lambda d, c=code: self._handle_market_event(f"{c}-partial", d))
+        # Register handlers for 1501 Full ONLY
+        self.soc.on_message1501_json_full = lambda d: self._handle_market_event("1501-full", d)
 
         # Connect
         logger.info("Connecting to XTS Socket...")
@@ -131,12 +111,10 @@ class XTSSocketTester:
 def main():
     parser = argparse.ArgumentParser(description="XTS Socket Integration Test")
     parser.add_argument("--store-in-db", action="store_true", help="Store data in MongoDB")
-    parser.add_argument("--events", type=str, choices=["all", "1501-full", "1501-partial", "1505-full", "1505-partial", "1512-full", "1512-partial"], 
-                        default="1501-partial", help="Filter for specific events")
     
     args = parser.parse_args()
     
-    tester = XTSSocketTester(store_in_db=args.store_in_db, events_mode=args.events)
+    tester = XTSSocketTester(store_in_db=args.store_in_db)
     tester.run()
 
 if __name__ == "__main__":

@@ -15,10 +15,6 @@ This document explains how to set up and run live trading with the XTS Socket in
     ```bash
     python3 apps/cli/main.py update-master
     ```
-3.  **Active Contracts**: Refresh the session's active contracts.
-    ```bash
-    python3 apps/cli/main.py refresh-contracts --date-range today
-    ```
 
 ## Starting Live Trading
 
@@ -26,19 +22,38 @@ You can start live trading via the CLI using either the interactive menu or a di
 
 ### Direct Command
 
+You can run the live trader directly, bypassing the interactive menu, by specifying parameters. Here is the recommended command sequence for a custom Python strategy:
+
 ```bash
-python3 apps/cli/main.py live-trade --rule-id R001 --budget 200000 --sl 20 --target 40 --subscribe-to Full
+python apps/cli/main.py live-trade \
+  --strategy-mode python_code \
+  --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
+  --rule-id triple-lock-momentum \
+  --selection-basis ATM \
+  --budget 200000 \
+  --sl 15 \
+  --target 15,25,45 \
+  --trailing-sl 15 \
+  --break-even
 ```
 
-**Arguments:**
-- `--rule-id`: The ID of the strategy rule (e.g., `EMACROSS_01`).
-- `--budget`: Initial capital assigned to this session.
-- `--sl`: Stop loss points for each trade.
-- `--target`: Target points for each trade.
-- `--selection-basis`: Option selection (ATM, ITM, OTM).
-- `--subscribe-to`: XTS broadcast mode. `Full` provides more fields, `Partial` is lighter.
-- `--trailing-sl`: Points for trailing stop loss (0 to disable).
-- `--break-even`: Enable moving SL to cost when first target is hit (default: True).
+### Configuration Parameters
+
+Values that denote points (like Stop Loss) correspond to absolute price changes in the Option's premium (e.g. 15 points = ₹15 movement in Option price, which is ₹15 * 50 = ₹750/lot for NIFTY).
+
+| Parameter | Default | Valid Options | Description |
+| :--- | :--- | :--- | :--- |
+| `--strategy-mode` | `python_code` | `rule`, `python_code`, `ml` | The core intelligence engine. `rule` uses the web JSON DSL. `python_code` delegates to your custom script. |
+| `--python-strategy-path` | `packages/tradeflow/python_strategies.py:TripleLockStrategy` | Valid Python path | Used only when `strategy-mode` is `python_code`. Points to your custom class. |
+| `--rule-id` | `triple-lock-momentum` | Any valid Rule ID from DB | Crucial for `python_code` mode, as it defines *which* indicators the FundManager calculates and feeds to your script. |
+| `--selection-basis` | `ATM` | `ATM`, `ITM`, `OTM` | Dictates which Option strike is dynamically tracked and traded. (e.g., if NIFTY is 22000, ATM buys the 22000 CE/PE). |
+| `--budget` | `200000.0` | Any positive float | Initial capital (in ₹). Divides by contract (Options lot size * premium) to determine how many lots to buy. |
+| `--sl` | `15.0` | Any positive float | **(Points)** Absolute stop-loss points off the premium. E.g., if you buy an option at ₹200, a `--sl 15` triggers if the premium drops to ₹185 (which is only a 7.5% drop, *not* 15%). |
+| `--target` | `15,25,45` | Comma-separated floats | **(Points)** Step-wise profit booking points. The bot divides your lots into chunks and sells them progressively at +15pts, +25pts, and +45pts from your entry price. |
+| `--trailing-sl` | `15.0` | Any positive float | **(Points)** Locks in profits. If the premium moves +15pts *above* your highest mark, the Stop Loss is dragged up by 15 points. If set to `0`, trailing is disabled. |
+| `--break-even` / `--no-break-even` | `--break-even` (True) | Flag | If enabled, the moment your **first target** is hit (e.g., +15pts), the Stop Loss for all remaining lots is instantly moved to your exact Entry Price to guarantee a risk-free trade on the rest. |
+| `--ml-model-path` | `None` | Path to `.joblib` | Only used if `--strategy-mode ml`. |
+| `--debug` / `--no-debug` | `--no-debug` (False) | Flag | Prints raw XTS Socket JSON packets to the console. |
 
 ### Interactive Menu
 

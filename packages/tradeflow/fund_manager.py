@@ -369,8 +369,16 @@ class FundManager:
         
         if self.log_heartbeat and new_indicators:
             ind_str = ", ".join([f"{k}: {v:.2f}" if isinstance(v, (int, float)) else f"{k}: {v}" for k, v in new_indicators.items()])
-            ts_str = DateUtils.from_timestamp(ts).strftime('%H:%M:%S') if ts else "N/A"
-            logger.info(f"💚 HEARTBEAT [{ts_str}] 💚| Category: {category} | Indicators: {ind_str}")
+            
+            # Format candle start and end times for clarity
+            if ts:
+                start_str = DateUtils.from_timestamp(ts).strftime('%H:%M:%S')
+                end_str = DateUtils.from_timestamp(ts + self.global_timeframe).strftime('%H:%M:%S')
+                time_display = f"{start_str} - {end_str}"
+            else:
+                time_display = "N/A"
+                
+            logger.info(f"💚 HEARTBEAT [Candle: {time_display}] 💚| Category: {category} | Indicators: {ind_str}")
 
         # ONLY execute strategy decision synchronously when the SPOT candle acts as the anchor
         if category != InstrumentCategoryType.SPOT:

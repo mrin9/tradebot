@@ -19,16 +19,15 @@ class LiveTradeEngine:
     """
     Orchestrates live trading by connecting XTS Socket to TradeFlow FundManager.
     """
-    def __init__(self, strategy_config: Dict[str, Any], position_config: Dict[str, Any], subscribe_to: str = "Full", debug: bool = False):
+    def __init__(self, strategy_config: Dict[str, Any], position_config: Dict[str, Any], debug: bool = False):
         """
         Args:
             strategy_config: The strategy rule document.
             position_config: Configuration for PositionManager.
-            subscribe_to: "Full" or "Partial" broadcast mode.
+            debug: Enable socket debug logging.
         """
         self.strategy_config = strategy_config
         self.position_config = position_config
-        self.subscribe_to = subscribe_to
         self.session_id = f"live-{uuid.uuid4().hex[:8]}"
         
         # 1. Initialize FundManager
@@ -48,24 +47,14 @@ class LiveTradeEngine:
         self.last_tick_time = time.time()
         self.tick_queue = queue.Queue()
         
-        # Set subscription mode in settings temporarily or pass it?
-        # The MDSocket_io reads from settings directly.
-        # However, settings class is a singleton. Updating it might affect other parts.
-        # But for are running a single CLI process, it is fine.
-        settings.XTS_BROADCAST_MODE = subscribe_to
+        # Force Full mode for XTS Market Data Socket explicitly
+        settings.XTS_BROADCAST_MODE = "Full"
         
         # 3. Register Socket Callbacks
         self.soc.on_connect = self._on_connect
         
-        # Restore Tick Callbacks
-        if subscribe_to == "Full":
-            self.soc.on_message1501_json_full = self._on_tick
-            self.soc.on_message1512_json_full = self._on_tick
-            self.soc.on_message1105_json_full = self._on_tick
-        else:
-            self.soc.on_message1501_json_partial = self._on_tick
-            self.soc.on_message1512_json_partial = self._on_tick
-            self.soc.on_message1105_json_partial = self._on_tick
+        # Register Tick Callback for 1501 Full
+        self.soc.on_message1501_json_full = self._on_tick
             
         self.soc.on_disconnect = lambda: logger.warning("⚠️ Market Data Socket Disconnected!")
         self.soc.on_error = lambda data: logger.error(f"❌ Socket Error: {data}")
@@ -73,6 +62,7 @@ class LiveTradeEngine:
         self.subscribed_instruments = set() # Track for re-subscription
         self.last_subscribed_id = None
         self.is_running = False
+        self.has_warmed_up = False
         self.db = MongoRepository.get_db()
         
         # Persistence State
@@ -84,12 +74,15 @@ class LiveTradeEngine:
         logger.info(f"🚀 Starting Live Trade Engine | Session: {self.session_id}")
         logger.info(f"📈 Strategy: {self.strategy_config.get('name')} ({self.strategy_config.get('ruleId')})")
         
-        # 1. Warm up FundManager with recent history
-        self._warm_up()
-        
-        # 2. Initial Subscription Setup (Resolve NIFTY + Strike Chain)
+        # 1. Initial Subscription Setup (Resolve NIFTY + Strike Chain)
         self.subscribed_instruments.add(settings.NIFTY_EXCHANGE_INSTRUMENT_ID)
         self._resync_strike_chain()
+        
+        # 2. Connect Socket first. 
+        # In test environments, we must wait for the first 1501 Tick to get the true Replay Time,
+        # so we DO NOT warm up here. Warmup is triggered dynamically inside _process_loop
+        logger.info("🔌 Connecting to XTS Socket to detect Market Time...")
+        threading.Thread(target=self.soc.connect, daemon=True).start()
         
         # 3. Start Processor Thread
         logger.info("🧵 Starting Tick Processor Thread...")
@@ -104,7 +97,7 @@ class LiveTradeEngine:
         
         # 4. Main Loop
         self.is_running = True
-        logger.info("🟢 ENGINE RUNNING. Monitoring for signals...")
+        logger.info("🟢 ENGINE RUNNING. Waiting for first tick to sync market time before processing signals...")
         
         try:
             while self.is_running:
@@ -150,6 +143,17 @@ class LiveTradeEngine:
                     continue
                     
                 self.last_tick_time = time.time()
+                
+                # Halt processing until Warmup is complete
+                if not self.has_warmed_up:
+                    if not self.fund_manager.is_warming_up:
+                        logger.info(f"⏳ Detected First Market Tick Time: {tick['isoDt']} ({tick['t']})")
+                        threading.Thread(target=self._warm_up, args=(tick['t'],), daemon=True).start()
+                    
+                    # Re-queue tick and wait gently so we don't lose data while warming up
+                    time.sleep(0.5)
+                    self.tick_queue.put(data)
+                    continue
                 
                 # 2. Feed to FundManager
                 self.fund_manager.on_tick_or_base_candle(tick)
@@ -235,19 +239,25 @@ class LiveTradeEngine:
         except Exception as e:
             logger.error(f"❌ Error in _on_connect: {e}", exc_info=True)
             
-    def _warm_up(self):
-        """Fetches last 300 candles from DB to prime indicators (handling holidays)."""
-        logger.info("🔥 Pruning/Warming up indicators from DB history...")
+    def _warm_up(self, anchor_timestamp: int):
+        """Fetches last 300 candles from DB to prime indicators."""
+        if self.has_warmed_up:
+            return
+            
+        logger.info(f"🔥 Pruning/Warming up indicators anchored at {anchor_timestamp}...")
         self.fund_manager.is_warming_up = True
-        now_ts = int(time.time())
+        
+        nifty_id = settings.NIFTY_EXCHANGE_INSTRUMENT_ID
+        
+        now_ts = anchor_timestamp
+        
         # Increase window to 7 days to account for long holidays/weekends
         # but limit to 300 candles to avoid excessive processing
         search_window = 7 * 24 * 3600 
-        nifty_id = settings.NIFTY_EXCHANGE_INSTRUMENT_ID
         
         ticks = self.db[settings.NIFTY_CANDLE_COLLECTION].find({
             "i": nifty_id,
-            "t": {"$gte": now_ts - search_window}
+            "t": {"$gte": now_ts - search_window, "$lt": now_ts}
         }).sort("t", -1).limit(300) # Get latest 300
         
         # Sort back to chronological order for feeding
@@ -259,7 +269,8 @@ class LiveTradeEngine:
             count += 1
             
         self.fund_manager.is_warming_up = False
-        logger.info(f"✅ Warm-up complete. Processed {count} historical candles for NIFTY ({nifty_id}).")
+        self.has_warmed_up = True
+        logger.info(f"✅ Warm-up complete. Processed {count} historical candles for NIFTY ({nifty_id}) ending at {now_ts}.")
 
     def _resync_strike_chain(self):
         """Initial strike chain resolution based on latest Nifty price."""
