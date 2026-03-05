@@ -21,12 +21,15 @@ class FundManager:
     The Orchestrator (Brain) for Multi-Timeframe Analysis (MTFA).
     Coordinates data flow between Market Data, multiple Timeframe Resamplers, Indicators, and Strategy Logic.
     """
-    def __init__(self, strategy_config: Dict[str, Any], position_config: Dict[str, Any] | None = None, log_heartbeat: bool = False, is_backtest: bool = False):
+    def __init__(self, strategy_config: Dict[str, Any], position_config: Dict[str, Any] | None = None, log_heartbeat: bool = False, is_backtest: bool = False, fetch_ohlc_fn: Callable = None, fetch_quote_fn: Callable = None):
         """
         Args:
             strategy_config (Dict): The full JSON-DSL strategy rule document from the database.
             position_config (Dict, optional): Configuration for PositionManager (quantity, stop_loss, target).
             log_heartbeat (bool): If True, logs indicator state on every candle close (useful for live).
+            is_backtest (bool): If True, running in backtest mode.
+            fetch_ohlc_fn (Callable, optional): API callback to fetch historical OHLC (for live warmup).
+            fetch_quote_fn (Callable, optional): API callback to fetch latest Quote (for live fallbacks).
         """
         from packages.config import settings
         self.config = strategy_config
@@ -109,6 +112,8 @@ class FundManager:
         self.on_signal: Callable[[Dict], None] | None = None
         self.db = MongoRepository.get_db()
         self.latest_tick_prices: Dict[int, float] = {}
+        self.fetch_ohlc_fn = fetch_ohlc_fn
+        self.fetch_quote_fn = fetch_quote_fn
         
         # 4. Global Timeframe and Multi-Instrument Streams
         from packages.config import settings
@@ -199,20 +204,26 @@ class FundManager:
         """
         logger.debug(f"🔥 Warming up {category} instrument: {instrument_id} at {DateUtils.from_timestamp(current_ts)}")
         
-        from packages.config import settings
-        # Fetch last 100 1-minute candles before current_ts
-        # Use $lt current_ts to avoid "look-ahead" leakage and ensure we get 
-        # previous day's data if market just opened at 09:15.
-        history = list(self.db[settings.OPTIONS_CANDLE_COLLECTION].find(
-            {"i": instrument_id, "t": {"$lte": current_ts}}
-        ).sort("t", -1).limit(100))
+        # Sort chronologically
+        history = []
+        if self.fetch_ohlc_fn and not self.is_backtest:
+            # Live Mode: Fetch from API
+            fmt = "%b %d %Y %H%M%S"
+            start_dt = DateUtils.from_timestamp(current_ts - 3600 * 24) # 1 day ago
+            end_dt = DateUtils.from_timestamp(current_ts)
+            history = self.fetch_ohlc_fn(2, instrument_id, start_dt.strftime(fmt), end_dt.strftime(fmt))
+            # fetch_ohlc_fn should return normalized list of dicts, limited to 100 for warmup
+            history = history[-100:] if history else []
+        else:
+            # Backtest or Default: Fetch from DB
+            history_cursor = list(self.db[settings.OPTIONS_CANDLE_COLLECTION].find(
+                {"i": instrument_id, "t": {"$lte": current_ts}}
+            ).sort("t", -1).limit(100))
+            history = sorted(history_cursor, key=lambda x: x['t'])
         
         if not history:
             logger.warning(f"⚠️ No history found for {category} ({instrument_id}) warmup.")
             return
-            
-        # Sort chronologically
-        history.reverse()
         
         resampler = self.resamplers.get(category)
         if resampler:
@@ -245,8 +256,20 @@ class FundManager:
         if price:
             return price
             
-        # 2. DB Fallback
-        logger.info(f"🔍 No live tick for {symbol_id}. Checking DB fallback...")
+        # 2. API/DB Fallback
+        logger.info(f"🔍 No live tick for {symbol_id}. Checking fallbacks...")
+        
+        if self.fetch_quote_fn and not self.is_backtest:
+            # Live Mode: Fetch from API
+            # Options segment is 2
+            quote = self.fetch_quote_fn(2, symbol_id)
+            if quote:
+                price = quote.get('p')
+                if price:
+                    logger.info(f"✅ Found API fallback price for {symbol_id}: {price}")
+                    return price
+
+        # DB Fallback (Backup)
         query = {"i": symbol_id}
         if current_ts:
             query["t"] = {"$lte": current_ts}

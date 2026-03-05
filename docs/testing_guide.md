@@ -42,6 +42,23 @@ pytest -v tests/
 
 Individual tests will now log the database they are using (e.g., `tradebot_test` or `tradebot_frozen_test`).
 
+### XTS API Testing
+
+We have a dedicated suite for XTS API connectivity and data normalization in `tests/xts/`.
+
+#### Run Mocked XTS Tests (Fast, 24/7)
+These tests use simulated API responses and do not require an active XTS session or market hours.
+```bash
+pytest tests/xts/ -m "not live"
+```
+
+#### Run Live XTS Integration Tests (Requires Active Market)
+These tests make real network calls to XTS to verify their API response structures have not changed.
+**Prerequisites:** Valid `XTS_MARKET_API_KEY`, `XTS_INTERACTIVE_API_KEY`, etc. in your `.env`.
+```bash
+pytest tests/xts/ -m "live"
+```
+
 ---
 
 ### 2. Database Namespacing & Global Safety

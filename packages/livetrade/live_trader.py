@@ -3,7 +3,7 @@ import threading
 import queue
 import random
 import string
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 
 from packages.config import settings
@@ -13,6 +13,7 @@ from packages.tradeflow.types import MarketIntentType
 from packages.utils.market_utils import MarketUtils
 from packages.utils.log_utils import setup_logger
 from packages.utils.mongo import MongoRepository
+from packages.utils.date_utils import DateUtils
 
 logger = setup_logger("LiveTrader")
 
@@ -39,7 +40,9 @@ class LiveTradeEngine:
         self.fund_manager = FundManager(
             strategy_config=self.strategy_config,
             position_config=self.position_config,
-            log_heartbeat=True
+            log_heartbeat=True,
+            fetch_ohlc_fn=self._fetch_ohlc_api,
+            fetch_quote_fn=self._fetch_quote_api
         )
         
         # Override on_signal to catch trades and signals
@@ -268,48 +271,73 @@ class LiveTradeEngine:
             logger.error(f"❌ Error in _on_connect: {e}", exc_info=True)
             
     def _warm_up(self, anchor_timestamp: int):
-        """Fetches last 300 candles from DB to prime indicators."""
+        """Fetches last 300 candles from XTS API to prime indicators."""
         if self.has_warmed_up:
             return
             
-        logger.info(f"🔥 Pruning/Warming up indicators anchored at {anchor_timestamp}...")
+        logger.info(f"🔥 Warmup: Fetching historical candles anchored at {anchor_timestamp}...")
         self.fund_manager.is_warming_up = True
         
         nifty_id = settings.NIFTY_EXCHANGE_INSTRUMENT_ID
         
-        now_ts = anchor_timestamp
+        # Calculate time range
+        # Note: anchor_timestamp is the current market tick time. 
+        # We want data BEFORE this time.
+        end_dt = DateUtils.from_timestamp(anchor_timestamp)
+        start_dt = end_dt - timedelta(days=2) # Default 2 days back
         
-        # Increase window to 7 days to account for long holidays/weekends
-        # but limit to 300 candles to avoid excessive processing
-        search_window = 7 * 24 * 3600 
+        # XTS get_ohlc expects format: 'Oct 01 2023 091500' or similar? 
+        # Actually it's 'Oct 20 2021 151500' based on SDK docs
+        fmt = "%b %d %Y %H%M%S"
+        start_str = start_dt.strftime(fmt)
+        end_str = end_dt.strftime(fmt)
         
-        ticks = self.db[settings.NIFTY_CANDLE_COLLECTION].find({
-            "i": nifty_id,
-            "t": {"$gte": now_ts - search_window, "$lt": now_ts}
-        }).sort("t", -1).limit(300) # Get latest 300
+        candles = self._fetch_ohlc_api(1, nifty_id, start_str, end_str)
         
-        # Sort back to chronological order for feeding
-        ticks_list = sorted(list(ticks), key=lambda x: x['t'])
-        
+        if not candles:
+            logger.warning("⚠️ No historical data returned from API for warmup. Checking DB fallback...")
+            # DB Fallback if API fails
+            search_window = 7 * 24 * 3600
+            fallback_ticks = list(self.db[settings.NIFTY_CANDLE_COLLECTION].find({
+                "i": nifty_id,
+                "t": {"$gte": anchor_timestamp - search_window, "$lt": anchor_timestamp}
+            }).sort("t", -1).limit(300))
+            candles = sorted(fallback_ticks, key=lambda x: x['t'])
+
         count = 0
-        for t in ticks_list:
-            self.fund_manager.on_tick_or_base_candle(t)
-            count += 1
+        for t in candles:
+            # Only process if older than anchor
+            if t['t'] < anchor_timestamp:
+                self.fund_manager.on_tick_or_base_candle(t)
+                count += 1
             
         self.fund_manager.is_warming_up = False
         self.has_warmed_up = True
-        logger.info(f"✅ Warm-up complete. Processed {count} historical candles for NIFTY ({nifty_id}) ending at {now_ts}.")
+        logger.info(f"✅ Warmup complete. Processed {count} candles for NIFTY ending before {anchor_timestamp}.")
 
     def _resync_strike_chain(self):
-        """Initial strike chain resolution based on latest Nifty price."""
-        last_candle = self.db[settings.NIFTY_CANDLE_COLLECTION].find_one(
-            {"i": settings.NIFTY_EXCHANGE_INSTRUMENT_ID},
-            sort=[("t", -1)]
-        )
-        if last_candle:
-            spot = last_candle.get('c', last_candle.get('p', 25000))
-            atm = round(spot / 50) * 50
-            self._update_rolling_strikes(atm)
+        """Initial strike chain resolution based on latest Nifty price via API."""
+        try:
+            # 1. Try Quote API for Nifty (26000)
+            quote_data = self._fetch_quote_api(1, settings.NIFTY_EXCHANGE_INSTRUMENT_ID)
+            if quote_data:
+                spot = quote_data.get('p', 0)
+                if spot > 0:
+                    atm = round(spot / 50) * 50
+                    self._update_rolling_strikes(atm)
+                    return
+
+            # 2. DB Fallback if Quote API fails
+            last_candle = self.db[settings.NIFTY_CANDLE_COLLECTION].find_one(
+                {"i": settings.NIFTY_EXCHANGE_INSTRUMENT_ID},
+                sort=[("t", -1)]
+            )
+            if last_candle:
+                spot = last_candle.get('c', last_candle.get('p', 25000))
+                atm = round(spot / 50) * 50
+                self._update_rolling_strikes(atm)
+        except Exception as e:
+            logger.error(f"❌ Error in _resync_strike_chain: {e}")
 
     def _update_rolling_strikes(self, new_atm):
         """
@@ -367,6 +395,91 @@ class LiveTradeEngine:
         }))
         
         return {int(c['exchangeInstrumentID']) for c in contracts}
+
+    def _fetch_ohlc_api(self, segment: int, instrument_id: int, start_time: str = None, end_time: str = None) -> List[Dict]:
+        """
+        Helper to fetch 1-minute OHLC data from XTS REST API.
+        Returns a list of normalized candle dicts.
+        """
+        try:
+            if not start_time or not end_time:
+                # Default to last hour if not specified
+                now = datetime.now()
+                fmt = "%b %d %Y %H%M%S"
+                end_time = now.strftime(fmt)
+                start_time = (now - timedelta(hours=1)).strftime(fmt)
+
+            logger.debug(f"🌐 API OHLC Request: {instrument_id} ({start_time} - {end_time})")
+            response = self.xt_market.get_ohlc(
+                exchangeSegment=segment,
+                exchangeInstrumentID=instrument_id,
+                startTime=start_time,
+                endTime=end_time,
+                compressionValue=60 # 1 minute
+            )
+
+            if response and response.get('type') == 'success':
+                result = response.get('result', {})
+                # XTS often uses "dataReponse" (typo in API) for OHLC results
+                raw_data = result.get('dataReponse', result.get('data', ''))
+                if not raw_data: return []
+                
+                # Parse the comma-separated records
+                # Each record is "Timestamp|Open|High|Low|Close|Volume|OI|"
+                records = raw_data.strip().split(',')
+                candles = []
+                for rec in records:
+                    parts = rec.strip().split('|')
+                    if len(parts) >= 6:
+                        # Extract and normalize
+                        try:
+                            ts = int(parts[0])
+                        except:
+                            continue
+                            
+                        candles.append({
+                            "i": instrument_id,
+                            "t": ts,
+                            "isoDt": DateUtils.to_kolkata_iso(ts),
+                            "o": float(parts[1]),
+                            "h": float(parts[2]),
+                            "l": float(parts[3]),
+                            "c": float(parts[4]),
+                            "v": int(parts[5])
+                        })
+                return candles
+            else:
+                logger.warning(f"⚠️ API OHLC Failed for {instrument_id}: {response}")
+        except Exception as e:
+            logger.error(f"💥 Exception in _fetch_ohlc_api: {e}")
+        return []
+
+    def _fetch_quote_api(self, segment: int, instrument_id: int) -> Optional[Dict]:
+        """
+        Helper to fetch latest LTP from XTS Quotes API.
+        """
+        try:
+            logger.debug(f"🌐 API Quote Request: {instrument_id}")
+            # publishFormat: 1-JSON, 2-Binary
+            response = self.xt_market.get_quote(
+                Instruments=[{'exchangeSegment': segment, 'exchangeInstrumentID': instrument_id}],
+                xtsMessageCode=1501, 
+                publishFormat="1" 
+            )
+
+            if response and response.get('type') == 'success':
+                result = response.get('result', {})
+                quotes = result.get('listQuotes', [])
+                if quotes:
+                    raw_quote = quotes[0]
+                    # The response for 1501 quote usually has Touchline data
+                    quote_data = json.loads(raw_quote) if isinstance(raw_quote, str) else raw_quote
+                    return MarketUtils.normalize_xts_event("1501-json-full", quote_data)
+            else:
+                logger.warning(f"⚠️ API Quote Failed for {instrument_id}: {response}")
+        except Exception as e:
+            logger.error(f"💥 Exception in _fetch_quote_api: {e}")
+        return None
 
     def _sync_to_db(self):
         """Persists the current trading session state to 'live_trades' collection."""
