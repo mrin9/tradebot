@@ -129,8 +129,12 @@ class SocketDataProvider:
             self.running = False
 
     def _get_xts_timestamp(self, ts: int) -> int:
-        """Adds XTS_TIME_OFFSET (19800s) to pure UTC epoch to match XTS IST-shifted epoch."""
-        return ts + settings.XTS_TIME_OFFSET
+        """
+        Converts Unix UTC epoch to XTS IST-shifted 1980-epoch.
+        1. Add 19800 seconds (IST shift)
+        2. Subtract 315532800 seconds (Epoch shift 1970 -> 1980)
+        """
+        return ts + settings.XTS_TIME_OFFSET - 315532800
 
     async def _emit_1501_tick(self, instrument_id: int, price: float, timestamp: int, volume: int):
         """Emits Touchline (1501) full and partial events."""

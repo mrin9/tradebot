@@ -53,7 +53,7 @@ You can run automated tests directly inside the backend container:
 docker compose exec api pytest tests/
 
 # Run a specific test
-docker compose exec api pytest tests/backtest/test_xts_socket.py
+docker compose exec api pytest tests/xts/test_xts_socket.py
 ```
 
 ### Running One-off Scripts
@@ -64,7 +64,7 @@ You can run any script from the project root inside a temporary container:
 docker run --rm --env-file .env <image-name> python <path/to/script.py> [args]
 
 # Example: Run XTS Socket Tester
-docker run --rm --env-file .env trade-bot-api:latest python tests/backtest/test_xts_socket.py --events all
+docker run --rm --env-file .env trade-bot-api:latest python tests/xts/test_xts_socket.py --store-in-db
 ```
 
 ### Seeding Data

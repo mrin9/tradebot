@@ -27,7 +27,7 @@ docker compose exec api pytest tests/
 pytest tests/test_fund_manager.py
 
 # Docker (VPS/Container)
-docker compose exec api pytest tests/backtest/test_xts_socket.py
+docker compose exec api pytest tests/xts/test_xts_socket.py
 ```
 
 #### Run a Specific Test Case
@@ -44,19 +44,40 @@ Individual tests will now log the database they are using (e.g., `tradebot_test`
 
 ### XTS API Testing
 
-We have a dedicated suite for XTS API connectivity and data normalization in `tests/xts/`.
+We have a dedicated suite for XTS API connectivity, data normalization, and timing calibration in `tests/xts/`.
 
-#### Run Mocked XTS Tests (Fast, 24/7)
+#### 1. Mocked XTS Tests (Fast, 24/7)
 These tests use simulated API responses and do not require an active XTS session or market hours.
 ```bash
 pytest tests/xts/ -m "not live"
 ```
 
-#### Run Live XTS Integration Tests (Requires Active Market)
+#### 2. Live XTS Integration Tests (Requires Active Market/Keys)
 These tests make real network calls to XTS to verify their API response structures have not changed.
-**Prerequisites:** Valid `XTS_MARKET_API_KEY`, `XTS_INTERACTIVE_API_KEY`, etc. in your `.env`.
+**Prerequisites:** Valid `MARKET_API_KEY`, etc. in your `.env`.
 ```bash
+# Run all live-tagged tests
 pytest tests/xts/ -m "live"
+```
+
+#### 3. XTS Epoch & Timing Calibration
+Verifies the 10-year epoch shift (1970 vs 1980) logic used in the live trader and simulator.
+```bash
+pytest tests/xts/test_xts_epoch.py -s
+```
+
+#### 4. Live Socket Stream Tester
+Standalone script to verify you are receiving heartbeats and ticks from the live socket.
+- **Path:** `tests/xts/test_xts_socket.py`
+- **Parameters:**
+  - `--store-in-db`: Optional. If provided, saves captured ticks to the `xts_socket_data_collection_test` collection for later analysis.
+
+```bash
+# Verify connection and print raw ticks (CTRL+C to stop)
+python tests/xts/test_xts_socket.py
+
+# Verify connection and SAVE ticks to MongoDB
+python tests/xts/test_xts_socket.py --store-in-db
 ```
 
 ---

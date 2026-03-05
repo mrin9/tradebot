@@ -59,15 +59,20 @@ class DateUtils:
             
         return int(dt.timestamp())
 
+    # XTS Epoch Offset: 10 years (1970 to 1980) including leap years 1972, 1976
+    # 3652 days * 86400 seconds = 315532800
+    XTS_EPOCH_OFFSET = 315532800
+
     @staticmethod
     def xts_epoch_to_utc(ts: Union[int, float]) -> Union[int, float]:
         """
-        XTS sockets often send timestamps (ExchangeTimeStamp, LastTradedTime, etc.) 
-        as an IST-shifted epoch (UTC + 19800 seconds). 
-        This converts it back to a standard pure UTC epoch.
+        XTS sockets send timestamps as IST-shifted seconds since Jan 1, 1980.
+        This converts it back to a standard Unix UTC epoch (since Jan 1, 1970).
         """
         if ts and isinstance(ts, (int, float)) and ts > 1000000:
-            return ts - 19800
+            # 1. Add 10 year offset to move from 1980-base to 1970-base
+            # 2. Subtract 19800 seconds to move from IST to UTC
+            return ts + DateUtils.XTS_EPOCH_OFFSET - 19800
         return ts
 
     @staticmethod
