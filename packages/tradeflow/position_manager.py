@@ -102,6 +102,9 @@ class PositionManager:
         self.current_position: Position | None = None
         self.trades_history = []
         
+        # Callbacks
+        self.on_trade_event = None
+        
         # Cycle Tracking
         self.cycle_count = 0
         self.last_trade_date = None
@@ -314,6 +317,16 @@ class PositionManager:
                         pos.nifty_price_at_break_even = nifty_price or 0.0
                         time_str = exit_time.strftime("%d-%b %H:%M").upper()
                         logger.info(f"🤟 [{time_str}] Break-Even Triggered! SL moved to Entry ({pos.stop_loss})")
+                        
+                        if self.on_trade_event:
+                            self.on_trade_event({
+                                "tradetime": DateUtils.get_market_time().isoformat(),
+                                "instrument": self.display_symbol,
+                                "type": "breakeven",
+                                "transaction": f"Break-Even Triggered! SL moved to {pos.stop_loss}",
+                                "actionPnL": 0.0,
+                                "totalPnL": pos.total_realized_pnl
+                            })
                 
                 close_qty = self.quantity // (len(pos.targets) + 1)
                 desc = f"Target {pos.achieved_targets} ({next_target:.2f}) hit at {target_reference_price:.2f}"
@@ -388,6 +401,17 @@ class PositionManager:
             entry_transaction_desc=trans_desc
         )
         
+        # Trigger entry event
+        if self.on_trade_event:
+            self.on_trade_event({
+                "tradetime": DateUtils.get_market_time().isoformat(),
+                "instrument": self.display_symbol,
+                "type": "entry",
+                "transaction": trans_desc,
+                "actionPnL": 0.0,
+                "totalPnL": 0.0
+            })
+        
         # Place Order: 
         # For OPTIONS: Always BUY
         # For CASH/FUTURES: BUY (Shorts are disabled)
@@ -434,8 +458,26 @@ class PositionManager:
 
         if quantity is not None and reason.startswith("TARGET"):
             logger.info(f"🟠 [{fmt_time}] {reason} Hit: {trans_desc} (Action PnL: {chunk_pnl:>+10,.2f})")
+            if self.on_trade_event:
+                self.on_trade_event({
+                    "tradetime": DateUtils.get_market_time().isoformat(),
+                    "instrument": self.current_position.display_symbol,
+                    "type": reason.lower(),
+                    "transaction": f"{reason} Hit: {trans_desc}",
+                    "actionPnL": chunk_pnl,
+                    "totalPnL": pos.total_realized_pnl
+                })
         else:
             logger.info(f"🔴 [{fmt_time}] Exit {reason}: {trans_desc} | Action PnL: {chunk_pnl:>+10,.2f} | Cycle PnL: ₹{pos.total_realized_pnl:>+10,.2f} | Session PnL: ₹{self.session_realized_pnl:>+10,.2f}")
+            if self.on_trade_event:
+                self.on_trade_event({
+                    "tradetime": DateUtils.get_market_time().isoformat(),
+                    "instrument": self.current_position.display_symbol,
+                    "type": "exit",
+                    "transaction": f"Exit {reason}: {trans_desc}",
+                    "actionPnL": chunk_pnl,
+                    "totalPnL": pos.total_realized_pnl
+                })
 
         closed_chunk = Position(
             symbol=pos.symbol,
@@ -470,4 +512,14 @@ class PositionManager:
             self.order_manager.place_order(self.symbol, exit_side, close_qty)
 
         if pos.remaining_quantity <= 0:
+            # Trigger summary event
+            if self.on_trade_event:
+                self.on_trade_event({
+                    "tradetime": DateUtils.get_market_time().isoformat(),
+                    "instrument": pos.display_symbol,
+                    "type": "summary",
+                    "transaction": f"Trade Cycle Complete | Total Action: {pos.total_realized_pnl:>+10,.2f}",
+                    "actionPnL": 0.0,
+                    "totalPnL": pos.total_realized_pnl
+                })
             self.current_position = None

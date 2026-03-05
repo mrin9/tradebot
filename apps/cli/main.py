@@ -562,6 +562,7 @@ def live_trade(
     target: Annotated[str, typer.Option(help="Target Points (Comma separated)")] = "15,25,45",
     trailing_sl: Annotated[float, typer.Option(help="Trailing Stop Loss Points")] = 15.0,
     break_even: Annotated[bool, typer.Option(help="Enable Break-even Trailing")] = True,
+    record_papertrade: Annotated[bool, typer.Option(help="Record detailed trade logs in 'papertrade' collection")] = True,
     ml_model_path: Annotated[Optional[str], typer.Option(help="Path to ML model")] = None,
     debug: Annotated[bool, typer.Option(help="Enable Socket Debug Logging")] = False
 ):
@@ -581,6 +582,7 @@ def live_trade(
             "option_type": selection_basis.upper(),
             "instrument_type": "OPTIONS", # Default for live trading in this context
             "use_break_even": break_even,
+            "record_papertrade_db": record_papertrade,
             "symbol": "NIFTY",
             "strategy_mode": strategy_mode,
             "python_strategy_path": python_strategy_path,

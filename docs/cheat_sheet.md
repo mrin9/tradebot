@@ -13,6 +13,7 @@ Quick reference for common commands.
 | **Check Data Gaps** | `python apps/cli/main.py check-gaps` |
 | **Prune Old Data** | `python apps/cli/main.py age-out --days 30` |
 | **Analyze Crossovers**| `python apps/cli/main.py crossover --instrument NIFTY2630225400CE --date 2026-02-27 --timeframe 180` |
+| **Start Live Trade**  | `python apps/cli/main.py live-trade --rule-id triple-lock-momentum --record-papertrade` |
 
 ## Docker Commands
 

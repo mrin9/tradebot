@@ -34,7 +34,8 @@ python apps/cli/main.py live-trade \
   --sl 15 \
   --target 15,25,45 \
   --trailing-sl 15 \
-  --break-even
+  --break-even \
+  --record-papertrade
 ```
 
 ### Configuration Parameters
@@ -51,7 +52,8 @@ Values that denote points (like Stop Loss) correspond to absolute price changes 
 | `--sl` | `15.0` | Any positive float | **(Points)** Absolute stop-loss points off the premium. E.g., if you buy an option at ₹200, a `--sl 15` triggers if the premium drops to ₹185 (which is only a 7.5% drop, *not* 15%). |
 | `--target` | `15,25,45` | Comma-separated floats | **(Points)** Step-wise profit booking points. The bot divides your lots into chunks and sells them progressively at +15pts, +25pts, and +45pts from your entry price. |
 | `--trailing-sl` | `15.0` | Any positive float | **(Points)** Locks in profits. If the premium moves +15pts *above* your highest mark, the Stop Loss is dragged up by 15 points. If set to `0`, trailing is disabled. |
-| `--break-even` / `--no-break-even` | `--break-even` (True) | Flag | If enabled, the moment your **first target** is hit (e.g., +15pts), the Stop Loss for all remaining lots is instantly moved to your exact Entry Price to guarantee a risk-free trade on the rest. |
+| `--break-even` / `--no-break-even` | `--break-even` (True) | Flag | If enabled, the moment your **first target** is hit (e.g., +15pts), the Stop Loss for all remaining lots is instantly moved to your exact Entry Price. |
+| `--record-papertrade` / `--no-record-papertrade` | `--record-papertrade` (True) | Flag | Enables high-fidelity logging of every trade event (Entry, Target Bookings, SL hits) into a dedicated `papertrade` collection. |
 | `--ml-model-path` | `None` | Path to `.joblib` | Only used if `--strategy-mode ml`. |
 | `--debug` / `--no-debug` | `--no-debug` (False) | Flag | Prints raw XTS Socket JSON packets to the console. |
 
@@ -65,7 +67,8 @@ Values that denote points (like Stop Loss) correspond to absolute price changes 
 
 - **Console Logs**: The engine provides detailed logs about socket connection, warm-up, received ticks, and generated signals.
 - **UI Dashboard**: Live trades are persisted to the `live_trades` collection and can be visualized in the UI (similar to backtest results).
-- **MongoDB**: You can inspect the `live_trades` collection directly for the latest session state.
+- **Paper Trading Logs**: Detailed transaction-level events (Entry, Target 1, Exit, etc.) are recorded in the **`papertrade` collection**.
+- **MongoDB**: You can inspect the `live_trades` collection for session state or `papertrade` for audit logs.
 
 ## Off-Market Hours
 

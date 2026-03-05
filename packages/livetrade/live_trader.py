@@ -1,7 +1,8 @@
 import time
 import threading
 import queue
-import uuid
+import random
+import string
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 
@@ -28,7 +29,11 @@ class LiveTradeEngine:
         """
         self.strategy_config = strategy_config
         self.position_config = position_config
-        self.session_id = f"live-{uuid.uuid4().hex[:8]}"
+        
+        # Session ID format: mar05-0915-xyz
+        now = datetime.now()
+        rand_alpha = ''.join(random.choices(string.ascii_lowercase, k=3))
+        self.session_id = f"{now.strftime('%b%d').lower()}-{now.strftime('%H%M')}-{rand_alpha}"
         
         # 1. Initialize FundManager
         self.fund_manager = FundManager(
@@ -39,6 +44,9 @@ class LiveTradeEngine:
         
         # Override on_signal to catch trades and signals
         self.fund_manager.on_signal = self._handle_signal
+        
+        # Register Paper Trading Log Handler
+        self.fund_manager.position_manager.on_trade_event = self._record_papertrade_event
         
         # 2. Setup XTS Client & Socket
         self.xt_market = XTSManager.get_market_client()
@@ -197,6 +205,26 @@ class LiveTradeEngine:
             self.xt_market.send_subscription([{'exchangeSegment': segment, 'exchangeInstrumentID': int(symbol)}], 1501)
             self.subscribed_instruments.add(int(symbol))
             self.last_subscribed_id = symbol
+            
+    def _record_papertrade_event(self, event_data: Dict):
+        """Records granular trade events to the 'papertrade' collection."""
+        if not self.fund_manager.record_papertrade_db:
+            return
+            
+        # Enrich event data
+        event_data.update({
+            "sessionID": self.session_id,
+            "ruleId": self.strategy_config.get("ruleId"),
+            "strategyName": self.strategy_config.get("name"),
+            "niftyPrice": self.fund_manager.latest_tick_prices.get(26000, 0.0),
+            "recordedAt": datetime.now() 
+        })
+        
+        try:
+            self.db["papertrade"].insert_one(event_data)
+            logger.debug(f"📝 Recorded papertrade event: {event_data['type']} for {event_data['instrument']}")
+        except Exception as e:
+            logger.error(f"❌ Failed to record papertrade event: {e}")
 
     def _ensure_connection(self):
         """Checks socket health and attempts reconnection if down."""
