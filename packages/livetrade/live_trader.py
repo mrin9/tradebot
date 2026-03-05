@@ -315,6 +315,22 @@ class LiveTradeEngine:
         self.has_warmed_up = True
         logger.info(f"✅ Warmup complete. Processed {count} candles for NIFTY ending before {anchor_timestamp}.")
 
+        # Record Engine Initialization in PaperTrade DB
+        init_data = {
+            "type": "INIT",
+            "instrument": "NIFTY",
+            "price": self.fund_manager.latest_tick_prices.get(26000, 0.0),
+            "msg": "Trading session initialized after successful warmup.",
+            "config": {
+                "budget": self.position_config.get("budget"),
+                "sl": self.position_config.get("stop_loss_points"),
+                "target": self.position_config.get("target_points"),
+                "trailing_sl": self.position_config.get("trailing_sl_points"),
+                "strategy_mode": self.position_config.get("strategy_mode")
+            }
+        }
+        self._record_papertrade_event(init_data)
+
     def _resync_strike_chain(self):
         """Initial strike chain resolution based on latest Nifty price via API."""
         try:
