@@ -13,6 +13,8 @@ from packages.tradeflow.position_manager import PositionManager
 from packages.tradeflow.order_manager import PaperTradingOrderManager
 from packages.tradeflow.candle_resampler import CandleResampler
 from packages.utils.mongo import MongoRepository
+from packages.config import settings
+import time
 
 logger = setup_logger(__name__)
 
@@ -31,7 +33,6 @@ class FundManager:
             fetch_ohlc_fn (Callable, optional): API callback to fetch historical OHLC (for live warmup).
             fetch_quote_fn (Callable, optional): API callback to fetch latest Quote (for live fallbacks).
         """
-        from packages.config import settings
         self.config = strategy_config
         self.indicators_config = self.config.get('indicators', [])
         self.log_heartbeat = log_heartbeat
@@ -116,7 +117,6 @@ class FundManager:
         self.fetch_quote_fn = fetch_quote_fn
         
         # 4. Global Timeframe and Multi-Instrument Streams
-        from packages.config import settings
         self.global_timeframe = self.config.get('timeframe', settings.DEFAULT_TIMEFRAME)
         
         # Track active instruments being monitored {category: instrument_id}
@@ -145,7 +145,6 @@ class FundManager:
         opt_type_num = 3 if is_ce else 4 # CE=3, PE=4 in XTS
         
         # Simplification: Sort by contractExpiration and get the first one (nearest expiry)
-        from packages.config import settings
         contract = self.db[settings.INSTRUMENT_MASTER_COLLECTION].find_one(
             {
                 "name": "NIFTY", 
@@ -461,7 +460,6 @@ class FundManager:
             
             # 0. Stale SignalType Protection (Max 30 minutes)
             # This prevents the bot from acting on "catch-up" data right after startup
-            import time
             if not self.is_backtest and ts and time.time() - ts > 1800:
                  logger.warning(f"⚠️ SignalType ignored: Triggered by stale data from {ts} (>{1800}s old)")
                  return

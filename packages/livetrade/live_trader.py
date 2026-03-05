@@ -217,10 +217,12 @@ class LiveTradeEngine:
         # Enrich event data
         event_data.update({
             "sessionID": self.session_id,
+            "cycleId": event_data.get("cycleId", "N/A"),
+            "cycleSeq": event_data.get("cycleSeq", 1),
             "ruleId": self.strategy_config.get("ruleId"),
             "strategyName": self.strategy_config.get("name"),
             "niftyPrice": self.fund_manager.latest_tick_prices.get(26000, 0.0),
-            "recordedAt": datetime.now() 
+            "recordedAt": DateUtils.get_market_time_iso()
         })
         
         try:
@@ -318,6 +320,11 @@ class LiveTradeEngine:
         # Record Engine Initialization in PaperTrade DB
         init_data = {
             "type": "INIT",
+            "tradetime": DateUtils.get_market_time_iso(),
+            "cycleSeq": 1,
+            "actionPnL": 0.0,
+            "cyclePnL": 0.0,
+            "totalPnL": 0.0,
             "instrument": "NIFTY",
             "price": self.fund_manager.latest_tick_prices.get(26000, 0.0),
             "msg": "Trading session initialized after successful warmup.",

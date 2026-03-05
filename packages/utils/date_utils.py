@@ -27,6 +27,11 @@ class DateUtils:
         return DateUtils.get_current_time(MARKET_TZ)
 
     @staticmethod
+    def get_market_time_iso() -> str:
+        """Returns current market time as ISO string: YYYY-MM-DDTHH:MM:SS"""
+        return DateUtils.get_market_time().strftime("%Y-%m-%dT%H:%M:%S")
+
+    @staticmethod
     def to_utc(dt: datetime.datetime) -> datetime.datetime:
         """Converts a datetime object to UTC."""
         if dt.tzinfo is None:

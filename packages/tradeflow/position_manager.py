@@ -48,6 +48,7 @@ class Position:
     exit_price: float | None = None
     exit_time: datetime | None = None
     trade_cycle: str = "N/A"
+    event_count: int = 0
     entry_signal: str = "N/A"
     entry_reason_description: str = ""
     exit_reason_description: str = ""
@@ -319,13 +320,17 @@ class PositionManager:
                         logger.info(f"🤟 [{time_str}] Break-Even Triggered! SL moved to Entry ({pos.stop_loss})")
                         
                         if self.on_trade_event:
+                            pos.event_count += 1
                             self.on_trade_event({
-                                "tradetime": DateUtils.get_market_time().isoformat(),
+                                "tradetime": DateUtils.get_market_time_iso(),
                                 "instrument": self.display_symbol,
+                                "cycleId": pos.trade_cycle,
+                                "cycleSeq": pos.event_count,
                                 "type": "breakeven",
                                 "transaction": f"Break-Even Triggered! SL moved to {pos.stop_loss}",
                                 "actionPnL": 0.0,
-                                "totalPnL": pos.total_realized_pnl
+                                "cyclePnL": pos.total_realized_pnl,
+                                "totalPnL": self.session_realized_pnl
                             })
                 
                 close_qty = self.quantity // (len(pos.targets) + 1)
@@ -403,13 +408,17 @@ class PositionManager:
         
         # Trigger entry event
         if self.on_trade_event:
+            self.current_position.event_count += 1
             self.on_trade_event({
-                "tradetime": DateUtils.get_market_time().isoformat(),
+                "tradetime": DateUtils.get_market_time_iso(),
                 "instrument": self.display_symbol,
+                "cycleId": self.current_position.trade_cycle,
+                "cycleSeq": self.current_position.event_count,
                 "type": "entry",
                 "transaction": trans_desc,
                 "actionPnL": 0.0,
-                "totalPnL": 0.0
+                "cyclePnL": 0.0,
+                "totalPnL": self.session_realized_pnl
             })
         
         # Place Order: 
@@ -459,24 +468,32 @@ class PositionManager:
         if quantity is not None and reason.startswith("TARGET"):
             logger.info(f"🟠 [{fmt_time}] {reason} Hit: {trans_desc} (Action PnL: {chunk_pnl:>+10,.2f})")
             if self.on_trade_event:
+                pos.event_count += 1
                 self.on_trade_event({
-                    "tradetime": DateUtils.get_market_time().isoformat(),
+                    "tradetime": DateUtils.get_market_time_iso(),
                     "instrument": self.current_position.display_symbol,
+                    "cycleId": pos.trade_cycle,
+                    "cycleSeq": pos.event_count,
                     "type": reason.lower(),
                     "transaction": f"{reason} Hit: {trans_desc}",
                     "actionPnL": chunk_pnl,
-                    "totalPnL": pos.total_realized_pnl
+                    "cyclePnL": pos.total_realized_pnl,
+                    "totalPnL": self.session_realized_pnl
                 })
         else:
             logger.info(f"🔴 [{fmt_time}] Exit {reason}: {trans_desc} | Action PnL: {chunk_pnl:>+10,.2f} | Cycle PnL: ₹{pos.total_realized_pnl:>+10,.2f} | Session PnL: ₹{self.session_realized_pnl:>+10,.2f}")
             if self.on_trade_event:
+                pos.event_count += 1
                 self.on_trade_event({
-                    "tradetime": DateUtils.get_market_time().isoformat(),
+                    "tradetime": DateUtils.get_market_time_iso(),
                     "instrument": self.current_position.display_symbol,
+                    "cycleId": pos.trade_cycle,
+                    "cycleSeq": pos.event_count,
                     "type": "exit",
                     "transaction": f"Exit {reason}: {trans_desc}",
                     "actionPnL": chunk_pnl,
-                    "totalPnL": pos.total_realized_pnl
+                    "cyclePnL": pos.total_realized_pnl,
+                    "totalPnL": self.session_realized_pnl
                 })
 
         closed_chunk = Position(
@@ -514,12 +531,16 @@ class PositionManager:
         if pos.remaining_quantity <= 0:
             # Trigger summary event
             if self.on_trade_event:
+                pos.event_count += 1
                 self.on_trade_event({
-                    "tradetime": DateUtils.get_market_time().isoformat(),
+                    "tradetime": DateUtils.get_market_time_iso(),
                     "instrument": pos.display_symbol,
+                    "cycleId": pos.trade_cycle,
+                    "cycleSeq": pos.event_count,
                     "type": "summary",
                     "transaction": f"Trade Cycle Complete | Total Action: {pos.total_realized_pnl:>+10,.2f}",
                     "actionPnL": 0.0,
-                    "totalPnL": pos.total_realized_pnl
+                    "cyclePnL": pos.total_realized_pnl,
+                    "totalPnL": self.session_realized_pnl
                 })
             self.current_position = None
