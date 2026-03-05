@@ -13,3 +13,7 @@ uvicorn
 scikit-learn
 xgboost
 joblib
+numpy
+pytest
+httpx
+python-dotenv
