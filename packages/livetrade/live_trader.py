@@ -456,7 +456,7 @@ class LiveTradeEngine:
                     if len(parts) >= 6:
                         # Extract and normalize
                         try:
-                            ts = int(parts[0])
+                            ts = int(parts[0]) - settings.XTS_TIME_OFFSET
                         except:
                             continue
                             
