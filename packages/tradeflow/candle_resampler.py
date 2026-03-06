@@ -60,14 +60,20 @@ class CandleResampler:
                 
         self.last_period_start = period_start
         
-        # Extract values with safe fallbacks
-        # If 'o', 'h', 'l', 'c' are missing, we fall back to 'p' (LTP) or each other
+        # Extract values with safe fallbacks and explicit casting to float
         c = candle.get('c', candle.get('close', candle.get('p', candle.get('ltp'))))
         o = candle.get('o', candle.get('open', c))
         h = candle.get('h', candle.get('high', c))
         l = candle.get('l', candle.get('low', c))
         v = candle.get('v', candle.get('volume', 0))
-        
+
+        # Enforce float types for price columns to prevent Polars schema mismatches
+        o = float(o) if o is not None else None
+        h = float(h) if h is not None else None
+        l = float(l) if l is not None else None
+        c = float(c) if c is not None else None
+        v = float(v) if v is not None else 0.0
+
         # Initialize or Update
         if not self.current_candle:
             self.current_candle = {

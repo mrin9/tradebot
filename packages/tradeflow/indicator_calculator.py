@@ -88,8 +88,16 @@ class IndicatorCalculator:
         if len(self.category_candles[instrument_category]) < 1:
             return {}
             
-        # Create DataFrame
-        df = pl.DataFrame(list(self.category_candles[instrument_category]))
+        # Create DataFrame with explicit schema to avoid inference errors (e.g., Int64 vs Float64)
+        schema = {
+            'open': pl.Float64,
+            'high': pl.Float64,
+            'low': pl.Float64,
+            'close': pl.Float64,
+            'volume': pl.Float64,
+            'timestamp': pl.Int64
+        }
+        df = pl.DataFrame(list(self.category_candles[instrument_category]), schema=schema)
         
         # Calculate indicators for this specific category
         indicators_to_calc = []
