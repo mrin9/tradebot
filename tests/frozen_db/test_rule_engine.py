@@ -2,7 +2,8 @@
 Tests for RuleStrategy, verifying entry/exit logic and condition matching using internal rule engine.
 """
 import pytest
-from packages.tradeflow.rule_strategy import RuleStrategy, Signal
+from packages.tradeflow.rule_strategy import RuleStrategy
+from packages.tradeflow.types import SignalType as Signal
 from packages.config import settings
 
 @pytest.fixture(autouse=True)
@@ -53,9 +54,9 @@ def test_hold_signal(strategy):
 def test_buy_signal(strategy):
     """Verifies that LONG signal is triggered when crossover and threshold conditions are met."""
     ind_buy = {
-        'fast_ema': 105, 'slow_ema': 100, 
-        'fast_ema_prev': 95, 'slow_ema_prev': 100,
-        'rsi': 65
+        'NIFTY_fast_ema': 105, 'NIFTY_slow_ema': 100, 
+        'NIFTY_fast_ema_prev': 95, 'NIFTY_slow_ema_prev': 100,
+        'NIFTY_rsi': 65
     }
     signal, reason, confidence = strategy.on_resampled_candle_closed({}, ind_buy)
     assert signal == Signal.LONG
@@ -65,9 +66,9 @@ def test_buy_signal(strategy):
 def test_no_redundant_buy_signal(strategy):
     """Verifies that no redundant signals are generated if the condition was already met."""
     ind_already_crossed = {
-        'fast_ema': 110, 'slow_ema': 100, 
-        'fast_ema_prev': 105, 'slow_ema_prev': 100,
-        'rsi': 65
+        'NIFTY_fast_ema': 110, 'NIFTY_slow_ema': 100, 
+        'NIFTY_fast_ema_prev': 105, 'NIFTY_slow_ema_prev': 100,
+        'NIFTY_rsi': 65
     }
     signal, reason, confidence = strategy.on_resampled_candle_closed({}, ind_already_crossed)
     assert signal == Signal.NEUTRAL
@@ -75,9 +76,9 @@ def test_no_redundant_buy_signal(strategy):
 def test_sell_signal(strategy):
     """Verifies that SHORT signal is triggered when inverse conditions are detected (AUTO mode)."""
     ind_sell = {
-        'fast_ema': 95, 'slow_ema': 100, 
-        'fast_ema_prev': 105, 'slow_ema_prev': 100,
-        'rsi': 35
+        'NIFTY_fast_ema': 95, 'NIFTY_slow_ema': 100, 
+        'NIFTY_fast_ema_prev': 105, 'NIFTY_slow_ema_prev': 100,
+        'NIFTY_rsi': 35
     }
     signal, reason, confidence = strategy.on_resampled_candle_closed({}, ind_sell)
     assert signal == Signal.SHORT
@@ -100,11 +101,11 @@ def test_or_operator():
     strat_or = RuleStrategy(strategy_config=config_or)
     
     # RSI strong
-    ind_only_rsi = {'rsi': 65, 'ema': 95}
+    ind_only_rsi = {'NIFTY_rsi': 65, 'NIFTY_ema': 95}
     signal, _, _ = strat_or.on_resampled_candle_closed({}, ind_only_rsi)
     assert signal == Signal.LONG
     
     # EMA strong
-    ind_only_ema = {'rsi': 55, 'ema': 105}
+    ind_only_ema = {'NIFTY_rsi': 55, 'NIFTY_ema': 105}
     signal, _, _ = strat_or.on_resampled_candle_closed({}, ind_only_ema)
     assert signal == Signal.LONG

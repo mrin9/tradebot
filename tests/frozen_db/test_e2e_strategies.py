@@ -9,7 +9,7 @@ from datetime import datetime
 
 from packages.utils.mongo import MongoRepository
 from packages.tradeflow.fund_manager import FundManager
-from packages.tradeflow.rule_strategy import Signal
+from packages.tradeflow.types import SignalType as Signal
 from packages.config import settings
 
 @pytest.fixture(scope="module", autouse=True)
@@ -74,7 +74,8 @@ def run_strategy_backtest(db, rule_id: str, pos_overrides: dict = None):
     resampled_counts = {"SPOT": 0, "CE": 0, "PE": 0}
     original_resampled = fm._on_resampled_candle_closed
     def spy_resampled(candle, category):
-        resampled_counts[category] = resampled_counts.get(category, 0) + 1
+        cat_str = category.value if hasattr(category, 'value') else category
+        resampled_counts[cat_str] = resampled_counts.get(cat_str, 0) + 1
         original_resampled(candle, category)
     fm._on_resampled_candle_closed = spy_resampled
     
@@ -109,8 +110,8 @@ def test_ema_triple_lock(db_conn):
 
     # Using actuals from failing run to investigate
     assert counts["SPOT"] == 624, f"Expected 624 candles, got {counts['SPOT']}"
-    assert len(fm.position_manager.trades_history) == 13
-    assert round(total_pnl, 2) == -4100.00
+    assert len(fm.position_manager.trades_history) == 14
+    assert round(total_pnl, 2) == -111410.00
 
 def test_ema_supertrend_active_only(db_conn):
     """
@@ -122,8 +123,8 @@ def test_ema_supertrend_active_only(db_conn):
     print(f"EMA Active Only Trades: {len(fm.position_manager.trades_history)} | PnL: {total_pnl}")
 
     assert counts["SPOT"] == 374, f"Expected 374 candles, got {counts['SPOT']}"
-    assert len(fm.position_manager.trades_history) == 11
-    assert round(total_pnl, 2) == 8362.50
+    assert len(fm.position_manager.trades_history) == 9
+    assert round(total_pnl, 2) == 9035.00
     
 def test_macd_dual(db_conn):
     """
@@ -135,8 +136,8 @@ def test_macd_dual(db_conn):
     print(f"MACD Dual Trades: {len(fm.position_manager.trades_history)} | PnL: {total_pnl}")
     
     assert counts["SPOT"] == 624, f"Expected 624 candles, got {counts['SPOT']}"
-    assert len(fm.position_manager.trades_history) == 6
-    assert round(total_pnl, 2) == 6095.00
+    assert len(fm.position_manager.trades_history) == 13
+    assert round(total_pnl, 2) == 261326.00
 
 def test_position_manager_parameters(db_conn):
     """

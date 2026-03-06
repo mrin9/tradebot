@@ -1,6 +1,7 @@
 from typing import Dict, Callable, Any, List
 from packages.utils.date_utils import DateUtils
 from datetime import datetime
+from packages.utils.trade_formatter import TradeFormatter
 import logging
 from packages.tradeflow.indicator_calculator import IndicatorCalculator
 from packages.tradeflow.rule_strategy import RuleStrategy
@@ -136,6 +137,7 @@ class FundManager:
         # 5. Global cache 
         self.latest_indicators_state: Dict[str, float] = {}
         self.is_warming_up = False
+        self.latest_market_time: float | None = None
         
     def _resolve_option_contract(self, strike: float, is_ce: bool, current_ts: float) -> tuple[int | None, str | None]:
         """Resolves the nearest expiry option contract ID and description for NIFTY from DB given a strike."""
@@ -169,7 +171,7 @@ class FundManager:
             needs_update = True
         elif abs(current_spot - self.selection_spot_price) > 25:
             # Price drifted significantly, recalculate ATM and re-map
-            logger.debug(f"🔄 Spot drifted to {current_spot} (prev {self.selection_spot_price}). Recalculating Active Options.")
+            logger.debug(TradeFormatter.format_drift(current_spot, self.selection_spot_price))
             needs_update = True
             
         if needs_update:
@@ -183,8 +185,7 @@ class FundManager:
                     self.active_instruments["CE"] = new_ce_id
                     self.active_instruments["CE_DESC"] = ce_desc
                     self.resamplers["CE"].current_candle = None # Reset partial candle on switch
-                    if self.is_backtest:
-                        self._warmup_instrument("CE", new_ce_id, current_ts)
+                    self._warmup_instrument("CE", new_ce_id, current_ts)
             
             # Resolve PE
             pe_id, pe_desc = self._resolve_option_contract(atm_strike, False, current_ts)
@@ -194,31 +195,34 @@ class FundManager:
                     self.active_instruments["PE"] = new_pe_id
                     self.active_instruments["PE_DESC"] = pe_desc
                     self.resamplers["PE"].current_candle = None # Reset partial candle on switch
-                    if self.is_backtest:
-                        self._warmup_instrument("PE", new_pe_id, current_ts)
+                    self._warmup_instrument("PE", new_pe_id, current_ts)
+
+    def _fetch_historical_candles(self, segment: int, instrument_id: int, start_ts: float, end_ts: float, limit: int = 100) -> list[Dict]:
+        """Unified helper to fetch historical candles from API (live) or DB (backtest)."""
+        if self.fetch_ohlc_fn and not self.is_backtest:
+            # Live Mode: Fetch from API
+            fmt = "%b %d %Y %H%M%S"
+            start_dt = DateUtils.from_timestamp(start_ts)
+            end_dt = DateUtils.from_timestamp(end_ts)
+            history = self.fetch_ohlc_fn(segment, instrument_id, start_dt.strftime(fmt), end_dt.strftime(fmt))
+            # fetch_ohlc_fn should return normalized list of dicts
+            return history[-limit:] if history else []
+        else:
+            # Backtest or Default: Fetch from DB
+            history_cursor = list(self.db[settings.OPTIONS_CANDLE_COLLECTION].find(
+                {"i": instrument_id, "t": {"$lte": end_ts}}
+            ).sort("t", -1).limit(limit))
+            return sorted(history_cursor, key=lambda x: x['t'])
 
     def _warmup_instrument(self, category: str, instrument_id: int, current_ts: float):
         """
         Fetches historical 1m candles for the new instrument and warms up the resampler/indicators.
         """
-        logger.debug(f"🔥 Warming up {category} instrument: {instrument_id} at {DateUtils.from_timestamp(current_ts)}")
+        logger.debug(TradeFormatter.format_warmup(category, instrument_id, str(DateUtils.from_timestamp(current_ts))))
         
-        # Sort chronologically
-        history = []
-        if self.fetch_ohlc_fn and not self.is_backtest:
-            # Live Mode: Fetch from API
-            fmt = "%b %d %Y %H%M%S"
-            start_dt = DateUtils.from_timestamp(current_ts - 3600 * 24) # 1 day ago
-            end_dt = DateUtils.from_timestamp(current_ts)
-            history = self.fetch_ohlc_fn(2, instrument_id, start_dt.strftime(fmt), end_dt.strftime(fmt))
-            # fetch_ohlc_fn should return normalized list of dicts, limited to 100 for warmup
-            history = history[-100:] if history else []
-        else:
-            # Backtest or Default: Fetch from DB
-            history_cursor = list(self.db[settings.OPTIONS_CANDLE_COLLECTION].find(
-                {"i": instrument_id, "t": {"$lte": current_ts}}
-            ).sort("t", -1).limit(100))
-            history = sorted(history_cursor, key=lambda x: x['t'])
+        # Fetch 1 day of history (max 100 candles) for warmup
+        start_ts = current_ts - 3600 * 24
+        history = self._fetch_historical_candles(2, instrument_id, start_ts, current_ts, limit=100)
         
         if not history:
             logger.warning(f"⚠️ No history found for {category} ({instrument_id}) warmup.")
@@ -240,14 +244,37 @@ class FundManager:
             for candle in history:
                 resampler.add_candle(candle)
             
-            logger.debug(f"✅ Warmup complete for {category} ({instrument_id}) with {len(history)} candles.")
+            logger.debug(TradeFormatter.format_warmup(category, instrument_id, "", count=len(history), complete=True))
+
+    def _fetch_fallback_quote(self, segment: int, instrument_id: int, current_ts: float | None) -> float | None:
+        """Unified helper to fetch a fallback quote from API (live) or DB (backtest)."""
+        if self.fetch_quote_fn and not self.is_backtest:
+            # Live Mode: Fetch from API
+            quote = self.fetch_quote_fn(segment, instrument_id)
+            if quote and quote.get('p'):
+                logger.info(f"✅ Found API fallback price for {instrument_id}: {quote.get('p')}")
+                return quote.get('p')
+
+        # DB Fallback (Backup or Backtest)
+        query = {"i": instrument_id}
+        if current_ts:
+            query["t"] = {"$lte": current_ts}
+            
+        fallback = self.db['options_candle'].find_one(query, sort=[("t", -1)])
+        if fallback:
+            price = fallback.get('c', fallback.get('p'))
+            if price is not None:
+                logger.info(f"✅ Found DB fallback price for {instrument_id}: {price}")
+                return price
+                
+        return None
 
     def _get_fallback_option_price(self, symbol_id: int, current_ts: float | None, is_entry: bool = False) -> float | None:
         """
         Attempts to find a reliable price for an option when the live tick is missing.
         Priority:
         1. Tick Cache
-        2. DB Fallback (nearest candle before or at current_ts)
+        2. API/DB Fallback (nearest quote/candle before or at current_ts)
         3. Position Manager's current_price (only for exits)
         """
         # 1. Tick Cache
@@ -257,28 +284,9 @@ class FundManager:
             
         # 2. API/DB Fallback
         logger.info(f"🔍 No live tick for {symbol_id}. Checking fallbacks...")
-        
-        if self.fetch_quote_fn and not self.is_backtest:
-            # Live Mode: Fetch from API
-            # Options segment is 2
-            quote = self.fetch_quote_fn(2, symbol_id)
-            if quote:
-                price = quote.get('p')
-                if price:
-                    logger.info(f"✅ Found API fallback price for {symbol_id}: {price}")
-                    return price
-
-        # DB Fallback (Backup)
-        query = {"i": symbol_id}
-        if current_ts:
-            query["t"] = {"$lte": current_ts}
-            
-        fallback = self.db['options_candle'].find_one(query, sort=[("t", -1)])
-        if fallback:
-            price = fallback.get('c', fallback.get('p'))
-            if price is not None:
-                logger.info(f"✅ Found DB fallback price for {symbol_id}: {price}")
-                return price
+        price = self._fetch_fallback_quote(2, symbol_id, current_ts)
+        if price is not None:
+            return price
             
         # 3. Position Manager Fallback (Exits Only)
         if not is_entry and self.position_manager.current_position and str(symbol_id) == self.position_manager.current_position.symbol:
@@ -299,6 +307,12 @@ class FundManager:
         """
         inst_id = market_data.get('i', market_data.get('instrument_id'))
         
+        # Update global market time if available
+        ts = market_data.get('t', market_data.get('timestamp'))
+        if ts is not None:
+            if self.latest_market_time is None or ts > self.latest_market_time:
+                self.latest_market_time = ts
+                
         # In Backtest mode, we use the configured price source (Open or Close)
         # In Live/Socket mode (ticks), we use 'p' (LTP)
         is_candle = any(k in market_data for k in ['c', 'close', 'o', 'open'])
@@ -330,7 +344,6 @@ class FundManager:
         is_spot = (inst_id == 26000) or getattr(self, 'spot_instrument_id', 26000) == inst_id
         
         # 1.a Drift Check (Only when we get Spot)
-        ts = market_data.get('t', market_data.get('timestamp'))
         if is_spot and ts:
             self._check_and_update_monitored_instruments(price, ts)
 
@@ -390,23 +403,6 @@ class FundManager:
         if new_indicators:
             self.latest_indicators_state.update(new_indicators)
         
-        if self.log_heartbeat and new_indicators:
-            ind_str = ", ".join([f"{k}: {v:.2f}" if isinstance(v, (int, float)) else f"{k}: {v}" for k, v in new_indicators.items()])
-            
-            # Format candle start and end times for clarity
-            if ts:
-                start_str = DateUtils.from_timestamp(ts).strftime('%H:%M:%S')
-                end_str = DateUtils.from_timestamp(ts + self.global_timeframe).strftime('%H:%M:%S')
-                time_display = f"{start_str} - {end_str}"
-            else:
-                time_display = "N/A"
-                
-            logger.info(f"💚 HEARTBEAT [Candle: {time_display}] 💚| Category: {category} | Indicators: {ind_str}")
-
-        # ONLY execute strategy decision synchronously when the SPOT candle acts as the anchor
-        if category != InstrumentCategoryType.SPOT:
-            return
-            
         # 0. Synchronize other resamplers (CE/PE) to current SPOT timestamp
         # This ensures that if Option ticks arrived slightly late, they are still 
         # processed into the current or previous candle before we run indicators.
@@ -417,8 +413,22 @@ class FundManager:
                     r.add_candle({'t': ts, 'is_flush': True}) # Dummy tick to force close if needed
                     # Note: add_candle logic handles period jumps internally
 
+        if self.log_heartbeat:
+            ind_str = ", ".join([f"{k}: {v:.2f}" if isinstance(v, (int, float)) else f"{k}: {v}" for k, v in self.latest_indicators_state.items()])
             
-        # Pass the current position intent to explicitly evaluate Exit Rules if configured
+            # Format candle start and end times for clarity
+            if ts:
+                start_str = DateUtils.from_timestamp(ts).strftime('%H:%M:%S')
+                end_str = DateUtils.from_timestamp(ts + self.global_timeframe).strftime('%H:%M:%S')
+                time_display = f"{start_str} - {end_str}"
+            else:
+                time_display = "N/A"
+                
+            logger.info(TradeFormatter.format_heartbeat(time_display, category.value, self.latest_indicators_state))
+
+        # ONLY execute strategy decision synchronously when the SPOT candle acts as the anchor
+        if category != InstrumentCategoryType.SPOT:
+            return
         # Determine current intent for strategy evaluation
         current_intent_str = None
         intent_enum = None
@@ -459,13 +469,13 @@ class FundManager:
                 return
             
             # 0. Stale SignalType Protection (Max 30 minutes)
-            # This prevents the bot from acting on "catch-up" data right after startup
-            if not self.is_backtest and ts and time.time() - ts > 1800:
-                 logger.warning(f"⚠️ SignalType ignored: Triggered by stale data from {ts} (>{1800}s old)")
+            # This prevents the bot from acting on "catch-up" data using the latest known market time
+            if ts and self.latest_market_time and (self.latest_market_time - ts) > 1800:
+                 logger.warning(f"⚠️ SignalType ignored: Triggered by stale data from {ts} (>{1800}s behind latest market time {self.latest_market_time})")
                  return
 
-            # SignalType Correction: Use period end for backtest logging & entry time
-            signal_ts = ts + self.global_timeframe if self.is_backtest else ts
+            # Use period end for signal/entry time (signal is finalized at end of candle)
+            signal_ts = ts + self.global_timeframe
             spot_price = candle.get('c', candle.get('close'))
 
             # 1. Handle SignalTypes for existing positions
@@ -473,8 +483,7 @@ class FundManager:
                 if signal == SignalType.EXIT:
                     ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
                     ts_str = ts_dt.strftime('%d-%b %H:%M')
-                    formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
-                    logger.info(f"SignalType: EXIT ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
+                    logger.info(TradeFormatter.format_signal("EXIT", reason, ts_str, self.global_timeframe, self.latest_indicators_state))
                     
                     pos = self.position_manager.current_position
                     opt_price = self._get_fallback_option_price(int(pos.symbol), signal_ts)
@@ -493,8 +502,7 @@ class FundManager:
                 # SignalType changed (flip) - log it and handle closure
                 ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
-                formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
-                logger.info(f"SignalType: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
+                logger.info(TradeFormatter.format_signal(signal.name, reason, ts_str, self.global_timeframe, self.latest_indicators_state))
                 
                 pos = self.position_manager.current_position
                 opt_price = self._get_fallback_option_price(int(pos.symbol), signal_ts)
@@ -512,8 +520,7 @@ class FundManager:
                 # No existing position - log new entry signal
                 ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
-                formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
-                logger.info(f"SignalType: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
+                logger.info(TradeFormatter.format_signal(signal.name, reason, ts_str, self.global_timeframe, self.latest_indicators_state))
                 
             # 2. Handle Entries
             target_symbol = "26000" # default spot
@@ -609,6 +616,6 @@ class FundManager:
         eod_time = datetime.fromtimestamp(timestamp)
         nifty_price = self.latest_tick_prices.get(26000)
         
-        logger.info(f"🌙 FundManager: EOD Settlement for {pos.symbol} at {eod_price}")
+        logger.info(TradeFormatter.format_eod(pos.symbol, eod_price))
         desc = f"End of Day Settlement at {eod_price:.2f}"
         self.position_manager._close_position(eod_price, eod_time, "EOD", reason_desc=desc, nifty_price=nifty_price)

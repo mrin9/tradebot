@@ -6,7 +6,7 @@ from datetime import datetime
 
 from packages.tradeflow.fund_manager import FundManager
 from packages.config import settings
-from packages.tradeflow.position_manager import MarketIntent
+from packages.tradeflow.types import MarketIntentType as MarketIntent
 
 @pytest.fixture(autouse=True)
 def setup_frozen_db():

@@ -14,6 +14,7 @@ from packages.utils.market_utils import MarketUtils
 from packages.utils.log_utils import setup_logger
 from packages.utils.mongo import MongoRepository
 from packages.utils.date_utils import DateUtils
+from packages.utils.trade_formatter import TradeFormatter
 
 logger = setup_logger("LiveTrader")
 
@@ -67,8 +68,10 @@ class LiveTradeEngine:
         # Register Tick Callback for 1501 Full
         self.soc.on_message1501_json_full = self._on_tick
             
-        self.soc.on_disconnect = lambda: logger.warning("⚠️ Market Data Socket Disconnected!")
-        self.soc.on_error = lambda data: logger.error(f"❌ Socket Error: {data}")
+        self.soc.on_message1501_json_full = self._on_tick
+            
+        self.soc.on_disconnect = lambda: logger.warning(TradeFormatter.format_connection("disconnected", "Market Data Socket Disconnected!"))
+        self.soc.on_error = lambda data: logger.error(TradeFormatter.format_connection("error", f"Socket Error: {data}"))
 
         self.subscribed_instruments = set() # Track for re-subscription
         self.last_subscribed_id = None
@@ -82,8 +85,7 @@ class LiveTradeEngine:
         
     def start(self):
         """Starts the live trade engine."""
-        logger.info(f"🚀 Starting Live Trade Engine | Session: {self.session_id}")
-        logger.info(f"📈 Strategy: {self.strategy_config.get('name')} ({self.strategy_config.get('ruleId')})")
+        logger.info(TradeFormatter.format_session_start(self.session_id, self.strategy_config.get('name'), self.strategy_config.get('ruleId')))
         
         # 1. Initial Subscription Setup (Resolve NIFTY + Strike Chain)
         self.subscribed_instruments.add(settings.NIFTY_EXCHANGE_INSTRUMENT_ID)
@@ -92,15 +94,15 @@ class LiveTradeEngine:
         # 2. Connect Socket first. 
         # In test environments, we must wait for the first 1501 Tick to get the true Replay Time,
         # so we DO NOT warm up here. Warmup is triggered dynamically inside _process_loop
-        logger.info("🔌 Connecting to XTS Socket to detect Market Time...")
+        logger.info(TradeFormatter.format_connection("connecting", "Connecting to XTS Socket to detect Market Time..."))
         threading.Thread(target=self.soc.connect, daemon=True).start()
         
         # 3. Start Processor Thread
-        logger.info("🧵 Starting Tick Processor Thread...")
+        logger.info(f"{TradeFormatter.EMOJI_THREAD} Starting Tick Processor Thread...")
         threading.Thread(target=self._process_loop, daemon=True).start()
         
         # 4. Connect Socket
-        logger.info("🔌 Connecting to XTS Socket...")
+        logger.info(TradeFormatter.format_connection("connecting", "Connecting to XTS Socket..."))
         threading.Thread(target=self.soc.connect, daemon=True).start()
         
         # Wait a bit for connection to settle
@@ -115,7 +117,7 @@ class LiveTradeEngine:
                 # End of Day check (15:30)
                 now = datetime.now()
                 if now.hour == 15 and now.minute >= 30:
-                    logger.info("🕒 End of Trading Day reached. Closing positions.")
+                    logger.info(f"{TradeFormatter.EMOJI_MOON} End of Trading Day reached. Closing positions.")
                     self.fund_manager.handle_eod_settlement(time.time())
                     self.is_running = False
                 

@@ -4,6 +4,7 @@ from typing import Dict, List, Any
 from collections import deque
 from enum import Enum
 from packages.tradeflow.types import InstrumentCategoryType
+from packages.utils.trade_formatter import TradeFormatter
 import logging
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ class IndicatorCalculator:
         if instrument_id is not None:
             last_id = self.category_instrument_ids.get(instrument_category)
             if last_id is not None and last_id != instrument_id:
-                logger.info(f"🔄 Instrument switch detected for {instrument_category.value}: {last_id} -> {instrument_id}. Clearing indicator window.")
+                logger.info(TradeFormatter.format_instrument_switch(instrument_category.value, last_id, instrument_id))
                 self.category_candles[instrument_category].clear()
             
             self.category_instrument_ids[instrument_category] = instrument_id

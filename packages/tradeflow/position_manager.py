@@ -3,6 +3,7 @@ from datetime import datetime
 from enum import Enum, auto
 from typing import Dict, List
 from packages.utils.date_utils import DateUtils
+from packages.utils.trade_formatter import TradeFormatter
 from packages.utils.log_utils import setup_logger
 from packages.tradeflow.types import MarketIntentType, InstrumentKindType
 from packages.config import settings
@@ -213,10 +214,16 @@ class PositionManager:
             pos.targets = [pos.entry_price - t for t in self.target_steps]
         pos.achieved_targets = 0  # Reset targets for recalculated levels
         
-        time_str = timestamp.strftime("%d-%b %H:%M").upper()
-        logger.info(f"📈 [{time_str}] PYRAMID Step {next_step + 1}/{len(self.pyramid_steps)}: "
-                    f"Added {add_qty} lots @ {price} | New Avg: {pos.entry_price:.2f} | "
-                    f"Total Qty: {pos.remaining_quantity}")
+        log_msg = TradeFormatter.format_pyramid(
+            timestamp=timestamp, 
+            step=next_step + 1, 
+            total_steps=len(self.pyramid_steps), 
+            quantity=add_qty, 
+            price=price, 
+            avg_price=pos.entry_price, 
+            total_qty=pos.remaining_quantity
+        )
+        logger.info(log_msg)
         
         if self.order_manager:
             self.order_manager.place_order(pos.symbol, "BUY", add_qty)
@@ -316,8 +323,7 @@ class PositionManager:
                     if is_far:
                         pos.stop_loss = pos.entry_price
                         pos.nifty_price_at_break_even = nifty_price or 0.0
-                        time_str = exit_time.strftime("%d-%b %H:%M").upper()
-                        logger.info(f"🤟 [{time_str}] Break-Even Triggered! SL moved to Entry ({pos.stop_loss})")
+                        logger.info(TradeFormatter.format_breakeven(exit_time, pos.stop_loss))
                         
                         if self.on_trade_event:
                             pos.event_count += 1
@@ -428,8 +434,21 @@ class PositionManager:
         if self.instrument_type != InstrumentKindType.OPTIONS and intent == MarketIntentType.SHORT:
             side = "SELL" # This part is technically unreachable now due to the lock above
             
-        step_label = f" (Pyramid 1/{len(self.pyramid_steps)})" if len(self.pyramid_steps) > 1 else ""
-        logger.info(f"🟢 [{fmt_time}] Entry: {trans_desc}{step_label}")
+        step_label = ""
+        if len(self.pyramid_steps) > 1:
+            step_label = f" (Pyramid 1/{len(self.pyramid_steps)})"
+        
+        log_msg = TradeFormatter.format_entry(
+            timestamp=timestamp,
+            symbol=self.display_symbol,
+            quantity=pyramid_qty,
+            price=price,
+            total=total_price,
+            lot_size=lot_size,
+            step=1 if len(self.pyramid_steps) > 1 else None,
+            total_steps=len(self.pyramid_steps) if len(self.pyramid_steps) > 1 else None
+        )
+        logger.info(log_msg)
         
         if self.order_manager:
             self.order_manager.place_order(self.symbol, side, pyramid_qty)
@@ -466,7 +485,17 @@ class PositionManager:
             trans_desc = f"[{self.current_position.display_symbol}] " + trans_desc
 
         if quantity is not None and reason.startswith("TARGET"):
-            logger.info(f"🟠 [{fmt_time}] {reason} Hit: {trans_desc} (Action PnL: {chunk_pnl:>+10,.2f})")
+            log_msg = TradeFormatter.format_target(
+                timestamp=timestamp,
+                target_num=pos.achieved_targets,
+                symbol=self.current_position.display_symbol,
+                quantity=close_qty,
+                price=price,
+                total=total_price,
+                lot_size=lot_size,
+                action_pnl=chunk_pnl
+            )
+            logger.info(log_msg)
             if self.on_trade_event:
                 pos.event_count += 1
                 self.on_trade_event({
@@ -481,7 +510,19 @@ class PositionManager:
                     "totalPnL": self.session_realized_pnl
                 })
         else:
-            logger.info(f"🔴 [{fmt_time}] Exit {reason}: {trans_desc} | Action PnL: {chunk_pnl:>+10,.2f} | Cycle PnL: ₹{pos.total_realized_pnl:>+10,.2f} | Session PnL: ₹{self.session_realized_pnl:>+10,.2f}")
+            log_msg = TradeFormatter.format_exit(
+                timestamp=timestamp,
+                reason=reason,
+                symbol=self.current_position.display_symbol,
+                quantity=close_qty,
+                price=price,
+                total=total_price,
+                lot_size=lot_size,
+                action_pnl=chunk_pnl,
+                cycle_pnl=pos.total_realized_pnl,
+                session_pnl=self.session_realized_pnl
+            )
+            logger.info(log_msg)
             if self.on_trade_event:
                 pos.event_count += 1
                 self.on_trade_event({

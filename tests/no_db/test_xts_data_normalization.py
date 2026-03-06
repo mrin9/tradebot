@@ -27,6 +27,7 @@ def test_master_parsing():
 # --- 1501 (TICK) ---
 
 def test_1501_full_json():
+    """Verifies normalization of 1501 (Touchline) full JSON events."""
     print("Testing 1501 (Tick) - Full Format (JSON)...")
     payload = {
         "ExchangeInstrumentID": 22,
@@ -43,13 +44,14 @@ def test_1501_full_json():
     assert norm['p'] == 1567.95
     assert norm['v'] == 20
     assert norm['q'] == 253453
-    assert norm['t'] == 1205662451 # 1205682251 - 19800
-    assert norm['isoDt'] == "2008-03-16T15:44:11"
+    assert norm['t'] == 1521195251 # 1205682251 + 315532800 - 19800
+    assert norm['isoDt'] == "2018-03-16T15:44:11"
     assert norm['bid'] == 1567.95
     assert norm['ask'] is None
     print("✅ 1501 Full JSON Passed.")
 
 def test_1501_partial_string():
+    """Verifies normalization of 1501 (Touchline) pipe-separated string events."""
     print("Testing 1501 (Tick) - Partial Format (String)...")
     payload = "t:1_22,ltp:1567.95,ltq:20,v:253453,ltt:1205682110,ai:0|1428|1567.95|10,bi:0|0|0|0|1"
     
@@ -58,8 +60,8 @@ def test_1501_partial_string():
     assert norm['p'] == 1567.95
     assert norm['v'] == 20
     assert norm['q'] == 253453
-    assert norm['t'] == 1205662310 # 1205682110 - 19800
-    assert norm['isoDt'] == "2008-03-16T15:41:50"
+    assert norm['t'] == 1521195110 # 1205682110 + 315532800 - 19800
+    assert norm['isoDt'] == "2018-03-16T15:41:50"
     assert norm['bid'] == 0.0
     assert norm['ask'] == 1428.0
     print("✅ 1501 Partial String Passed.")
@@ -67,6 +69,7 @@ def test_1501_partial_string():
 # --- 1512 (SNAPSHOT) ---
 
 def test_1512_full_json():
+    """Verifies normalization of 1512 (Snapshot/L2) full JSON events."""
     print("Testing 1512 (Snapshot) - Full Format (JSON)...")
     payload = {
         "ExchangeInstrumentID": 26000,
@@ -80,11 +83,12 @@ def test_1512_full_json():
     assert norm['p'] == 22000.5
     assert norm['v'] == 100
     assert norm['q'] == 1500000
-    assert norm['t'] == 1708416000
-    assert norm['isoDt'] == "2024-02-20T13:30:00"
+    assert norm['t'] == 2023948800 # 1708435800 + 315532800 - 19800
+    assert norm['isoDt'] == "2034-02-19T13:30:00"
     print("✅ 1512 Full JSON Passed.")
 
 def test_1512_partial_string():
+    """Verifies normalization of 1512 (Snapshot/L2) pipe-separated string events."""
     print("Testing 1512 (Snapshot) - Partial Format (String)...")
     payload = "i:26000,ltp:22000.5,ltq:100,v:1500000,ltt:1708435800"
     norm = MarketUtils.normalize_xts_event("1512-json-partial", payload)
@@ -92,13 +96,14 @@ def test_1512_partial_string():
     assert norm['p'] == 22000.5
     assert norm['v'] == 100
     assert norm['q'] == 1500000
-    assert norm['t'] == 1708416000
-    assert norm['isoDt'] == "2024-02-20T13:30:00"
+    assert norm['t'] == 2023948800 # 1708435800 + 315532800 - 19800
+    assert norm['isoDt'] == "2034-02-19T13:30:00"
     print("✅ 1512 Partial String Passed.")
 
 # --- 1505 (CANDLE) ---
 
 def test_1505_full_json():
+    """Verifies normalization of 1505 (Candle/Bar) full JSON events."""
     print("Testing 1505 (Candle) - Full Format (JSON)...")
     payload = {
         "ExchangeInstrumentID": 26000,
@@ -113,11 +118,12 @@ def test_1505_full_json():
     assert norm['l'] == 21850
     assert norm['c'] == 22050
     assert norm['v'] == 5000
-    assert norm['t'] == 1708416000
-    assert norm['isoDt'] == "2024-02-20T13:30:00"
+    assert norm['t'] == 2023948800 # 1708435800 + 315532800 - 19800
+    assert norm['isoDt'] == "2034-02-19T13:30:00"
     print("✅ 1505 Full JSON Passed.")
 
 def test_1505_partial_string():
+    """Verifies normalization of 1505 (Candle/Bar) pipe-separated string events."""
     print("Testing 1505 (Candle) - Partial Format (String)...")
     payload = "i:26000,t:1708435800,o:21900,h:22100,l:21850,c:22050,v:5000"
     norm = MarketUtils.normalize_xts_event("1505-json-partial", payload)
@@ -127,8 +133,8 @@ def test_1505_partial_string():
     assert norm['l'] == 21850
     assert norm['c'] == 22050
     assert norm['v'] == 5000
-    assert norm['t'] == 1708416000
-    assert norm['isoDt'] == "2024-02-20T13:30:00"
+    assert norm['t'] == 2023948800 # 1708435800 + 315532800 - 19800
+    assert norm['isoDt'] == "2034-02-19T13:30:00"
     print("✅ 1505 Partial String Passed.")
 
 if __name__ == "__main__":

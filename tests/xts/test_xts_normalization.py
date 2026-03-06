@@ -2,6 +2,7 @@ import pytest
 from packages.utils.market_utils import MarketUtils
 
 def test_normalize_1501_full_json():
+    """Verifies normalization of standard XTS 1501 (Touchline) JSON format."""
     raw_data = {
         "Touchline": {
             "LastTradedPrice": 24500.5,
@@ -19,6 +20,7 @@ def test_normalize_1501_full_json():
     assert "isoDt" in norm
 
 def test_normalize_1501_flat_json():
+    """Verifies normalization of the flattened 1501 format used by the simulator."""
     # Test for emulated/simulator flat format
     raw_data = {
         "ltp": 24500.5,
@@ -33,6 +35,7 @@ def test_normalize_1501_flat_json():
     assert norm["v"] == 50
 
 def test_normalize_1505_candle():
+    """Verifies normalization of XTS 1505 (Candle) JSON format."""
     raw_data = {
         "BarData": {
             "Open": 24500,
@@ -51,6 +54,7 @@ def test_normalize_1505_candle():
     assert norm["v"] == 5000
 
 def test_normalize_1512_depth():
+    """Verifies normalization of XTS 1512 (Snapshot/L2) JSON format."""
     raw_data = {
         "ExchangeInstrumentID": 26000,
         "LastTradedPrice": 24500,

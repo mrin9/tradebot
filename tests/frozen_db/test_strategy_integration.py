@@ -14,9 +14,10 @@ from typing import List, Dict
 # No manual sys.path.append(os.getcwd()) needed if run as module or from root
 
 from packages.utils.mongo import MongoRepository
+from packages.utils.date_utils import DateUtils
 from packages.simulator.socket_server import SocketDataService
 from packages.tradeflow.fund_manager import FundManager
-from packages.tradeflow.rule_strategy import Signal
+from packages.tradeflow.types import SignalType as Signal
 from packages.utils.log_utils import setup_logger
 from packages.config import settings
 
@@ -149,7 +150,7 @@ def run_socket_stream(config, instrument_id, start_dt, end_dt) -> List[Dict]:
             'l': bar.get('Low'),
             'c': bar.get('Close'),
             'v': bar.get('Volume'),
-            't': bar.get('Timestamp'),
+            't': DateUtils.xts_epoch_to_utc(bar.get('Timestamp')),
             'i': int(data.get('ExchangeInstrumentID')) 
         }
         if candle['c']:
@@ -172,6 +173,7 @@ def run_socket_stream(config, instrument_id, start_dt, end_dt) -> List[Dict]:
     return signals
 
 def test_compare_db_vs_socket(db_conn, strategy_config):
+    """Verifies strategy signal parity between DB baseline and Socket stream delivery."""
     instrument_id = 26000
     start_dt = datetime(2026, 2, 2, 9, 15, 0)
     end_dt = datetime(2026, 2, 2, 12, 15, 0)

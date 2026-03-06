@@ -15,6 +15,7 @@ from packages.utils.log_utils import setup_logger
 logger = setup_logger("TestStream")
 
 def test_listener():
+    """Verifies that the MarketDataListener can connect to the XTS socket and receive ticks."""
     logger.info("Starting Stream Listener Test...")
     
     ticks_received = 0
