@@ -474,7 +474,7 @@ class FundManager:
                     ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
                     ts_str = ts_dt.strftime('%d-%b %H:%M')
                     formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
-                    logger.debug(f"SignalType: EXIT ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
+                    logger.info(f"SignalType: EXIT ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
                     
                     pos = self.position_manager.current_position
                     opt_price = self._get_fallback_option_price(int(pos.symbol), signal_ts)
@@ -513,7 +513,7 @@ class FundManager:
                 ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
                 formatted_ind = {k: round(v, 2) if isinstance(v, (int, float)) else v for k, v in self.latest_indicators_state.items()}
-                logger.debug(f"SignalType: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
+                logger.info(f"SignalType: {signal.name} ({reason}) | Time: {ts_str} | BaseTimeframe: {self.global_timeframe}s | State: {formatted_ind}")
                 
             # 2. Handle Entries
             target_symbol = "26000" # default spot
