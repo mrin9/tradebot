@@ -224,7 +224,7 @@ class LiveTradeEngine:
             "ruleId": self.strategy_config.get("ruleId"),
             "strategyName": self.strategy_config.get("name"),
             "niftyPrice": self.fund_manager.latest_tick_prices.get(26000, 0.0),
-            "recordedAt": DateUtils.get_market_time_iso()
+            "recordedAt": DateUtils.market_timestamp_to_iso(self.fund_manager.latest_market_time) if self.fund_manager.latest_market_time else datetime.now(DateUtils.MARKET_TZ).strftime("%Y-%m-%dT%H:%M:%S")
         })
         
         try:
@@ -287,7 +287,7 @@ class LiveTradeEngine:
         # Calculate time range
         # Note: anchor_timestamp is the current market tick time. 
         # We want data BEFORE this time.
-        end_dt = DateUtils.from_timestamp(anchor_timestamp)
+        end_dt = DateUtils.market_timestamp_to_datetime(anchor_timestamp)
         start_dt = end_dt - timedelta(days=2) # Default 2 days back
         
         # XTS get_ohlc expects format: 'Oct 01 2023 091500' or similar? 
@@ -322,7 +322,7 @@ class LiveTradeEngine:
         # Record Engine Initialization in PaperTrade DB
         init_data = {
             "type": "INIT",
-            "tradetime": DateUtils.get_market_time_iso(),
+            "tradetime": DateUtils.market_timestamp_to_iso(anchor_timestamp),
             "cycleSeq": 1,
             "actionPnL": 0.0,
             "cyclePnL": 0.0,
@@ -429,7 +429,7 @@ class LiveTradeEngine:
         try:
             if not start_time or not end_time:
                 # Default to last hour if not specified
-                now = datetime.now()
+                now = datetime.now(DateUtils.MARKET_TZ)
                 fmt = "%b %d %Y %H%M%S"
                 end_time = now.strftime(fmt)
                 start_time = (now - timedelta(hours=1)).strftime(fmt)
@@ -465,7 +465,7 @@ class LiveTradeEngine:
                         candles.append({
                             "i": instrument_id,
                             "t": ts,
-                            "isoDt": DateUtils.to_kolkata_iso(ts),
+                            "isoDt": DateUtils.market_timestamp_to_iso(ts),
                             "o": float(parts[1]),
                             "h": float(parts[2]),
                             "l": float(parts[3]),
@@ -543,7 +543,7 @@ class LiveTradeEngine:
             
         # 2. Calculate Daily PnL
         daily_pnl = {}
-        now_ist = DateUtils.get_market_time()
+        now_ist = datetime.now(DateUtils.MARKET_TZ)
         today_str = now_ist.strftime("%Y-%m-%d")
         daily_pnl[today_str] = sum(t.pnl for t in history if t.pnl is not None)
             

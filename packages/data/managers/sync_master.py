@@ -49,7 +49,7 @@ class MasterDataCollector:
         return True
 
     def _filter_instruments(self, raw_data):
-        now = DateUtils.get_market_time()
+        now = datetime.now(DateUtils.MARKET_TZ)
         # 30 days window logic
         cutoff_date = now + timedelta(days=30)
         

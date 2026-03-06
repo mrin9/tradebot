@@ -74,7 +74,7 @@ async def get_ticks(
         time_query['$gte'] = requested_start_t
     elif not requested_end_t:
         # Default to last 5 days
-        dt = DateUtils.get_market_time() - datetime.timedelta(days=5)
+        dt = datetime.now(DateUtils.MARKET_TZ) - datetime.timedelta(days=5)
         time_query['$gte'] = DateUtils.to_timestamp(dt)
         
     if requested_end_t:

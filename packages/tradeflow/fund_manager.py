@@ -142,7 +142,7 @@ class FundManager:
     def _resolve_option_contract(self, strike: float, is_ce: bool, current_ts: float) -> tuple[int | None, str | None]:
         """Resolves the nearest expiry option contract ID and description for NIFTY from DB given a strike."""
         # Convert timestamp to ISO string for comparison with contractExpiration
-        dt_iso = datetime.fromtimestamp(current_ts).strftime("%Y-%m-%dT%H:%M:%S")
+        dt_iso = DateUtils.market_timestamp_to_iso(current_ts)
         
         opt_type_num = 3 if is_ce else 4 # CE=3, PE=4 in XTS
         
@@ -202,8 +202,8 @@ class FundManager:
         if self.fetch_ohlc_fn and not self.is_backtest:
             # Live Mode: Fetch from API
             fmt = "%b %d %Y %H%M%S"
-            start_dt = DateUtils.from_timestamp(start_ts)
-            end_dt = DateUtils.from_timestamp(end_ts)
+            start_dt = DateUtils.market_timestamp_to_datetime(start_ts)
+            end_dt = DateUtils.market_timestamp_to_datetime(end_ts)
             history = self.fetch_ohlc_fn(segment, instrument_id, start_dt.strftime(fmt), end_dt.strftime(fmt))
             # fetch_ohlc_fn should return normalized list of dicts
             return history[-limit:] if history else []
@@ -218,7 +218,7 @@ class FundManager:
         """
         Fetches historical 1m candles for the new instrument and warms up the resampler/indicators.
         """
-        logger.debug(TradeFormatter.format_warmup(category, instrument_id, str(DateUtils.from_timestamp(current_ts))))
+        logger.debug(TradeFormatter.format_warmup(category, instrument_id, str(DateUtils.market_timestamp_to_datetime(current_ts))))
         
         # Fetch 1 day of history (max 100 candles) for warmup
         start_ts = current_ts - 3600 * 24
@@ -418,8 +418,8 @@ class FundManager:
             
             # Format candle start and end times for clarity
             if ts:
-                start_str = DateUtils.from_timestamp(ts).strftime('%H:%M:%S')
-                end_str = DateUtils.from_timestamp(ts + self.global_timeframe).strftime('%H:%M:%S')
+                start_str = DateUtils.market_timestamp_to_datetime(ts).strftime('%H:%M:%S')
+                end_str = DateUtils.market_timestamp_to_datetime(ts + self.global_timeframe).strftime('%H:%M:%S')
                 time_display = f"{start_str} - {end_str}"
             else:
                 time_display = "N/A"
@@ -481,7 +481,12 @@ class FundManager:
             # 1. Handle SignalTypes for existing positions
             if self.position_manager.current_position:
                 if signal == SignalType.EXIT:
-                    ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
+                    # Fallback to market time if signal_ts is missing
+                    ts_dt = (DateUtils.market_timestamp_to_datetime(signal_ts) 
+                             if isinstance(signal_ts, (int, float)) 
+                             else DateUtils.market_timestamp_to_datetime(self.latest_market_time) 
+                             if self.latest_market_time 
+                             else datetime.now(DateUtils.MARKET_TZ))
                     ts_str = ts_dt.strftime('%d-%b %H:%M')
                     logger.info(TradeFormatter.format_signal("EXIT", reason, ts_str, self.global_timeframe, self.latest_indicators_state))
                     
@@ -500,7 +505,11 @@ class FundManager:
                     return
                 
                 # SignalType changed (flip) - log it and handle closure
-                ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
+                ts_dt = (DateUtils.market_timestamp_to_datetime(signal_ts) 
+                         if isinstance(signal_ts, (int, float)) 
+                         else DateUtils.market_timestamp_to_datetime(self.latest_market_time) 
+                         if self.latest_market_time 
+                         else datetime.now(DateUtils.MARKET_TZ))
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
                 logger.info(TradeFormatter.format_signal(signal.name, reason, ts_str, self.global_timeframe, self.latest_indicators_state))
                 
@@ -518,7 +527,11 @@ class FundManager:
                 intent = MarketIntentType.LONG if signal == SignalType.LONG else MarketIntentType.SHORT
                 
                 # No existing position - log new entry signal
-                ts_dt = DateUtils.from_timestamp(signal_ts) if isinstance(signal_ts, (int, float)) else datetime.now()
+                ts_dt = (DateUtils.market_timestamp_to_datetime(signal_ts) 
+                         if isinstance(signal_ts, (int, float)) 
+                         else DateUtils.market_timestamp_to_datetime(self.latest_market_time) 
+                         if self.latest_market_time 
+                         else datetime.now(DateUtils.MARKET_TZ))
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
                 logger.info(TradeFormatter.format_signal(signal.name, reason, ts_str, self.global_timeframe, self.latest_indicators_state))
                 
@@ -613,7 +626,7 @@ class FundManager:
         if not eod_price:
             eod_price = pos.current_price
         
-        eod_time = datetime.fromtimestamp(timestamp)
+        eod_time = DateUtils.market_timestamp_to_datetime(timestamp)
         nifty_price = self.latest_tick_prices.get(26000)
         
         logger.info(TradeFormatter.format_eod(pos.symbol, eod_price))

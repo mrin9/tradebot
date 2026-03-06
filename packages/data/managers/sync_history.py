@@ -154,7 +154,7 @@ class HistoricalDataCollector:
                 tick = {
                     "i": instrument_id,
                     "t": tick_ts,
-                    "isoDt": DateUtils.to_kolkata_iso(tick_ts),
+                    "isoDt": DateUtils.market_timestamp_to_iso(tick_ts),
                     "p": float(parts[4]), # Close
                     "o": float(parts[1]),
                     "h": float(parts[2]),

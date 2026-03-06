@@ -1,5 +1,6 @@
 import sys
 import os
+from datetime import datetime
 from abc import ABC, abstractmethod
 
 # Add project root to path
@@ -333,7 +334,7 @@ Indicators:
 
             result_doc = {
                 "resultId": result_id,
-                "timestamp": DateUtils.to_utc(DateUtils.get_market_time()).replace(tzinfo=None).isoformat(timespec='seconds'),
+                "timestamp": DateUtils.to_utc(datetime.now(DateUtils.MARKET_TZ)).replace(tzinfo=None).isoformat(timespec='seconds'),
                 "config": {
                     "strategy": self.args.rule_id or "ml-model",
                     "strategyMode": self.args.strategy_mode,

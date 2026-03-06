@@ -42,7 +42,7 @@ def test_historical_sync():
     print("\n--- Testing Historical Data Collector (NIFTY) ---")
     collector = HistoricalDataCollector()
     
-    end_dt = DateUtils.get_market_time()
+    end_dt = datetime.now(DateUtils.MARKET_TZ)
     start_dt = end_dt - timedelta(days=2) 
     nifty_id = settings.NIFTY_EXCHANGE_INSTRUMENT_ID
     

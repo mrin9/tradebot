@@ -15,21 +15,10 @@ class DateUtils:
     Standardized date and time utilities for the trade-bot project.
     Enforces Asia/Kolkata for inputs/display and UTC for internal storage where applicable.
     """
-
-    @staticmethod
-    def get_current_time(tz: datetime.tzinfo = MARKET_TZ) -> datetime.datetime:
-        """Returns the current time in the specified timezone (default: Asia/Kolkata)."""
-        return datetime.datetime.now(tz)
-
-    @staticmethod
-    def get_market_time() -> datetime.datetime:
-        """Alias for get_current_time(MARKET_TZ)."""
-        return DateUtils.get_current_time(MARKET_TZ)
-
-    @staticmethod
-    def get_market_time_iso() -> str:
-        """Returns current market time as ISO string: YYYY-MM-DDTHH:MM:SS"""
-        return DateUtils.get_market_time().strftime("%Y-%m-%dT%H:%M:%S")
+    MARKET_TZ = MARKET_TZ
+    UTC_TZ = UTC_TZ
+    DATE_FORMAT = DATE_FORMAT
+    DATETIME_FORMAT = DATETIME_FORMAT
 
     @staticmethod
     def to_utc(dt: datetime.datetime) -> datetime.datetime:
@@ -81,8 +70,8 @@ class DateUtils:
         return ts
 
     @staticmethod
-    def to_kolkata_iso(ts: Union[int, float]) -> str:
-        """Converts a UTC epoch timestamp to Asia/Kolkata ISO string (YYYY-MM-DDTHH:MM:SS)."""
+    def market_timestamp_to_iso(ts: Union[int, float]) -> str:
+        """Converts a market/feed UTC epoch timestamp to Asia/Kolkata ISO string (YYYY-MM-DDTHH:MM:SS)."""
         if ts is None:
             return ""
         dt = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
@@ -90,8 +79,8 @@ class DateUtils:
         return dt_kolkata.strftime(DATETIME_FORMAT)
 
     @staticmethod
-    def from_timestamp(ts: Union[int, float]) -> datetime.datetime:
-        """Converts a UNIX timestamp to a localized datetime object."""
+    def market_timestamp_to_datetime(ts: Union[int, float]) -> datetime.datetime:
+        """Converts a market/feed UNIX timestamp to a localized Asia/Kolkata datetime object."""
         return datetime.datetime.fromtimestamp(ts, tz=MARKET_TZ)
 
     @staticmethod
@@ -140,7 +129,7 @@ class DateUtils:
 
     @staticmethod
     def _parse_keyword(keyword: str, is_end: bool = False) -> datetime.datetime:
-        now = DateUtils.get_market_time()
+        now = datetime.datetime.now(MARKET_TZ)
         today = now.replace(hour=0, minute=0, second=0, microsecond=0)
         
         keyword = keyword.lower().strip()

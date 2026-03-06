@@ -1,5 +1,6 @@
 import sys
 import os
+from datetime import datetime
 
 # Add project root to path
 sys.path.append(os.getcwd())
@@ -7,7 +8,7 @@ sys.path.append(os.getcwd())
 try:
     print("Testing DateUtils import...")
     from packages.utils.date_utils import DateUtils
-    print(f"DateUtils imported. Current Time: {DateUtils.to_iso(DateUtils.get_market_time())}")
+    print(f"DateUtils imported. Current Time: {DateUtils.to_iso(datetime.now(DateUtils.MARKET_TZ))}")
     
     print("\nTesting Config import...")
     from packages.config import settings

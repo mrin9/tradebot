@@ -252,7 +252,7 @@ class PositionManager:
         # Parse realistic exit time from tick if available
         ts = tick.get('t', tick.get('timestamp'))
         if isinstance(ts, (int, float)):
-            exit_time = DateUtils.from_timestamp(ts)
+            exit_time = DateUtils.market_timestamp_to_datetime(ts)
         else:
             exit_time = datetime.now()
 
@@ -328,7 +328,7 @@ class PositionManager:
                         if self.on_trade_event:
                             pos.event_count += 1
                             self.on_trade_event({
-                                "tradetime": DateUtils.get_market_time_iso(),
+                                "tradetime": DateUtils.to_iso(exit_time),
                                 "instrument": self.display_symbol,
                                 "cycleId": pos.trade_cycle,
                                 "cycleSeq": pos.event_count,
@@ -416,7 +416,7 @@ class PositionManager:
         if self.on_trade_event:
             self.current_position.event_count += 1
             self.on_trade_event({
-                "tradetime": DateUtils.get_market_time_iso(),
+                "tradetime": DateUtils.to_iso(timestamp),
                 "instrument": self.display_symbol,
                 "cycleId": self.current_position.trade_cycle,
                 "cycleSeq": self.current_position.event_count,
@@ -499,7 +499,7 @@ class PositionManager:
             if self.on_trade_event:
                 pos.event_count += 1
                 self.on_trade_event({
-                    "tradetime": DateUtils.get_market_time_iso(),
+                    "tradetime": DateUtils.to_iso(timestamp),
                     "instrument": self.current_position.display_symbol,
                     "cycleId": pos.trade_cycle,
                     "cycleSeq": pos.event_count,
@@ -526,7 +526,7 @@ class PositionManager:
             if self.on_trade_event:
                 pos.event_count += 1
                 self.on_trade_event({
-                    "tradetime": DateUtils.get_market_time_iso(),
+                    "tradetime": DateUtils.to_iso(timestamp),
                     "instrument": self.current_position.display_symbol,
                     "cycleId": pos.trade_cycle,
                     "cycleSeq": pos.event_count,
@@ -573,8 +573,12 @@ class PositionManager:
             # Trigger summary event
             if self.on_trade_event:
                 pos.event_count += 1
+                
+                # Prioritize market timestamp for the summary event
+                summary_time = timestamp if timestamp else datetime.now(DateUtils.MARKET_TZ)
+                
                 self.on_trade_event({
-                    "tradetime": DateUtils.get_market_time_iso(),
+                    "tradetime": DateUtils.to_iso(summary_time),
                     "instrument": pos.display_symbol,
                     "cycleId": pos.trade_cycle,
                     "cycleSeq": pos.event_count,
