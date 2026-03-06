@@ -220,8 +220,8 @@ class FundManager:
         """
         logger.debug(TradeFormatter.format_warmup(category, instrument_id, str(DateUtils.market_timestamp_to_datetime(current_ts))))
         
-        # Fetch 1 day of history (max 100 candles) for warmup
-        start_ts = current_ts - 3600 * 24
+        # Fetch 4 days of history (max 100 candles) for warmup to cross weekends
+        start_ts = current_ts - 3600 * 24 * 4
         history = self._fetch_historical_candles(2, instrument_id, start_ts, current_ts, limit=100)
         
         if not history:
