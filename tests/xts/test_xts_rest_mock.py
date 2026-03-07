@@ -17,10 +17,11 @@ def test_market_login_success(mock_xts):
         'result': {'token': 'mock_token', 'userID': 'mock_user'}
     }
     
-    # Reset singleton to force new login
+    # Reset singleton to force new initialization
     XTSManager._market_client = None
     
-    client = XTSManager.get_market_client()
+    # Use force_login=True to bypass session file and trigger marketdata_login
+    client = XTSManager.get_market_client(force_login=True)
     assert client is not None
     mock_instance.marketdata_login.assert_called_once()
 

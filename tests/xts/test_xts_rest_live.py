@@ -20,10 +20,11 @@ def test_live_interactive_login():
 @pytest.mark.live
 def test_live_get_quote_structure():
     """Verify that get_quote returns expected keys (listQuotes)."""
-    client = XTSManager.get_market_client()
     nifty_id = settings.NIFTY_EXCHANGE_INSTRUMENT_ID
     
-    response = client.get_quote(
+    response = XTSManager.call_api(
+        "market",
+        "get_quote",
         Instruments=[{'exchangeSegment': 1, 'exchangeInstrumentID': nifty_id}],
         xtsMessageCode=1501,
         publishFormat="1"
@@ -36,13 +37,12 @@ def test_live_get_quote_structure():
 @pytest.mark.live
 def test_live_get_ohlc_structure():
     """Verify that get_ohlc returns expected keys (dataReponse)."""
-    client = XTSManager.get_market_client()
     nifty_id = settings.NIFTY_EXCHANGE_INSTRUMENT_ID
     
-    # Use a safe historical range (Yesterday morning)
-    # Note: If running on Monday, need to adjust for Friday. 
-    # For now using a fixed range that should have data.
-    response = client.get_ohlc(
+    # Use XTSManager.call_api for auto-recovery if session overlaps
+    response = XTSManager.call_api(
+        "market",
+        "get_ohlc",
         exchangeSegment=1,
         exchangeInstrumentID=nifty_id,
         startTime='Feb 27 2026 100000', # Known trading day
@@ -58,8 +58,7 @@ def test_live_get_ohlc_structure():
 @pytest.mark.live
 def test_live_get_master_structure():
     """Verify that get_master returns pipe-separated data."""
-    client = XTSManager.get_market_client()
-    response = client.get_master(['NSECM'])
+    response = XTSManager.call_api("market", "get_master", exchangeSegmentList=['NSECM'])
     
     assert response['type'] == 'success'
     result = response.get('result')

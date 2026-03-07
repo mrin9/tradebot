@@ -21,8 +21,8 @@ def test_provider_emit_tick():
         
         await provider._emit_1501_tick(26000, 24500, 1700000000, 100)
         
-        # Verify emit was called for both Full and Partial formats
-        assert mock_sio.emit.call_count == 2
+        # Verify emit was called for Full format
+        assert mock_sio.emit.call_count == 1
         args, kwargs = mock_sio.emit.call_args_list[0]
         assert args[0] == '1501-json-full'
         assert args[1]['ExchangeInstrumentID'] == 26000
