@@ -33,7 +33,6 @@ class MarketDataListener:
         # Data Event Callbacks (Touchline & Index)
         # 1501: Level 1 (Touchline) - Most common for LTP/Bid/Ask
         self.soc.on_message1501_json_full = lambda data: self._on_market_data("1501-json-full", data)
-        self.soc.on_message1501_json_partial = lambda data: self._on_market_data("1501-json-partial", data)
         
         # 1505: Candle data
         self.soc.on_message1505_json_full = lambda data: self._on_market_data("1505-json-full", data)

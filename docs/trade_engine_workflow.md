@@ -102,7 +102,7 @@ graph TD
 
 ### 2.1. Market Data Source
 - **Live**: XTS WebSocket (`1501` Ticks or BarData).
-- **Simulation**: `SocketDataService` (via `SocketDataProvider`) simulating real-time streams locally.
+- **Simulation**: Backtest runner replaying historical MongoDB data natively.
 
 ### 2.2. Fund Manager (`packages/tradeflow/fund_manager.py`)
 - The **Active Orchestrator Engine**.

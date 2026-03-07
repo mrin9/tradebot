@@ -105,4 +105,4 @@ def test_live_trader_recorded_at_reflects_market_time():
         
         # Verify what was inserted into DB
         inserted_doc = mock_db["papertrade"].insert_one.call_args[0][0]
-        assert inserted_doc["recordedAt"] == fake_market_iso
+        assert inserted_doc["timestamp"] == fake_market_iso

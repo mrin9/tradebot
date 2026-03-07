@@ -47,5 +47,5 @@ Detailed documentation is available in the `docs/` folder:
 ## ✨ Key Features
 - **Strategy Engine**: Polars-based indicator calculation with signal generation.
 - **Execution Engine**: Automated Entry, Stop-Loss, and Target management.
-- **Simulation**: Replay historical MongoDB data as live ticks via Socket.IO.
-- **Dashboard**: Real-time visualization of Ticks, Signals, and Strategy performance.
+- **Backtesting**: Replay historical data to verify strategy performance.
+- **Dashboard**: Web-based visualization of Backtest Results and Strategy Rules.

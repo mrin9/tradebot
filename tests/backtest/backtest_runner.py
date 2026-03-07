@@ -23,11 +23,11 @@ def get_parser():
     parser.add_argument("--sl", type=float, default=settings.BACKTEST_STOP_LOSS, help="Stop Loss Points")
     parser.add_argument("--target-steps", type=str, default=settings.BACKTEST_TARGET_STEPS, help="Comma separated target points")
     parser.add_argument("--trailing-sl", type=float, default=0.0, help="Trailing Stop Loss Points (0 to disable)")
-    parser.add_argument("--no-break-even", action="store_true", help="Disable Break-Even trailing on first target")
+    parser.add_argument("--break-even", action="store_true", help="Enable Break-Even trailing on first target")
     parser.add_argument("--instrument-type", type=str, choices=["CASH", "OPTIONS"], default="OPTIONS", help="Instrument to trade")
-    parser.add_argument("--option-type", type=str, choices=["ITM", "ATM", "OTM"], default="ATM", help="Option Strike selection")
+    parser.add_argument("--strike-selection", type=str, choices=["ITM", "ATM", "OTM"], default="ATM", help="Option Strike selection")
     parser.add_argument("--invest-mode", type=str, choices=["compound", "fixed"], default=settings.BACKTEST_INVEST_MODE)
-    parser.add_argument("--socket-event", type=str, choices=["1505-json-full", "1501-json-full", "1501-json-partial", "1512-json-full", "1512-json-partial"], default="1501-json-partial", help="Event to listen to on socket mode")
+    parser.add_argument("--socket-event", type=str, choices=["1505-json-full", "1501-json-full", "1512-json-full"], default="1501-json-full", help="Event to listen to on socket mode")
     # Hybrid Strategy & Pyramiding
     parser.add_argument("--strategy-mode", type=str, choices=["rule", "ml", "python_code"], default="rule", help="Strategy engine: rule (JSON-DSL), ml, or python_code")
     parser.add_argument("--python-strategy-path", type=str, default=None, help="Path to custom python strategy file")
@@ -43,12 +43,12 @@ def fetch_strategy_rule(rule_id: str, strategy_mode: str = "rule"):
     if not rule_id:
         if strategy_mode == "ml":
             # ML mode doesn't need a rule — provide a minimal stub
-            logger.info("No --rule-id provided. ML mode uses self-contained features.")
-            return {"ruleId": "ML_SELF_CONTAINED", "name": "ML Self-Contained", "indicators": [], "entry": {}}
+            logger.info("No --rule_id provided. ML mode uses self-contained features.")
+            return {"rule_id": "ML_SELF_CONTAINED", "name": "ML Self-Contained", "indicators": [], "entry": {}}
         elif strategy_mode == "python_code":
-            logger.info("No --rule-id provided for Python mode. Using dummy rule with default standard indicators.")
+            logger.info("No --rule_id provided for Python mode. Using dummy rule with default standard indicators.")
             return {
-                "ruleId": "PYTHON_DUMMY", 
+                "rule_id": "PYTHON_DUMMY", 
                 "name": "Python Strategy Stub", 
                 "indicators": [
                     { "indicatorId": "fast_ema", "type": "EMA", "params": { "period": 9 }, "InstrumentType": "SPOT" },
@@ -61,10 +61,10 @@ def fetch_strategy_rule(rule_id: str, strategy_mode: str = "rule"):
                 "entry": {}
             }
         else:
-            logger.error("--rule-id is required in Rule mode.")
+            logger.error("--rule_id is required in Rule mode.")
             sys.exit(1)
     db = MongoRepository.get_db()
-    rule = db['strategy_rules'].find_one({"ruleId": rule_id})
+    rule = db['strategy_rules'].find_one({"rule_id": rule_id})
     if not rule:
         logger.error(f"Rule ID '{rule_id}' not found in DB.")
         sys.exit(1)
@@ -75,11 +75,11 @@ def setup_fund_manager(args, rule_config):
         "symbol": "NIFTY",
         "quantity": 1, # Default placeholder, will be recalculated by FundManager
         "stop_loss_points": args.sl,
-        "target_points": args.target_steps,
+        "target_steps": args.target_steps,
         "trailing_sl_points": args.trailing_sl,
-        "use_break_even": not args.no_break_even,
+        "break_even": args.break_even,
         "instrument_type": args.instrument_type,
-        "option_type": args.option_type,
+        "strike_selection": args.strike_selection,
         "invest_mode": args.invest_mode,
         "budget": args.budget,
         # Hybrid Strategy

@@ -160,11 +160,6 @@ class SocketDataProvider:
             "AskInfo": {"Price": 0.0, "Size": 0, "TotalOrders": 0}
         }
         await self.sio.emit('1501-json-full', payload)
-        
-        # 2. Partial String
-        # Format: i:22,ltp:1567.95,ltq:20,v:0,ltt:1205682251
-        partial_str = f"i:{instrument_id},ltp:{price},ltq:{volume},v:0,ltt:{xts_ts}"
-        await self.sio.emit('1501-json-partial', partial_str)
 
     async def _emit_1505_candle(self, instrument_id: int, doc: Dict):
         """Emits Candle (1505) full and partial events."""

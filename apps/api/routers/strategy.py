@@ -14,7 +14,7 @@ class StrategyRule(BaseModel):
 def _seed_default_rules(db):
     default_rules = [
         {
-            "ruleId": "rsi-ema-default",
+            "rule_id": "rsi-ema-default",
             "name": "RSI-EMA-Strategy",
             "category": "TREND",
             "goal": "Capture trend reversals using RSI and EMA",
@@ -57,8 +57,8 @@ async def get_rules():
 
     for r in rules:
         r["id"] = str(r["_id"])
-        if "ruleId" not in r:
-            r["ruleId"] = r["id"]
+        if "rule_id" not in r:
+            r["rule_id"] = r["id"]
         del r["_id"]
         
     return rules
@@ -67,12 +67,12 @@ async def get_rules():
 async def get_rule(id: str):
     db = get_db()
     try:
-        query = {"_id": ObjectId(id)} if ObjectId.is_valid(id) else {"ruleId": id}
+        query = {"_id": ObjectId(id)} if ObjectId.is_valid(id) else {"rule_id": id}
         rule = db['strategy_rules'].find_one(query)
         if rule:
             rule['id'] = str(rule['_id'])
-            if "ruleId" not in rule:
-                rule["ruleId"] = rule["id"]
+            if "rule_id" not in rule:
+                rule["rule_id"] = rule["id"]
             del rule['_id']
             return rule
     except:
@@ -83,15 +83,15 @@ async def get_rule(id: str):
 async def create_rule(rule: StrategyRule):
     db = get_db()
     doc = rule.dict()
-    if "ruleId" not in doc:
-        doc["ruleId"] = doc.get("name", "rule").lower().replace(" ", "-")
+    if "rule_id" not in doc:
+        doc["rule_id"] = doc.get("name", "rule").lower().replace(" ", "-")
     res = db['strategy_rules'].insert_one(doc)
     return {"id": str(res.inserted_id), "status": "created"}
 
 @router.put("/{id}")
 async def update_rule(id: str, rule: StrategyRule):
     db = get_db()
-    query = {"_id": ObjectId(id)} if ObjectId.is_valid(id) else {"ruleId": id}
+    query = {"_id": ObjectId(id)} if ObjectId.is_valid(id) else {"rule_id": id}
     db['strategy_rules'].update_one(query, {"$set": rule.dict()})
     return {"status": "updated"}
 

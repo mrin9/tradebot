@@ -30,10 +30,6 @@ export default defineNuxtConfig({
                 '/api': {
                     target: 'http://127.0.0.1:8000',
                     changeOrigin: true
-                },
-                '/simulation-socket': {
-                    target: 'ws://127.0.0.1:8000',
-                    ws: true
                 }
             }
         }

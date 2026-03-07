@@ -145,10 +145,6 @@
               <i class="pi pi-play"></i>
               <span v-if="sidebarVisible">Chart Playground</span>
             </NuxtLink>
-            <NuxtLink to="/tick-monitor" class="menu-item" title="Tick Monitor">
-              <i class="pi pi-wave-pulse"></i>
-              <span v-if="sidebarVisible">Tick Monitor</span>
-            </NuxtLink>
           </nav>
 
           <!-- Trades Tree (Grouped by Instrument) -->

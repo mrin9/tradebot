@@ -9,11 +9,11 @@ Quick reference for common commands.
 | **Launch Interactive** | `python apps/cli/main.py interactive` |
 | **Fetch Master** | `python apps/cli/main.py master sync` |
 | **Fetch History** | `python apps/cli/main.py historical fetch --days 5` |
-| **Run Backtest**  | `python -m tests.backtest.backtest_runner --mode db --rule-id [RULE_ID] --start [DATE] --end [DATE]` |
+| **Run Backtest**  | `python apps/cli/main.py backtest --rule-id [RULE_ID] --start [DATE] --end [DATE]` |
 | **Check Data Gaps** | `python apps/cli/main.py check-gaps` |
 | **Prune Old Data** | `python apps/cli/main.py age-out --days 30` |
 | **Analyze Crossovers**| `python apps/cli/main.py crossover --instrument NIFTY2630225400CE --date 2026-02-27 --timeframe 180` |
-| **Start Live Trade**  | `python apps/cli/main.py live-trade --rule-id triple-lock-momentum --record-papertrade` |
+| **Start Live Trade**  | `python apps/cli/main.py live-trade --rule-id triple-lock-momentum --strike-selection ATM --break-even` |
 
 ## Docker Commands
 
@@ -31,7 +31,7 @@ Quick reference for common commands.
 | GET | `/api/status` | Check System Health |
 | GET | `/api/instruments` | List all instruments |
 | GET | `/api/ticks?id=NIFTY` | Get Candle/Tick Data |
-| POST | `/api/simulation/start` | Start Simulation |
+| GET | `/api/backtests` | List Backtest Results |
 
 ## Python Snippets
 

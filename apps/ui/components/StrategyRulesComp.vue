@@ -16,7 +16,7 @@
     </div>
 
     <div v-else class="rules-grid">
-      <div v-for="rule in rules" :key="rule.ruleId" class="rule-card">
+      <div v-for="rule in rules" :key="rule.rule_id" class="rule-card">
         <!-- Card Header -->
         <div class="rule-header">
           <div class="rule-title-row">
@@ -33,7 +33,7 @@
             </div>
           </div>
           <h2 class="rule-name">{{ rule.name }}</h2>
-          <div class="rule-id">{{ rule.ruleId }}</div>
+          <div class="rule-id">{{ rule.rule_id }}</div>
           <p class="rule-goal">{{ rule.goal }}</p>
         </div>
 
@@ -112,7 +112,7 @@
       <div v-if="drawerRule" class="drawer-content">
         <div class="drawer-meta">
           <Tag :value="drawerRule.category" :severity="categoryColor(drawerRule.category)" />
-          <Tag :value="drawerRule.ruleId" severity="secondary" />
+          <Tag :value="drawerRule.rule_id" severity="secondary" />
         </div>
         <div class="markdown-body" v-html="renderedMarkdown"></div>
       </div>
@@ -227,14 +227,14 @@ async function saveRule() {
     if (editForm.maxTradesPerDay !== null) {
       body['restrictions.maxTradesPerDay'] = editForm.maxTradesPerDay;
     }
-    const res = await fetch(`/api/strategy-rules/${editingRule.value.ruleId}`, {
+    const res = await fetch(`/api/strategy-rules/${editingRule.value.rule_id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     if (res.ok) {
       // Update local state
-      const rule = rules.value.find(r => r.ruleId === editingRule.value.ruleId);
+      const rule = rules.value.find(r => r.rule_id === editingRule.value.rule_id);
       rule.name = editForm.name;
       rule.goal = editForm.goal;
       rule.category = editForm.category;

@@ -63,11 +63,67 @@ class Position:
     # Pyramiding
     pyramid_step: int = 0      # Current pyramid step index (0 = first entry)
     total_intended_quantity: int = 0  # Full quantity before splitting into pyramid steps
+    
+    # Event History for Unified Schema
+    target_events: List[Dict] = field(default_factory=list)
 
     def __post_init__(self):
         self.remaining_quantity = self.initial_quantity
         self.highest_price = self.entry_price
         self.lowest_price = self.entry_price
+
+    def to_cycle_dict(self) -> Dict:
+        """
+        Converts the stateful Position object into the unified 'Trade Cycle' dictionary format
+        standardized for MongoDB persistence.
+        """
+        from packages.config import settings
+        from packages.utils.date_utils import DateUtils
+
+        # Identify Option Type
+        opt_type = "CE | PE"
+        symbol_str = str(self.symbol)
+        if hasattr(self.intent, 'name'):
+             # This is a bit of a heuristic if we don't have the full instrument metadata here
+             # But in Position context, CE usually means MarketIntentType.LONG (buying CE)
+             # and PE usually means MarketIntentType.SHORT (buying PE).
+             # However, the instrument_master is better. 
+             pass
+
+        cycle_obj = {
+            "cycleId": self.trade_cycle,
+            "pnl": self.total_realized_pnl,
+            "entry": {
+                "time": self.formatted_entry_time,
+                "symbol": self.symbol,
+                "description": self.display_symbol,
+                "price": self.entry_price,
+                "quantity": self.initial_quantity,
+                "totalPrice": self.initial_quantity * settings.NIFTY_LOT_SIZE * self.entry_price,
+                "signal": self.entry_signal,
+                "reason": self.entry_reason_description,
+                "niftyPrice": self.nifty_price_at_entry
+            },
+            "targets": self.target_events,
+            "stopLossPrice": self.stop_loss,
+            "breakEvenPrice": self.entry_price if self.stop_loss == self.entry_price else None, # Heuristic
+            "niftyPriceAtBreakEven": self.nifty_price_at_break_even,
+            "exit": None
+        }
+
+        if self.exit_time:
+            cycle_obj["exit"] = {
+                "time": self.formatted_exit_time,
+                "price": self.exit_price,
+                "quantity": self.initial_quantity - sum([t['quantity'] for t in self.target_events]),
+                "totalPrice": (self.initial_quantity - sum([t['quantity'] for t in self.target_events])) * settings.NIFTY_LOT_SIZE * (self.exit_price or 0.0),
+                "pnl": self.pnl, # Last chunk PnL
+                "reason": self.status,
+                "reasonDescription": self.exit_reason_description,
+                "niftyPrice": self.nifty_price_at_exit
+            }
+        
+        return cycle_obj
 
 class PositionManager:
     """
@@ -277,18 +333,22 @@ class PositionManager:
         else:
             pos.pnl = (pos.entry_price - current_price) * pos.remaining_quantity * lot_size
         
-        # 1. Stop Loss execution (Highest priority)
-        # For LONG: check if Low hit SL. For SHORT: check if High hit SL.
         if is_long_dir:
             if l <= pos.stop_loss:
                 reason = "TRAILING_SL" if pos.highest_price > pos.entry_price else "STOP_LOSS"
-                desc = f"{reason} hit at {l:.2f} (SL: {pos.stop_loss:.2f})"
+                if reason == "TRAILING_SL":
+                    desc = f"TRAILING_SL hit at {l:.2f} (Peak: {pos.highest_price:.2f})"
+                else:
+                    desc = f"STOP_LOSS hit at {l:.2f} (SL: {pos.stop_loss:.2f})"
                 self._close_position(pos.stop_loss, exit_time, reason, reason_desc=desc, nifty_price=nifty_price)
                 return
         else:
             if h >= pos.stop_loss:
                 reason = "TRAILING_SL" if pos.lowest_price < pos.entry_price else "STOP_LOSS"
-                desc = f"{reason} hit at {h:.2f} (SL: {pos.stop_loss:.2f})"
+                if reason == "TRAILING_SL":
+                    desc = f"TRAILING_SL hit at {h:.2f} (Peak: {pos.lowest_price:.2f})"
+                else:
+                    desc = f"STOP_LOSS hit at {h:.2f} (SL: {pos.stop_loss:.2f})"
                 self._close_position(pos.stop_loss, exit_time, reason, reason_desc=desc, nifty_price=nifty_price)
                 return
 
@@ -509,6 +569,17 @@ class PositionManager:
                     "cyclePnL": pos.total_realized_pnl,
                     "totalPnL": self.session_realized_pnl
                 })
+            
+            # Record in Position's target_events
+            pos.target_events.append({
+                "step": pos.achieved_targets,
+                "time": fmt_time,
+                "price": price,
+                "quantity": close_qty,
+                "pnl": chunk_pnl,
+                "niftyPrice": nifty_price or 0.0,
+                "transaction": trans_desc
+            })
         else:
             log_msg = TradeFormatter.format_exit(
                 timestamp=timestamp,

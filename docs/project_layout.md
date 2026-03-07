@@ -8,7 +8,7 @@ This document describes the structure of the `trade-bot-v2` project and the role
 trade-bot-v2/
 ├── apps/                   # Application Entry Points
 │   ├── api/                # FastAPI Backend
-│   │   ├── routers/        # API Endpoints (Instruments, Ticks, Sim)
+│   │   ├── routers/        # API Endpoints (Instruments, Ticks, Backtests)
 │   │   └── main.py         # API Application Entry
 │   ├── cli/                # Command Line Interface
 │   │   └── main.py         # CLI Entry Point
@@ -28,7 +28,6 @@ trade-bot-v2/
 │   ├── data/               # Data Layer
 │   │   ├── connectors/     # XTS API & Socket Wrappers
 │   │   └── maintenance.py  # Data Cleanup
-│   ├── simulation/         # Simulation Engine
 │   └── utils/              # Utilities (Mongo, Date, Log)
 ├── tests/                  # Automated Tests
 ├── Dockerfile              # Backend Container Config
@@ -41,12 +40,11 @@ trade-bot-v2/
 ### Apps
 - **CLI (`apps/cli`)**: The primary interface for managing the bot, fetching data, and running maintenance tasks.
 - **API (`apps/api`)**: Provides REST endpoints and Socket.IO streams for the Dashboard.
-- **UI (`apps/ui`)**: A web-based dashboard for monitoring live ticks, strategies, and simulations.
+- **UI (`apps/ui`)**: A web-based dashboard for monitoring strategy performance and backtest results.
 
 ### Packages
 - **`packages.data`**: Handles all interactions with the XTS Market Data API and MongoDB.
 - **`packages.tradeflow`**: Contains the trading logic (`Strategy` class), indicator calculations (`IndicatorCalculator`), position management (`PositionManager`), and order execution (`OrderManager`).
-- **`packages.simulation`**: Replays historical data as live ticks for backtesting and verification.
 
 ### Tests
 - **`tests/test_strategy_integration.py`**: Integration test ensuring Strategy Output matches between Database and Socket Feed.

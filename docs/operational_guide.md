@@ -57,11 +57,13 @@ Use the CLI to populate your database.
 python apps/cli/main.py historical fetch --days 5
 ```
 
-### Running a Simulation
+### Running a Backtest
 1. Ensure you have data in `nifty_candle`.
-2. Start the stack (`docker compose up -d`).
-3. Open Dashboard -> Tick Monitor.
-4. Select Date and Click **Start**.
+2. Use the CLI to run a backtest:
+   ```bash
+   python apps/cli/main.py backtest --rule-id triple-lock-momentum --start 2026-03-02
+   ```
+3. View results in the Dashboard -> Backtest Results.
 
 ### Checking System Health
 ```bash

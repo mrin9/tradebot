@@ -75,7 +75,7 @@ class FundManager:
         self.record_papertrade_db = self.pos_config.get('record_papertrade_db', True)
         
         self.trade_instrument_type = self.pos_config.get("instrument_type", "CASH").upper() # CASH, OPTIONS, FUTURES
-        self.trade_option_type = self.pos_config.get("option_type", "ATM").upper() # ATM, ITM, OTM
+        self.strike_selection = self.pos_config.get("strike_selection", self.pos_config.get("option_type", "ATM")).upper() # ATM, ITM, OTM
         
         # Map string to InstrumentKindType enum
         enum_map = {

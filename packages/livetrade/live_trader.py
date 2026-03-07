@@ -15,6 +15,7 @@ from packages.utils.log_utils import setup_logger
 from packages.utils.mongo import MongoRepository
 from packages.utils.date_utils import DateUtils
 from packages.utils.trade_formatter import TradeFormatter
+from packages.utils.trade_persistence import TradePersistence
 
 logger = setup_logger("LiveTrader")
 
@@ -48,6 +49,9 @@ class LiveTradeEngine:
         
         # Override on_signal to catch trades and signals
         self.fund_manager.on_signal = self._handle_signal
+        
+        # persistence
+        self.persistence = TradePersistence()
         
         # Register Paper Trading Log Handler
         self.fund_manager.position_manager.on_trade_event = self._record_papertrade_event
@@ -134,6 +138,7 @@ class LiveTradeEngine:
 
     def stop(self):
         self.is_running = False
+        self.persistence.update_session_status(self.session_id, "COMPLETED", is_live=True)
         # Potentially disconnect socket, but XTSManager shares it.
         # For CLI usage, exiting the process is sufficient.
         logger.info("🏁 Live Trade Engine Stopped.")
@@ -216,22 +221,39 @@ class LiveTradeEngine:
         if not self.fund_manager.record_papertrade_db:
             return
             
-        # Enrich event data
-        event_data.update({
-            "sessionID": self.session_id,
-            "cycleId": event_data.get("cycleId", "N/A"),
-            "cycleSeq": event_data.get("cycleSeq", 1),
-            "ruleId": self.strategy_config.get("ruleId"),
-            "strategyName": self.strategy_config.get("name"),
-            "niftyPrice": self.fund_manager.latest_tick_prices.get(26000, 0.0),
-            "recordedAt": DateUtils.market_timestamp_to_iso(self.fund_manager.latest_market_time) if self.fund_manager.latest_market_time else datetime.now(DateUtils.MARKET_TZ).strftime("%Y-%m-%dT%H:%M:%S")
-        })
+        nifty_price = self.fund_manager.latest_tick_prices.get(26000, 0.0)
+        pos = self.fund_manager.position_manager.current_position
         
-        try:
-            self.db["papertrade"].insert_one(event_data)
-            logger.debug(f"📝 Recorded papertrade event: {event_data['type']} for {event_data['instrument']}")
-        except Exception as e:
-            logger.error(f"❌ Failed to record papertrade event: {e}")
+        # If no active position (e.g., EOD or summary event), we use the last known one if possible
+        # but for granular reporting, the persistence layer handles the mapping.
+        
+        msg = event_data.get("transaction", "")
+        event_type = event_data.get("type", "EVENT")
+        
+        if pos:
+            # Map action pnl for the recorder
+            setattr(pos, 'last_action_pnl', event_data.get("actionPnL", 0.0))
+            setattr(pos, 'session_realized_pnl', self.fund_manager.position_manager.session_realized_pnl)
+            
+            self.persistence.record_granular_event(self.session_id, event_type, pos, nifty_price, msg)
+            
+            # If it's a completion event (exit/summary), sync the whole cycle to live_trades
+            if event_type.lower() in ["exit", "summary", "target", "breakeven"]:
+                self._sync_to_db()
+        else:
+            # Fallback for events without a Position object (like INIT)
+            market_time = self.fund_manager.latest_market_time
+            ts_iso = DateUtils.market_timestamp_to_iso(market_time) if market_time else datetime.now(DateUtils.MARKET_TZ).isoformat()
+            
+            event_data.update({
+                "sessionId": self.session_id,
+                "timestamp": ts_iso
+            })
+            try:
+                self.db["papertrade"].insert_one(event_data)
+                logger.debug(f"📝 Recorded non-position event: {event_type}")
+            except Exception as e:
+                logger.error(f"❌ Failed to record non-position event: {e}")
 
     def _ensure_connection(self):
         """Checks socket health and attempts reconnection if down."""
@@ -508,59 +530,33 @@ class LiveTradeEngine:
 
     def _sync_to_db(self):
         """Persists the current trading session state to 'live_trades' collection."""
-        history = self.fund_manager.position_manager.trades_history
+        # Use our centralized persistence layer
+        trades_history = self.fund_manager.position_manager.trades_history
         
-        # Convert objects to serializable dicts (matching backtest_results schema)
-        trades_data = []
-        for t in history:
-            trade_dict = {
-                "id": t.symbol,
-                "symbol": t.symbol,
-                "entryTime": t.entry_time.isoformat() if t.entry_time else None,
-                "exitTime": t.exit_time.isoformat() if t.exit_time else None,
-                "entryPrice": t.entry_price,
-                "exitPrice": t.exit_price,
-                "quantity": getattr(t, 'quantity', t.initial_quantity),
-                "type": t.intent.name if hasattr(t.intent, 'name') else str(t.intent),
-                "pnl": t.pnl,
-                "realizedPnl": t.pnl, # In live, they are same
-                "exitReason": getattr(t, 'status', 'CLOSED'),
-                "tradeCycle": t.trade_cycle,
-                "signal": t.entry_signal
-            }
-            trades_data.append(trade_dict)
-            
-        # 1. Sanitize active_signals for MongoDB (convert Enums to strings)
-        clean_signals = []
-        for sig in self.active_signals:
-            clean_sig = {}
-            for k, v in sig.items():
-                if hasattr(v, 'name') and hasattr(v, 'value'): # Enum check
-                    clean_sig[k] = v.name
-                else:
-                    clean_sig[k] = v
-            clean_signals.append(clean_sig)
-            
-        # 2. Calculate Daily PnL
+        # Calculate Daily PnL
         daily_pnl = {}
         now_ist = datetime.now(DateUtils.MARKET_TZ)
         today_str = now_ist.strftime("%Y-%m-%d")
-        daily_pnl[today_str] = sum(t.pnl for t in history if t.pnl is not None)
+        daily_pnl[today_str] = self.fund_manager.position_manager.session_realized_pnl
             
-        session_doc = {
-            "sessionID": self.session_id,
-            "ruleId": self.strategy_config.get("ruleId"),
-            "strategyName": self.strategy_config.get("name"),
-            "timestamp": now_ist,
-            "trades": trades_data,
-            "dailyPnl": daily_pnl,
-            "activeSignals": clean_signals,
-            "status": "ACTIVE" if self.is_running else "COMPLETED"
-        }
+        config = self.strategy_config.copy()
+        config.update({
+             "budget": self.position_config.get("budget"),
+             "stopLoss": self.fund_manager.stop_loss_points,
+             "targets": self.fund_manager.target_points,
+             "investMode": self.fund_manager.invest_mode
+        })
         
-        # Upsert by sessionID
-        self.db["live_trades"].update_one(
-            {"sessionID": self.session_id},
-            {"$set": session_doc},
-            upsert=True
+        # For live, we often want to keep active signals and status updated
+        # But for now, we follow the unified save_session_summary pattern
+        self.persistence.save_session_summary(
+            session_id=self.session_id,
+            trades=trades_history,
+            config=config,
+            daily_pnl=daily_pnl,
+            is_live=True
         )
+        
+        # Update status if still running
+        if self.is_running:
+             self.persistence.update_session_status(self.session_id, "ACTIVE", is_live=True)

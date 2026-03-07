@@ -54,7 +54,7 @@ export function generateMarkersFromTrade(currentTrade) {
 
             // 1. Entry
             if (trade.entry.time && !processedCycles.has(cycleId)) {
-                const entryTime = trade.entry.epochTime || parseSafeTimestamp(trade.entry.time);
+                const entryTime = parseSafeTimestamp(trade.entry.time);
                 let optionPrice = trade.entry.price || 0;
                 let niftyPrice = 0;
 
@@ -77,12 +77,38 @@ export function generateMarkersFromTrade(currentTrade) {
                 processedCycles.add(cycleId);
             }
 
-            // 2. Targets
+            // 2. Targets (Array-based new structure or Key-based transitional)
+            const targetList = Array.isArray(trade.targets) ? trade.targets : [];
+            targetList.forEach((t, tIdx) => {
+                if (t && t.time) {
+                    const tTime = parseSafeTimestamp(t.time);
+                    let tOptionPrice = t.price || 0;
+                    let tNiftyPrice = t.niftyPrice || 0;
+                    if (!tNiftyPrice && t.transaction) {
+                        const niftyMatch = t.transaction.match(/NIFTY:\s*([\d.]+)/);
+                        if (niftyMatch) tNiftyPrice = parseFloat(niftyMatch[1]);
+                    }
+                    if (!tOptionPrice && t.totalPrice) tOptionPrice = t.totalPrice / 65;
+
+                    list.push({
+                        id: `target-${tIdx}-${cycleId}-${tTime}`,
+                        time: tTime,
+                        niftyPrice: tNiftyPrice,
+                        optionPrice: tOptionPrice,
+                        pnl: t.pnl || 0,
+                        label: 'TARGET',
+                        type: 'TARGET',
+                        cycleId: cycleId
+                    });
+                }
+            });
+
+            // Backward compatibility for flat target keys in new-ish structure
             Object.keys(trade).forEach(key => {
-                if (key.startsWith('target')) {
+                if (key.startsWith('target') && key !== 'targets' && !Array.isArray(trade[key])) {
                     const t = trade[key];
                     if (t && t.time) {
-                        const tTime = t.epochTime || parseSafeTimestamp(t.time);
+                        const tTime = parseSafeTimestamp(t.time);
                         let tOptionPrice = t.price || 0;
                         let tNiftyPrice = 0;
                         if (t.transaction) {
@@ -107,7 +133,7 @@ export function generateMarkersFromTrade(currentTrade) {
 
             // 3. Exit
             if (trade.exit && trade.exit.time) {
-                const exitTime = trade.exit.epochTime || parseSafeTimestamp(trade.exit.time);
+                const exitTime = parseSafeTimestamp(trade.exit.time);
                 let optionPrice = trade.exit.price || 0;
                 let niftyPrice = 0;
                 if (trade.exit.transaction) {

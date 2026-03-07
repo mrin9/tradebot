@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from packages.utils.log_utils import setup_logger
 from packages.utils.date_utils import DateUtils
 from packages.utils.mongo import MongoRepository
+from packages.utils.trade_persistence import TradePersistence
 
 logger = setup_logger("BacktestBase")
 
@@ -172,13 +173,11 @@ Indicators:
         self._save_results(total_pnl, roi, final_capital)
 
     def _save_results(self, total_pnl, roi, final_capital):
-        """Saves backtest results to MongoDB"""
+        """Saves backtest results to MongoDB using centralized persistence."""
         try:
             import random
             import string
             
-            db = MongoRepository.get_db()
-
             if self.args.strategy_mode == "python_code" and self.args.python_strategy_path:
                 strategy_id = os.path.basename(self.args.python_strategy_path).split(':')[0].split('.')[0]
             else:
@@ -191,183 +190,30 @@ Indicators:
             start_str = start_dt.strftime("%d%b").upper()
             end_str = end_dt.strftime("%d%b").upper()
             
-            if start_str == end_str:
-                date_range = start_str
-            else:
-                date_range = f"{start_str}-{end_str}"
-            
+            date_range = start_str if start_str == end_str else f"{start_str}-{end_str}"
             short_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=3))
-            result_id = f"{prefix}-{date_range}-{short_id}"
+            session_id = f"{prefix}-{date_range}-{short_id}"
 
-            # Format trades for UI consumption
-            # ... (rest of the mapping logic)
-            # 1. Collect all unique instrument IDs
-            instrument_ids = list(set([str(getattr(t, "symbol", "")) for t in self.trades if getattr(t, "symbol", "")]))
+            # Prepare config dict
+            config = self.args.__dict__.copy()
+            config["ruleId"] = strategy_id
             
-            # 2. Lookup descriptions and metadata from instrument_master
-            instrument_map = {}
-            if instrument_ids:
-                from packages.config import settings
-                cursor = db[settings.INSTRUMENT_MASTER_COLLECTION].find(
-                    {"exchangeInstrumentID": {"$in": [int(i) if i.isdigit() else i for i in instrument_ids]}},
-                    {"exchangeInstrumentID": 1, "description": 1, "series": 1, "optionType": 1}
-                )
-                for doc in cursor:
-                    # Determine Trade Type
-                    trade_type = "CASH"
-                    series = doc.get("series", "")
-                    opt_type = doc.get("optionType", 0)
-                    
-                    if series in ["FUTIDX", "FUTSTK"]:
-                        trade_type = "FUTURES"
-                    elif opt_type == 3:
-                        trade_type = "CALL"
-                    elif opt_type == 4:
-                        trade_type = "PUT"
-                    
-                    instrument_map[str(doc["exchangeInstrumentID"])] = {
-                        "symbol": doc.get("description", str(doc["exchangeInstrumentID"])),
-                        "type": trade_type
-                    }
-
-            # Group trades by trade cycle
-            cycle_groups = {}
-            for t in self.trades:
-                cycle_id = getattr(t, 'trade_cycle', 'N/A')
-                if cycle_id not in cycle_groups:
-                    cycle_groups[cycle_id] = []
-                cycle_groups[cycle_id].append(t)
-
-            trade_cycles = []
-            for cycle_id, chunks in cycle_groups.items():
-                # Sort chunks by exit_time to identify entry, targets, and exit
-                # Entry is the first chunk based on entry_time (they all have same entry_time usually, but let's be safe)
-                # But wait, targets are recorded as separate chunks when they hit.
-                
-                # Determine cycle-wide PnL
-                cycle_pnl = sum([getattr(ch, 'pnl', 0) for ch in chunks])
-                
-                # Find Entry (first chunk)
-                entry_chunk = chunks[0]
-                
-                # Find Target chunks (status starts with TARGET_)
-                target_chunks = [ch for ch in chunks if str(getattr(ch, 'status', '')).startswith('TARGET_')]
-                
-                # Find Exit chunk (the one with status NOT TARGET_ and usually last)
-                # If there are no targets, the first chunk might be the only chunk (entry and exit same if stopped out?)
-                # Actually, our PositionManager records each exit event as a chunk.
-                # If it's a full exit (STOP_LOSS, SIGNAL_EXIT, etc.), there's only one chunk.
-                # If it's multi-target, there's TARGET_1, TARGET_2... and then a final EXIT.
-                
-                exit_chunk = None
-                for ch in chunks:
-                    status = str(getattr(ch, 'status', ''))
-                    if not status.startswith('TARGET_'):
-                        exit_chunk = ch
-                        break
-                
-                # Fallback: if all are targets (unlikely but safe), last one is exit
-                if not exit_chunk and chunks:
-                    exit_chunk = chunks[-1]
-
-                # Resolve Option Type from instrument_map or default
-                raw_symbol = str(getattr(entry_chunk, "symbol", "INSTR_X"))
-                meta = instrument_map.get(raw_symbol, {"symbol": raw_symbol, "type": "PE | CE"})
-                # meta["type"] might be CALL/PUT or PE/CE depending on how we mapped it.
-                # Let's ensure it looks like PE | CE for the UI if possible.
-                opt_type = meta["type"]
-                if opt_type == "CALL": opt_type = "CE"
-                elif opt_type == "PUT": opt_type = "PE"
-
-                cycle_obj = {
-                    "cycleId": cycle_id,
-                    "cyclePnL": cycle_pnl,
-                    "entry": {
-                        "time": getattr(entry_chunk, 'formatted_entry_time', ''),
-                        "epochTime": int(getattr(entry_chunk, 'entry_time').timestamp()) if hasattr(entry_chunk, 'entry_time') else 0,
-                        "exchangeInstrumentId": raw_symbol,
-                        "instrumentDescription": meta["symbol"],
-                        "optionType": opt_type,
-                        "transaction": getattr(entry_chunk, 'entry_transaction_desc', ''),
-                        "price": getattr(entry_chunk, 'entry_price', 0.0),
-                        "lotCount": getattr(entry_chunk, 'initial_quantity', 0),
-                        "totalPrice": getattr(entry_chunk, 'initial_quantity', 0) * settings.NIFTY_LOT_SIZE * getattr(entry_chunk, 'entry_price', 0),
-                        "signal": getattr(entry_chunk, 'entry_signal', 'N/A'),
-                        "signalDescription": getattr(entry_chunk, 'entry_reason_description', '')
-                    }
-                }
-
-                # Add Targets
-                for i, tch in enumerate(target_chunks, 1):
-                    cycle_obj[f"target{i}"] = {
-                        "time": getattr(tch, 'formatted_exit_time', ''),
-                        "epochTime": int(getattr(tch, 'exit_time').timestamp()) if hasattr(tch, 'exit_time') else 0,
-                        "actionPnL": getattr(tch, 'pnl', 0),
-                        "transaction": getattr(tch, 'exit_transaction_desc', ''),
-                        "price": getattr(tch, 'exit_price', 0.0),
-                        "lotCount": getattr(tch, 'quantity', 0),
-                        "totalPrice": getattr(tch, 'quantity', 0) * settings.NIFTY_LOT_SIZE * getattr(tch, 'exit_price', 0)
-                    }
-
-                # Add Exit
-                if exit_chunk:
-                    cycle_obj["exit"] = {
-                        "time": getattr(exit_chunk, 'formatted_exit_time', ''),
-                        "epochTime": int(getattr(exit_chunk, 'exit_time').timestamp()) if hasattr(exit_chunk, 'exit_time') else 0,
-                        "transaction": getattr(exit_chunk, 'exit_transaction_desc', ''),
-                        "price": getattr(exit_chunk, 'exit_price', 0.0),
-                        "lotCount": getattr(exit_chunk, 'quantity', 0),
-                        "signal": getattr(exit_chunk, 'status', 'N/A'),
-                        "signalDescription": getattr(exit_chunk, 'exit_reason_description', ''),
-                        "totalPrice": getattr(exit_chunk, 'quantity', 0) * settings.NIFTY_LOT_SIZE * getattr(exit_chunk, 'exit_price', 0)
-                    }
-
-                trade_cycles.append(cycle_obj)
-
-            # Simplify indicator format for database storage
-            simplified_indicators = []
-            indicators = self.fm.indicator_calculator.config
-            for ind in indicators:
-                params = ind.get('params', {})
-                param_vals = "-".join([str(v) for v in params.values()])
-                simplified_indicators.append(f"{ind.get('InstrumentType', 'SPOT')} | {ind.get('type', 'N/A')} | {param_vals}")
-
-            result_doc = {
-                "resultId": result_id,
-                "timestamp": DateUtils.to_utc(datetime.now(DateUtils.MARKET_TZ)).replace(tzinfo=None).isoformat(timespec='seconds'),
-                "config": {
-                    "strategy": self.args.rule_id or "ml-model",
-                    "strategyMode": self.args.strategy_mode,
-                    "startDate": start_dt.strftime("%Y-%m-%d"),
-                    "endDate": end_dt.strftime("%Y-%m-%d"),
-                    "timeframe": getattr(self.fm, 'global_timeframe', 300),
-                    "indicators": simplified_indicators,
-                    "budget": self.args.budget,
-                    "stopLoss": self.args.sl,
-                    "targets": self.args.target_steps,
-                    "trailingSl": getattr(self.args, 'trailing_sl', 0),
-                    "breakEven": not getattr(self.args, 'no_break_even', False),
-                    "instrumentType": getattr(self.args, 'instrument_type', 'CASH'),
-                    "selectionBasis": getattr(self.args, 'option_type', 'ATM'),
-                    "investMode": getattr(self.args, 'invest_mode', 'compound'),
-                    "priceSource": getattr(self.args, 'price_source', 'close'),
-                    "mlModelPath": getattr(self.args, 'ml_model_path', None)
-                },
-                "summary": {
-                    "initialCapital": self.args.budget,
-                    "finalCapital": final_capital,
-                    "pnl": total_pnl,
-                    "roi": roi,
-                    "tradeCount": len(self.trades)
-                },
-                "tradeCycles": trade_cycles,
-                "dailyPnl": self.daily_pnl
-            }
-
-            db["backtest_results"].insert_one(result_doc)
-            logger.info(f"✅ Backtest saved! resultId: {result_id} ({len(trade_cycles)} cycles)")
-            # Return result_id so runner can potentially show it
-            return result_id
+            # Use centralized persistence
+            persistence = TradePersistence()
+            persistence.save_session_summary(
+                session_id=session_id,
+                trades=self.trades, # List[Position]
+                config=config,
+                daily_pnl=self.daily_pnl,
+                is_live=False
+            )
+            
+            logger.info(f"✅ Backtest saved! sessionId: {session_id}")
+            return session_id
+        except Exception as e:
+            logger.error(f"Failed to save backtest results: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
         except Exception as e:
             logger.error(f"Failed to save backtest results: {e}")
             import traceback

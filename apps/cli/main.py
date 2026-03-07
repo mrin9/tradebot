@@ -28,7 +28,6 @@ from packages.utils.seed_strategy_rules import seed_strategy_rules
 from packages.config import settings
 
 app = typer.Typer(help="Trade Bot V2 Management CLI")
-PID_FILE = "simulator_service.pid"
 
 # --- Helper Functions ---
 
@@ -123,50 +122,7 @@ def fill_gaps(
     except Exception as e:
         typer.secho(f"❌ Error: {e}", fg=typer.colors.RED)
 
-@app.command()
-def simulator(
-    action: Annotated[str, typer.Argument(help="Action: start, stop, status")]
-):
-    """Manage the background Socket.IO simulator (Start/Stop/Status)."""
-    if action == "start":
-        if os.path.exists(PID_FILE):
-            typer.secho("Already running.", fg=typer.colors.YELLOW)
-            return
-        cmd = [sys.executable, "-m", "packages.simulator.socket_server"]
-        try:
-            # Create logs dir if not exists
-            if not os.path.exists("logs"): os.makedirs("logs")
-            proc = subprocess.Popen(cmd, stdout=open("logs/simulator_stdout.log", "a"), stderr=open("logs/simulator_stderr.log", "a"))
-            with open(PID_FILE, "w") as f: f.write(str(proc.pid))
-            typer.secho(f"✅ Started. PID: {proc.pid}", fg=typer.colors.GREEN)
-        except Exception as e: typer.secho(f"❌ Failed: {e}", fg=typer.colors.RED)
-        
-    elif action == "stop":
-        if not os.path.exists(PID_FILE):
-            typer.secho("Not running.", fg=typer.colors.RED)
-            return
-        with open(PID_FILE, "r") as f: pid = int(f.read().strip())
-        try:
-            import signal
-            os.kill(pid, signal.SIGTERM)
-            os.remove(PID_FILE)
-            typer.secho(f"✅ Stopped process {pid}.", fg=typer.colors.GREEN)
-        except Exception as e:
-            typer.secho(f"⚠️ Error: {e}. Removing stale PID file.", fg=typer.colors.YELLOW)
-            if os.path.exists(PID_FILE): os.remove(PID_FILE)
-            
-    elif action == "status":
-        if not os.path.exists(PID_FILE):
-             typer.secho("Service is NOT running.", fg=typer.colors.RED)
-        else:
-             with open(PID_FILE, "r") as f: pid = int(f.read().strip())
-             try:
-                 os.kill(pid, 0)
-                 typer.secho(f"✅ Running (PID: {pid}).", fg=typer.colors.GREEN)
-             except ProcessLookupError:
-                 typer.secho("⚠️ Stale PID file found.", fg=typer.colors.YELLOW)
-    else:
-        typer.secho(f"❌ Unknown action: {action}", fg=typer.colors.RED)
+
 
 @app.command()
 def crossover(
@@ -198,9 +154,9 @@ def backtest(
     budget: Annotated[Optional[float], typer.Option(help="Initial Capital")] = None,
     invest_mode: Annotated[Optional[str], typer.Option(help="ReInvest Type: fixed or compound")] = None,
     sl: Annotated[Optional[float], typer.Option(help="Stop Loss at")] = None,
-    no_break_even: Annotated[Optional[bool], typer.Option(help="Disable Break-Even trailing")] = None,
+    break_even: Annotated[Optional[bool], typer.Option(help="Enable Break-Even trailing")] = None,
     trailing_sl: Annotated[Optional[float], typer.Option(help="Trailing Stop Loss Points")] = None,
-    option_type: Annotated[Optional[str], typer.Option(help="Option Strike Type (ATM, ITM, OTM)")] = None,
+    strike_selection: Annotated[Optional[str], typer.Option(help="Option Strike Type (ATM, ITM, OTM)")] = None,
     strategy_mode: Annotated[Optional[str], typer.Option(help="Strategy Mode: rule, ml, or python_code")] = None,
     python_strategy_path: Annotated[Optional[str], typer.Option(help="Path to custom python strategy file")] = None,
     ml_model_path: Annotated[Optional[str], typer.Option(help="Path to ML model")] = None,
@@ -284,14 +240,14 @@ def backtest(
     if not target_steps: target_steps = "15,25,50"
 
     # 9. Break Even
-    if no_break_even is None:
+    if break_even is None:
         be_choice = questionary.select("Enable Break Even at First Target?", choices=["Yes", "No"]).ask()
-        no_break_even = (be_choice == "No")
+        break_even = (be_choice == "Yes")
 
     # 10. Option Type
-    if not option_type:
-        option_type = questionary.select("Option Strike Type:", choices=["ATM", "ITM", "OTM"]).ask()
-    if not option_type: return
+    if not strike_selection:
+        strike_selection = questionary.select("Option Strike Type:", choices=["ATM", "ITM", "OTM"]).ask()
+    if not strike_selection: return
 
     # 11. Strategy Mode
     if not strategy_mode:
@@ -343,7 +299,7 @@ def backtest(
         "--sl", str(sl),
         "--target-steps", target_steps,
         "--trailing-sl", str(trailing_sl),
-        "--option-type", option_type,
+        "--strike-selection", strike_selection,
         "--strategy-mode", strategy_mode,
         "--pyramid-steps", pyramid_steps,
     ]
@@ -355,8 +311,8 @@ def backtest(
         "--pyramid-confirm-pts", str(pyramid_confirm_pts),
         "--warmup-candles", str(warmup_candles)
     ])
-    if no_break_even:
-        cmd.append("--no-break-even")
+    if break_even:
+        cmd.append("--break-even")
 
     typer.secho(f"\n🧪 Starting {mode.upper()} Backtest for {rule_id}...", fg=typer.colors.BLUE, bold=True)
     try:
@@ -556,7 +512,7 @@ def live_trade(
     strategy_mode: Annotated[str, typer.Option(help="Strategy Mode: rule, ml, or python_code")] = "python_code",
     python_strategy_path: Annotated[Optional[str], typer.Option(help="Path to custom python strategy file")] = "packages/tradeflow/python_strategies.py:TripleLockStrategy",
     rule_id: Annotated[str, typer.Option(help="Strategy Rule ID (e.g. R001)")] = "triple-lock-momentum",
-    selection_basis: Annotated[str, typer.Option(help="Option Selection Basis (ATM, ITM, OTM)")] = "ATM",
+    strike_selection: Annotated[str, typer.Option(help="Option Selection Basis (ATM, ITM, OTM)")] = "ATM",
     budget: Annotated[float, typer.Option(help="Initial Budget for Live Trading")] = 200000.0,
     sl: Annotated[float, typer.Option(help="Stop Loss Points")] = 15.0,
     target: Annotated[str, typer.Option(help="Target Points (Comma separated)")] = "15,25,45",
@@ -579,7 +535,7 @@ def live_trade(
             "stop_loss_points": sl,
             "target_points": target,
             "trailing_sl_points": trailing_sl,
-            "option_type": selection_basis.upper(),
+            "strike_selection": strike_selection.upper(),
             "instrument_type": "OPTIONS", # Default for live trading in this context
             "use_break_even": break_even,
             "record_papertrade_db": record_papertrade,
@@ -618,7 +574,6 @@ def interactive_menu():
                 "Age Out History",
                 "Check Data Gaps",
                 "Fill Data Gaps",
-                "Simulator Control",
                 "Backtesting",
                 "Live Trading",
                 "Tests",
@@ -646,9 +601,6 @@ def interactive_menu():
         elif choice == "Fill Data Gaps":
              dr = questionary.text("Date Range to fill gaps:", default="today").ask()
              if dr: fill_gaps(date_range=dr)
-        elif choice == "Simulator Control":
-             action = questionary.select("Simulator Action:", choices=["start", "stop", "status", "back"]).ask()
-             if action != "back": simulator(action=action)
         elif choice == "Backtesting":
              backtest()
         elif choice == "Live Trading":

@@ -8,25 +8,23 @@ async def get_backtests():
     db = get_db()
     # Exclude heavy fields for the summary list
     projection = {
-        "_id": 1, # Keep _id to fallback if needed
+        "_id": 1, 
+        "sessionId": 1,
+        "createdAt": 1,
+        "config": 1,
+        "summary": 1,
+        "status": 1,
         "trades": 0,
         "tradeCycles": 0,
         "dailyPnl": 0
     }
-    # Sort by timestamp or createdAt (whichever is present)
-    # MongoDB sort can take multiple fields
-    results = list(db['backtest_results'].find({}, projection).sort([('timestamp', -1), ('createdAt', -1)]).limit(50))
+    # Sort by createdAt (preferred)
+    results = list(db['backtest_results'].find({}, projection).sort([('createdAt', -1), ('timestamp', -1)]).limit(50))
     
-    # Ensure consistency in ID handling
     for res in results:
-        # Check all possible ID fields
-        bid = res.get("backtest_id") or res.get("backtestId") or res.get("resultId")
-        if bid:
-            res["id"] = bid
-        else:
-            res["id"] = str(res["_id"])
+        # Preferred ID is sessionId
+        res["id"] = res.get("sessionId") or res.get("resultId") or str(res["_id"])
         
-        # Cleanup _id for JSON serializability if it's an ObjectId
         if "_id" in res:
             res["_id"] = str(res["_id"])
             
@@ -35,12 +33,13 @@ async def get_backtests():
 @router.get("/{id}")
 async def get_backtest_detail(id: str):
     db = get_db()
-    # Try finding by various ID fields
+    # Support both for transition, prioritize sessionId
     query = {
         "$or": [
+            {"sessionId": id},
+            {"resultId": id},
             {"backtest_id": id},
-            {"backtestId": id},
-            {"resultId": id}
+            {"backtestId": id}
         ]
     }
     res = db['backtest_results'].find_one(query, {'_id': 0})

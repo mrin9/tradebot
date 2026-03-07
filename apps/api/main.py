@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import socketio
-from apps.api.routers import instruments, ticks, backtests, simulation, strategy, ops
+from apps.api.routers import instruments, ticks, backtests, strategy, ops
 from apps.api.socket_instance import sio
 
 # Initialize FastAPI
@@ -18,13 +18,12 @@ app.add_middleware(
 
 # Socket.IO
 # sio is imported from apps.api.socket_instance
-socket_app = socketio.ASGIApp(sio, app, socketio_path='/simulation-socket')
+socket_app = socketio.ASGIApp(sio, app)
 
 # Routers
 app.include_router(instruments.router)
 app.include_router(ticks.router)
 app.include_router(backtests.router)
-app.include_router(simulation.registry_router) if hasattr(simulation, 'registry_router') else app.include_router(simulation.router)
 app.include_router(strategy.router)
 app.include_router(ops.router)
 

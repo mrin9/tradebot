@@ -47,8 +47,13 @@ class DatabaseManager:
 
             # 5. Backtest Results
             results_coll = db[settings.BACKTEST_RESULT_COLLECTION]
-            results_coll.create_index([("resultId", ASCENDING)], unique=True)
+            results_coll.create_index([("sessionId", ASCENDING)], unique=True)
             results_coll.create_index([("timestamp", DESCENDING)])
+
+            # 6. Live Trades
+            live_coll = db.get_collection("live_trades")
+            live_coll.create_index([("sessionId", ASCENDING)], unique=True)
+            live_coll.create_index([("timestamp", DESCENDING)])
 
             logger.info("✅ Database indexes synchronized successfully.")
         except Exception as e:
