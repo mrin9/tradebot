@@ -164,6 +164,8 @@ class FundManager:
         
     def _check_and_update_monitored_instruments(self, current_spot: float, current_ts: float):
         """Continuously manages the CE and PE instruments being monitored. Handles drift re-selection."""
+        if self.is_warming_up:
+            return  # Defer option resolution until warmup completes to avoid API burst
         atm_strike = round(current_spot / 50) * 50
         
         needs_update = False
@@ -413,7 +415,7 @@ class FundManager:
                     r.add_candle({'t': ts, 'is_flush': True}) # Dummy tick to force close if needed
                     # Note: add_candle logic handles period jumps internally
 
-        if self.log_heartbeat:
+        if self.log_heartbeat and not self.is_warming_up:
             ind_str = ", ".join([f"{k}: {v:.2f}" if isinstance(v, (int, float)) else f"{k}: {v}" for k, v in self.latest_indicators_state.items()])
             
             # Format candle start and end times for clarity

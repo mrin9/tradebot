@@ -87,6 +87,9 @@ class LiveTradeEngine:
         self.active_signals = []
         self.current_atm_strike = None
         
+        # API Rate-Limit Throttle (XTS allows 1 call/sec)
+        self._last_api_call_time = 0.0
+        
     def start(self):
         """Starts the live trade engine."""
         logger.info(TradeFormatter.format_session_start(self.session_id, self.strategy_config.get('name'), self.strategy_config.get('ruleId')))
@@ -104,10 +107,6 @@ class LiveTradeEngine:
         # 3. Start Processor Thread
         logger.info(f"{TradeFormatter.EMOJI_THREAD} Starting Tick Processor Thread...")
         threading.Thread(target=self._process_loop, daemon=True).start()
-        
-        # 4. Connect Socket
-        logger.info(TradeFormatter.format_connection("connecting", "Connecting to XTS Socket..."))
-        threading.Thread(target=self.soc.connect, daemon=True).start()
         
         # Wait a bit for connection to settle
         time.sleep(2)
@@ -340,6 +339,12 @@ class LiveTradeEngine:
         self.fund_manager.is_warming_up = False
         self.has_warmed_up = True
         logger.info(f"✅ Warmup complete. Processed {count} candles for NIFTY ending before {anchor_timestamp}.")
+        
+        # Resolve current CE/PE strike chain once after warmup (avoids API burst during replay)
+        spot = self.fund_manager.latest_tick_prices.get(26000)
+        if spot:
+            logger.info(f"🎯 Post-warmup: Resolving option strikes for SPOT={spot}...")
+            self.fund_manager._check_and_update_monitored_instruments(spot, anchor_timestamp)
 
         # Record Engine Initialization in PaperTrade DB
         init_data = {
@@ -443,6 +448,13 @@ class LiveTradeEngine:
         
         return {int(c['exchangeInstrumentID']) for c in contracts}
 
+    def _throttle_api(self):
+        """Sleeps if needed to respect XTS 1-call/sec rate limit."""
+        elapsed = time.time() - self._last_api_call_time
+        if elapsed < 1.1:
+            time.sleep(1.1 - elapsed)
+        self._last_api_call_time = time.time()
+
     def _fetch_ohlc_api(self, segment: int, instrument_id: int, start_time: str = None, end_time: str = None) -> List[Dict]:
         """
         Helper to fetch 1-minute OHLC data from XTS REST API.
@@ -457,6 +469,7 @@ class LiveTradeEngine:
                 start_time = (now - timedelta(hours=1)).strftime(fmt)
 
             logger.debug(f"🌐 API OHLC Request: {instrument_id} ({start_time} - {end_time})")
+            self._throttle_api()
             response = self.xt_market.get_ohlc(
                 exchangeSegment=segment,
                 exchangeInstrumentID=instrument_id,
@@ -507,6 +520,7 @@ class LiveTradeEngine:
         """
         try:
             logger.debug(f"🌐 API Quote Request: {instrument_id}")
+            self._throttle_api()
             # publishFormat: 1-JSON, 2-Binary
             response = self.xt_market.get_quote(
                 Instruments=[{'exchangeSegment': segment, 'exchangeInstrumentID': instrument_id}],
