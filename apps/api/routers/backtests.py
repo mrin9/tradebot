@@ -6,17 +6,12 @@ router = APIRouter(prefix="/api/backtests", tags=["backtests"])
 @router.get("")
 async def get_backtests():
     db = get_db()
-    # Exclude heavy fields for the summary list
+    # Exclude heavy fields for the summary list (exclusion-only projection)
     projection = {
-        "_id": 1, 
-        "sessionId": 1,
-        "createdAt": 1,
-        "config": 1,
-        "summary": 1,
-        "status": 1,
         "trades": 0,
         "tradeCycles": 0,
-        "dailyPnl": 0
+        "dailyPnl": 0,
+        "instrumentsTraded": 0
     }
     # Sort by createdAt (preferred)
     results = list(db['backtest_results'].find({}, projection).sort([('createdAt', -1), ('timestamp', -1)]).limit(50))

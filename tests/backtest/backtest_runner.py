@@ -64,7 +64,7 @@ def fetch_strategy_rule(rule_id: str, strategy_mode: str = "rule"):
             logger.error("--rule_id is required in Rule mode.")
             sys.exit(1)
     db = MongoRepository.get_db()
-    rule = db['strategy_rules'].find_one({"rule_id": rule_id})
+    rule = db['strategy_rules'].find_one({"ruleId": rule_id})
     if not rule:
         logger.error(f"Rule ID '{rule_id}' not found in DB.")
         sys.exit(1)

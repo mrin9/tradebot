@@ -144,7 +144,7 @@ graph TD
 
 ## 3. Component Roles & Responsibilities
 
-1. **`packages/backtest/backtest_runner.py`**: The CLI entry point for integration tests.
+1. **`tests/backtest/backtest_runner.py`**: The CLI entry point for integration tests.
 2. **`packages/backtest/db_mode.py`**: The High-Speed testing feeder. Best for rapid iteration.
 3. **`packages/backtest/socket_mode.py`**: The High-Fidelity testing feeder. Best for exact live-simulation testing.
 4. **`packages/backtest/backtest_base.py` (`BacktestBot`)**: Receives and logs simulated `PaperTrades`.
@@ -175,8 +175,7 @@ python -m tests.backtest.backtest_runner \
     --start 2026-02-02 \
     --end 2026-02-02 \
     --rule-id scalp-ema-rsi-1 \
-    --instrument-type OPTIONS \
-    --option-type ATM \
+    --strike-selection ATM \
     --budget 200000 \
     --sl 20.0 \
     --target-steps "5,15,30" \
@@ -208,7 +207,7 @@ python -m tests.backtest.backtest_runner \
     --invest-mode compound \
     --strategy-mode rule \
     --rule-id triple-lock-momentum \
-    --option-type ATM \
+    --strike-selection ATM \
     --sl 15.0 \
     --target-steps "15,25,50" \
     --trailing-sl 10.0 \
@@ -234,5 +233,5 @@ python -m tests.backtest.backtest_runner \
 **Parameters Reference:**
 - `--end`: (Optional) Defaults to `--start` if not provided.
 - `--invest-mode`: `compound` (uses ROI to grow position size) or `fixed` (uses initial budget).
-- `--option-type`: `ATM`, `ITM`, or `OTM` strike selection.
-- See `python -m packages.backtest.backtest_runner --help` for full parameter list.
+- `--strike-selection`: `ATM`, `ITM`, or `OTM` strike selection.
+- See `python -m tests.backtest.backtest_runner --help` for full parameter list.

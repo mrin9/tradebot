@@ -47,5 +47,6 @@ trade-bot-v2/
 - **`packages.tradeflow`**: Contains the trading logic (`Strategy` class), indicator calculations (`IndicatorCalculator`), position management (`PositionManager`), and order execution (`OrderManager`).
 
 ### Tests
-- **`tests/test_strategy_integration.py`**: Integration test ensuring Strategy Output matches between Database and Socket Feed.
-- **`tests/test_fund_manager.py`**: End-to-end verification of the trading workflow (Signal -> Order).
+- **`tests/backtest/`**: Backtest engine (runner, DB mode, socket mode feeders).
+- **`tests/no_db/`**: Offline unit tests that run without a database connection.
+- **`tests/xts/`**: XTS API connectivity and data normalization tests.

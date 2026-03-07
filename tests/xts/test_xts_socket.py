@@ -83,15 +83,16 @@ class XTSSocketTester:
         # Send Subscriptions for common event codes
         logger.info(f"Sending subscriptions for NIFTY (26000)...")
         # 1501: Touchline/LTP
-        self.xt_market.send_subscription([{'exchangeSegment': 1, 'exchangeInstrumentID': nifty_id}], 1501)
+        response = self.xt_market.send_subscription([{'exchangeSegment': 1, 'exchangeInstrumentID': nifty_id}], 1501)
+        logger.info(f"📡 Subscription response: {response}")
 
     def run(self):
         # Setup callbacks
         self.soc.on_connect = self._on_connect
         self.soc.on_error = self._on_error
         self.soc.on_disconnect = self._on_disconnect
-        # Commented out to avoid duplicate logs for everything
-        # self.soc.on_message = self._on_message
+        # Enable catch-all to debug missing data
+        self.soc.on_message = self._on_message
         
         # Register handlers for 1501 Full ONLY
         self.soc.on_message1501_json_full = lambda d: self._handle_market_event("1501-full", d)

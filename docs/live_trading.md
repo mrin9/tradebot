@@ -25,11 +25,11 @@ You can start live trading via the CLI using either the interactive menu or a di
 You can run the live trader directly, bypassing the interactive menu, by specifying parameters. Here is the recommended command sequence for a custom Python strategy:
 
 ```bash
-python apps/cli/main.py live-trade \
+python3 apps/cli/main.py live-trade \
   --strategy-mode python_code \
   --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
   --rule-id triple-lock-momentum \
-  --selection-basis ATM \
+  --strike-selection ATM \
   --budget 200000 \
   --sl 15 \
   --target 15,25,45 \
@@ -47,7 +47,7 @@ Values that denote points (like Stop Loss) correspond to absolute price changes 
 | `--strategy-mode` | `python_code` | `rule`, `python_code`, `ml` | The core intelligence engine. `rule` uses the web JSON DSL. `python_code` delegates to your custom script. |
 | `--python-strategy-path` | `packages/tradeflow/python_strategies.py:TripleLockStrategy` | Valid Python path | Used only when `strategy-mode` is `python_code`. Points to your custom class. |
 | `--rule-id` | `triple-lock-momentum` | Any valid Rule ID from DB | Crucial for `python_code` mode, as it defines *which* indicators the FundManager calculates and feeds to your script. |
-| `--selection-basis` | `ATM` | `ATM`, `ITM`, `OTM` | Dictates which Option strike is dynamically tracked and traded. (e.g., if NIFTY is 22000, ATM buys the 22000 CE/PE). |
+| `--strike-selection` | `ATM` | `ATM`, `ITM`, `OTM` | Dictates which Option strike is dynamically tracked and traded. (e.g., if NIFTY is 22000, ATM buys the 22000 CE/PE). |
 | `--budget` | `200000.0` | Any positive float | Initial capital (in ₹). Divides by contract (Options lot size * premium) to determine how many lots to buy. |
 | `--sl` | `15.0` | Any positive float | **(Points)** Absolute stop-loss points off the premium. E.g., if you buy an option at ₹200, a `--sl 15` triggers if the premium drops to ₹185 (which is only a 7.5% drop, *not* 15%). |
 | `--target` | `15,25,45` | Comma-separated floats | **(Points)** Step-wise profit booking points. The bot divides your lots into chunks and sells them progressively at +15pts, +25pts, and +45pts from your entry price. |

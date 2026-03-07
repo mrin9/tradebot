@@ -446,7 +446,7 @@ class PositionManager:
         pyramid_qty = max(1, (self.quantity * step_pct) // 100)
         
         lot_size = settings.NIFTY_LOT_SIZE
-        fmt_time = timestamp.strftime("%d-%b-%Y %H:%M").upper()
+        fmt_time = DateUtils.to_iso(timestamp)
         total_price = pyramid_qty * lot_size * price
         trans_desc = f"Purchased {pyramid_qty} lots({lot_size}) @ {price} | Total: ₹{total_price:,.2f}"
         if self.display_symbol:
@@ -538,7 +538,7 @@ class PositionManager:
         self.session_realized_pnl += chunk_pnl
         
         lot_size = settings.NIFTY_LOT_SIZE
-        fmt_time = timestamp.strftime("%d-%b-%Y %H:%M").upper()
+        fmt_time = DateUtils.to_iso(timestamp)
         total_price = close_qty * lot_size * price
         trans_desc = f"Sold {close_qty} lots({lot_size}) @ {price} | Total: ₹{total_price:,.2f}"
         if self.current_position.display_symbol:

@@ -309,8 +309,8 @@ const groupedTradesByDate = computed(() => {
       groups[date][symbol].cycles[cycleId] = {
         id: cycleId,
         totalPnl: 0,
-        startTime: entryT,
-        endTime: exitT,
+        startTime: entryEp,
+        endTime: exitEp,
         executions: []
       };
     }

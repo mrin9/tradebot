@@ -116,7 +116,7 @@ Strategy: {args.rule_id or 'ML/Python'} | Mode: {args.strategy_mode.upper()}
 Budget: ₹{args.budget:,.2f} | Invest Mode: {self.fm.invest_mode.upper()}
 Stop Loss: {self.fm.stop_loss_points} pts | Targets: {self.fm.target_points} pts
 Trailing SL: {self.fm.trailing_sl_points} pts | Break-Even: {self.fm.use_break_even}
-Option Selection: {getattr(args, 'option_type', 'ATM')} | Price Source: {getattr(args, 'price_source', 'close').upper()}
+Option Selection: {getattr(args, 'strike_selection', 'ATM')} | Price Source: {getattr(args, 'price_source', 'close').upper()}
 Warmup Candles: {args.warmup_candles}
 
 Indicators:

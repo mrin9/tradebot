@@ -83,7 +83,20 @@ class XTSManager:
                 cls._market_client._set_common_variables(
                     session['token'], session['userID'], session['isInvestorClient']
                 )
-            else:
+                # Validate the cached token with a lightweight API call
+                try:
+                    test_resp = cls._market_client.get_config()
+                    if isinstance(test_resp, str) and "invalid" in test_resp.lower():
+                        logger.warning("Cached Market token is invalid. Will re-login...")
+                        session = None  # Fall through to fresh login below
+                    elif isinstance(test_resp, dict) and test_resp.get('type') == 'error':
+                        logger.warning(f"Cached Market token rejected: {test_resp.get('description')}. Will re-login...")
+                        session = None
+                except Exception as e:
+                    logger.warning(f"Token validation failed ({e}). Will re-login...")
+                    session = None
+            
+            if not session:
                 logger.info("Initializing New Market Data API Session...")
                 response = cls._market_client.marketdata_login()
                 if response and 'result' in response and 'token' in response['result']:
