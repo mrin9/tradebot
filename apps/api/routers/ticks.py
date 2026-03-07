@@ -4,7 +4,7 @@ from packages.utils.date_utils import DateUtils
 from packages.utils.market_utils import MarketUtils
 import polars as pl
 from typing import Optional
-import datetime
+from datetime import datetime, timedelta
 from packages.config import settings
 
 router = APIRouter(prefix="/api/ticks", tags=["ticks"])
@@ -74,7 +74,7 @@ async def get_ticks(
         time_query['$gte'] = requested_start_t
     elif not requested_end_t:
         # Default to last 5 days
-        dt = datetime.now(DateUtils.MARKET_TZ) - datetime.timedelta(days=5)
+        dt = datetime.now(DateUtils.MARKET_TZ) - timedelta(days=5)
         time_query['$gte'] = DateUtils.to_timestamp(dt)
         
     if requested_end_t:

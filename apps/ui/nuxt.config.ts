@@ -20,8 +20,6 @@ export default defineNuxtConfig({
         }
     },
     css: [
-        '@fontsource/inter',
-        'primeicons/primeicons.css',
         '~/assets/css/theme.css',
         '~/assets/css/utilities.css',
         '~/assets/css/layout.css'
