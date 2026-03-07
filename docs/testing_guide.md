@@ -162,9 +162,9 @@ python -m tests.backtest.backtest_runner \
     --start 2026-02-27 \
     --rule-id triple-lock-momentum \
     --budget 200000 \
-    --sl 15.0 \
-    --target-steps "15,25,50" \
-    --trailing-sl 10.0
+    --stop-loss-points 15.0 \
+    --target-points "15,25,50" \
+    --trailing-sl-points 10.0
 ```
 
 ### High-Fidelity Socket Mode
@@ -177,9 +177,9 @@ python -m tests.backtest.backtest_runner \
     --rule-id scalp-ema-rsi-1 \
     --strike-selection ATM \
     --budget 200000 \
-    --sl 20.0 \
-    --target-steps "5,15,30" \
-    --trailing-sl 5.0
+    --stop-loss-points 20.0 \
+    --target-points "5,15,30" \
+    --trailing-sl-points 5.0
 ```
 
 ### Python Strategy Mode (Hybrid)
@@ -191,9 +191,9 @@ python -m tests.backtest.backtest_runner \
     --strategy-mode python_code \
     --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
     --budget 200000 \
-    --sl 15.0 \
-    --target-steps "15,25,50" \
-    --trailing-sl 10.0
+    --stop-loss-points 15.0 \
+    --target-points "15,25,50" \
+    --trailing-sl-points 10.0
 ```
 
 ### Full Parameter Examples
@@ -208,10 +208,9 @@ python -m tests.backtest.backtest_runner \
     --strategy-mode rule \
     --rule-id triple-lock-momentum \
     --strike-selection ATM \
-    --sl 15.0 \
-    --target-steps "15,25,50" \
-    --trailing-sl 10.0 \
-    --warmup-candles 200
+    --stop-loss-points 15.0 \
+    --target-points "15,25,50" \
+    --trailing-sl-points 10.0
 ```
 
 #### Comprehensive Python Mode (Fixed + ITM Options)
@@ -224,14 +223,34 @@ python -m tests.backtest.backtest_runner \
     --strategy-mode python_code \
     --rule-id triple-lock-momentum \
     --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
-    --sl 15.0 \
-    --target-steps "15,25,50" \
-    --trailing-sl 10.0 \
-    --warmup-candles 200
+    --stop-loss-points 15.0 \
+    --target-points "15,25,50" \
+    --trailing-sl-points 10.0
 ```
 
-**Parameters Reference:**
-- `--end`: (Optional) Defaults to `--start` if not provided.
-- `--invest-mode`: `compound` (uses ROI to grow position size) or `fixed` (uses initial budget).
-- `--strike-selection`: `ATM`, `ITM`, or `OTM` strike selection.
-- See `python -m tests.backtest.backtest_runner --help` for full parameter list.
+### Parameters Reference
+
+The following table lists all available command-line arguments for `tests/backtest/backtest_runner.py`.
+
+| Parameter | Short | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--mode` | n/a | `db` | Backtest mode: `db` (historical from DB) or `socket` (high-fidelity simulation). |
+| `--start` | n/a | `2026-02-02` | Simulation Start Date (YYYY-MM-DD). |
+| `--end` | n/a | `None` | Simulation End Date. Defaults to `--start` if omitted. |
+| `--rule-id` | `-r` | `None` | Strategy Rule ID from MongoDB. Required for `rule` mode. |
+| `--budget` | `-b` | `200000.0` | Initial Capital in ₹. |
+| `--stop-loss-points`| `-s` | `15.0` | Absolute stop loss points off premium. |
+| `--target-points` | `-t` | `15,25,50` | Comma-separated profit booking levels (points). |
+| `--trailing-sl-points`| `-L` | `0.0` | Trailing SL increment. Set to `0.0` to disable. |
+| `--use-break-even` | `-e` | `n/a` | Flag to move SL to entry after first target is hit. |
+| `--instrument-type` | n/a | `OPTIONS` | `CASH` or `OPTIONS`. |
+| `--strike-selection`| `-S` | `ATM` | Option strike selector: `ATM`, `ITM`, or `OTM`. |
+| `--invest-mode` | `-i` | `compound` | `compound` (reinvest profits) or `fixed` (standard sizing). |
+| `--strategy-mode` | n/a | `rule` | Logic engine: `rule` (JSON DSL), `ml`, or `python_code`. |
+| `--python-strategy-path`| n/a | `None` | Path to custom Python strategy class. |
+| `--ml-model-path` | n/a | `None` | Path to `.joblib` or `.onnx` model file for ML mode. |
+| `--pyramid-steps` | n/a | `100` | Comma-separated entry percentages (e.g. `25,50,25`). |
+| `--price-source` | `-p` | `close` | Entry/Exit price source: `open` or `close`. |
+| `--socket-event` | n/a | `1501-json-full`| XTS Socket event to simulate (Socket mode only). |
+
+- See `python -m tests.backtest.backtest_runner --help` for the latest complete list.

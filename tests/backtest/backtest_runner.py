@@ -19,14 +19,14 @@ def get_parser():
     parser.add_argument("--start", type=str, default="2026-02-02", help="Start Date (YYYY-MM-DD)")
     parser.add_argument("--end", type=str, default=None, help="End Date (YYYY-MM-DD). Defaults to --start if omitted.")
     parser.add_argument("--rule-id", type=str, default=None, help="Strategy Rule ID (from DB). Optional for ML mode.")
-    parser.add_argument("--budget", type=float, default=200000.0, help="Initial Capital")
-    parser.add_argument("--sl", type=float, default=settings.BACKTEST_STOP_LOSS, help="Stop Loss Points")
-    parser.add_argument("--target-steps", type=str, default=settings.BACKTEST_TARGET_STEPS, help="Comma separated target points")
-    parser.add_argument("--trailing-sl", type=float, default=0.0, help="Trailing Stop Loss Points (0 to disable)")
-    parser.add_argument("--break-even", action="store_true", help="Enable Break-Even trailing on first target")
+    parser.add_argument("--budget", "-b", type=float, default=200000.0, help="Initial Capital")
+    parser.add_argument("--stop-loss-points", "-s", type=float, default=settings.BACKTEST_STOP_LOSS, help="Stop Loss Points")
+    parser.add_argument("--target-points", "-t", type=str, default=settings.BACKTEST_TARGET_STEPS, help="Comma separated target points")
+    parser.add_argument("--trailing-sl-points", "-L", type=float, default=0.0, help="Trailing Stop Loss Points (0 to disable)")
+    parser.add_argument("--use-break-even", "-e", action="store_true", help="Enable Break-Even trailing on first target")
     parser.add_argument("--instrument-type", type=str, choices=["CASH", "OPTIONS"], default="OPTIONS", help="Instrument to trade")
-    parser.add_argument("--strike-selection", type=str, choices=["ITM", "ATM", "OTM"], default="ATM", help="Option Strike selection")
-    parser.add_argument("--invest-mode", type=str, choices=["compound", "fixed"], default=settings.BACKTEST_INVEST_MODE)
+    parser.add_argument("--strike-selection", "-S", type=str, choices=["ITM", "ATM", "OTM"], default="ATM", help="Option Strike selection")
+    parser.add_argument("--invest-mode", "-i", type=str, choices=["compound", "fixed"], default=settings.BACKTEST_INVEST_MODE)
     parser.add_argument("--socket-event", type=str, choices=["1505-json-full", "1501-json-full", "1512-json-full"], default="1501-json-full", help="Event to listen to on socket mode")
     # Hybrid Strategy & Pyramiding
     parser.add_argument("--strategy-mode", type=str, choices=["rule", "ml", "python_code"], default="rule", help="Strategy engine: rule (JSON-DSL), ml, or python_code")
@@ -35,8 +35,7 @@ def get_parser():
     parser.add_argument("--ml-confidence", type=float, default=0.65, help="Minimum confidence threshold for ML signals")
     parser.add_argument("--pyramid-steps", type=str, default="100", help="Comma-separated entry percentages (e.g., 25,50,25 or 100 for all-in)")
     parser.add_argument("--pyramid-confirm-pts", type=float, default=10.0, help="Points price must move in our favor before next pyramid step")
-    parser.add_argument("--warmup-candles", type=int, default=settings.BACKTEST_WARMUP_CANDLES, help="Number of candles to use for indicator warmup")
-    parser.add_argument("--price-source", type=str, choices=["open", "close"], default=settings.BACKTEST_PRICE_SOURCE, help="Price source for backtest entry/exit (open or close)")
+    parser.add_argument("--price-source", "-p", type=str, choices=["open", "close"], default=settings.BACKTEST_PRICE_SOURCE, help="Price source for backtest entry/exit (open or close)")
     return parser
 
 def fetch_strategy_rule(rule_id: str, strategy_mode: str = "rule"):
@@ -74,10 +73,10 @@ def setup_fund_manager(args, rule_config):
     pos_config = {
         "symbol": "NIFTY",
         "quantity": 1, # Default placeholder, will be recalculated by FundManager
-        "stop_loss_points": args.sl,
-        "target_steps": args.target_steps,
-        "trailing_sl_points": args.trailing_sl,
-        "break_even": args.break_even,
+        "stop_loss_points": args.stop_loss_points,
+        "target_points": args.target_points,
+        "trailing_sl_points": args.trailing_sl_points,
+        "use_break_even": args.use_break_even,
         "instrument_type": args.instrument_type,
         "strike_selection": args.strike_selection,
         "invest_mode": args.invest_mode,
@@ -124,7 +123,7 @@ def main():
             sys.exit(1)
             
     try:
-        feeder.start(bot, fm, warmup_candles=args.warmup_candles)
+        feeder.start(bot, fm)
     except KeyboardInterrupt:
         logger.info("Backtest Interrupted.")
     except Exception as e:

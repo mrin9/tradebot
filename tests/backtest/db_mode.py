@@ -16,8 +16,8 @@ class DBFeeder(BacktestDataFeeder):
     """
     Feeds data from MongoDB into the FundManager synchronously.
     """
-    def start(self, bot, fund_manager, warmup_candles: int = 0):
-        iso_start, iso_end, db = self.setup_backtest(bot, fund_manager, warmup_candles)
+    def start(self, bot, fund_manager):
+        iso_start, iso_end, db = self.setup_backtest(bot, fund_manager)
         
         # 1. Get available trading days
         available_days = DateUtils.get_available_dates(db, settings.NIFTY_CANDLE_COLLECTION)

@@ -101,14 +101,14 @@ class SocketFeeder(BacktestDataFeeder):
         while not is_port_in_use(self.port):
             time.sleep(0.5)
 
-    def start(self, bot, fund_manager, warmup_candles: int = 0):
+    def start(self, bot, fund_manager):
         # 1. Lifecycle: Ensure Simulator is up
         self._start_embedded_simulator()
         
         start_date = bot.args.start
         end_date = bot.args.end
         
-        iso_start, iso_end, db = self.setup_backtest(bot, fund_manager, warmup_candles)
+        iso_start, iso_end, db = self.setup_backtest(bot, fund_manager)
 
         bot._log_config()
         logger.info(f"🧪 Socket Mode Backtest Started listening on '{self.socket_event}'")

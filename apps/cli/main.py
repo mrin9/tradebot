@@ -147,23 +147,22 @@ def crossover(
 
 @app.command()
 def backtest(
-    rule_id: Annotated[Optional[str], typer.Option(help="Strategy Rule ID")] = None,
+    rule_id: Annotated[Optional[str], typer.Option("--rule-id", "-r", help="Strategy Rule ID")] = None,
     start: Annotated[Optional[str], typer.Option(help="Start Date (YYYY-MM-DD)")] = None,
     end: Annotated[Optional[str], typer.Option(help="End Date (YYYY-MM-DD)")] = None,
     mode: Annotated[Optional[str], typer.Option(help="Backtest mode: db or socket")] = None,
-    budget: Annotated[Optional[float], typer.Option(help="Initial Capital")] = None,
-    invest_mode: Annotated[Optional[str], typer.Option(help="ReInvest Type: fixed or compound")] = None,
-    sl: Annotated[Optional[float], typer.Option(help="Stop Loss at")] = None,
-    break_even: Annotated[Optional[bool], typer.Option(help="Enable Break-Even trailing")] = None,
-    trailing_sl: Annotated[Optional[float], typer.Option(help="Trailing Stop Loss Points")] = None,
-    strike_selection: Annotated[Optional[str], typer.Option(help="Option Strike Type (ATM, ITM, OTM)")] = None,
+    budget: Annotated[Optional[float], typer.Option("--budget", "-b", help="Initial Capital")] = None,
+    invest_mode: Annotated[Optional[str], typer.Option("--invest-mode", "-i", help="ReInvest Type: fixed or compound")] = None,
+    stop_loss_points: Annotated[Optional[float], typer.Option("--stop-loss-points", "-s", help="Stop Loss Points")] = None,
+    use_break_even: Annotated[Optional[bool], typer.Option("--use-break-even", "-e", help="Enable Break-Even trailing")] = None,
+    trailing_sl_points: Annotated[Optional[float], typer.Option("--trailing-sl-points", "-L", help="Trailing Stop Loss Points")] = None,
+    strike_selection: Annotated[Optional[str], typer.Option("--strike-selection", "-S", help="Option Strike Type (ATM, ITM, OTM)")] = None,
     strategy_mode: Annotated[Optional[str], typer.Option(help="Strategy Mode: rule, ml, or python_code")] = None,
     python_strategy_path: Annotated[Optional[str], typer.Option(help="Path to custom python strategy file")] = None,
     ml_model_path: Annotated[Optional[str], typer.Option(help="Path to ML model")] = None,
     pyramid_steps: Annotated[Optional[str], typer.Option(help="Pyramid entry percentages (e.g., 25,50,25 or 100)")] = None,
     pyramid_confirm_pts: Annotated[Optional[float], typer.Option(help="Pyramid confirmation points")] = None,
-    target_steps: Annotated[Optional[str], typer.Option(help="Target steps (comma separated, e.g. 15,25,50)")] = None,
-    warmup_candles: Annotated[Optional[int], typer.Option(help="Warmup candles for indicators")] = None
+    target_points: Annotated[Optional[str], typer.Option("--target-points", "-t", help="Target steps (comma separated, e.g. 15,25,50)")] = None,
 ):
     """Execute a strategy against historical data (Interactive)."""
     db = get_db()
@@ -283,9 +282,7 @@ def backtest(
     if not rule_id or rule_id == "BACK": return
     if rule_id == "SKIP": rule_id = ""
 
-    # 13. Default Warmup
-    if warmup_candles is None:
-        warmup_candles = 200
+    # 13. Default Warmup is now hardcoded to 200 via settings.GLOBAL_WARMUP_CANDLES
 
     # Construct and run the command
     cmd = [
@@ -296,9 +293,9 @@ def backtest(
         "--end", end,
         "--budget", str(budget),
         "--invest-mode", invest_mode,
-        "--sl", str(sl),
-        "--target-steps", target_steps,
-        "--trailing-sl", str(trailing_sl),
+        "--stop-loss-points", str(stop_loss_points),
+        "--target-points", target_points,
+        "--trailing-sl-points", str(trailing_sl_points),
         "--strike-selection", strike_selection,
         "--strategy-mode", strategy_mode,
         "--pyramid-steps", pyramid_steps,
@@ -309,10 +306,9 @@ def backtest(
         cmd.extend(["--python-strategy-path", python_strategy_path])
     cmd.extend([
         "--pyramid-confirm-pts", str(pyramid_confirm_pts),
-        "--warmup-candles", str(warmup_candles)
     ])
-    if break_even:
-        cmd.append("--break-even")
+    if use_break_even:
+        cmd.append("--use-break-even")
 
     typer.secho(f"\n🧪 Starting {mode.upper()} Backtest for {rule_id}...", fg=typer.colors.BLUE, bold=True)
     try:
@@ -511,13 +507,13 @@ def train_model(
 def live_trade(
     strategy_mode: Annotated[str, typer.Option(help="Strategy Mode: rule, ml, or python_code")] = "python_code",
     python_strategy_path: Annotated[Optional[str], typer.Option(help="Path to custom python strategy file")] = "packages/tradeflow/python_strategies.py:TripleLockStrategy",
-    rule_id: Annotated[str, typer.Option(help="Strategy Rule ID (e.g. R001)")] = "triple-lock-momentum",
-    strike_selection: Annotated[str, typer.Option(help="Option Selection Basis (ATM, ITM, OTM)")] = "ATM",
-    budget: Annotated[float, typer.Option(help="Initial Budget for Live Trading")] = 200000.0,
-    sl: Annotated[float, typer.Option(help="Stop Loss Points")] = 15.0,
-    target: Annotated[str, typer.Option(help="Target Points (Comma separated)")] = "15,25,45",
-    trailing_sl: Annotated[float, typer.Option(help="Trailing Stop Loss Points")] = 15.0,
-    break_even: Annotated[bool, typer.Option(help="Enable Break-even Trailing")] = True,
+    rule_id: Annotated[str, typer.Option("--rule-id", "-r", help="Strategy Rule ID (e.g. R001)")] = "triple-lock-momentum",
+    strike_selection: Annotated[str, typer.Option("--strike-selection", "-S", help="Option Selection Basis (ATM, ITM, OTM)")] = "ATM",
+    budget: Annotated[float, typer.Option("--budget", "-b", help="Initial Budget for Live Trading")] = 200000.0,
+    stop_loss_points: Annotated[float, typer.Option("--stop-loss-points", "-s", help="Stop Loss Points")] = 15.0,
+    target_points: Annotated[str, typer.Option("--target-points", "-t", help="Target Points (Comma separated)")] = "15,25,45",
+    trailing_sl_points: Annotated[float, typer.Option("--trailing-sl-points", "-L", help="Trailing Stop Loss Points")] = 15.0,
+    use_break_even: Annotated[bool, typer.Option("--use-break-even", "-e", help="Enable Break-even Trailing")] = True,
     record_papertrade: Annotated[bool, typer.Option(help="Record detailed trade logs in 'papertrade' collection")] = True,
     ml_model_path: Annotated[Optional[str], typer.Option(help="Path to ML model")] = None,
     debug: Annotated[bool, typer.Option(help="Enable Socket Debug Logging")] = False
@@ -532,12 +528,12 @@ def live_trade(
 
         pos_cfg = {
             "budget": budget,
-            "stop_loss_points": sl,
-            "target_points": target,
-            "trailing_sl_points": trailing_sl,
+            "stop_loss_points": stop_loss_points,
+            "target_points": target_points,
+            "trailing_sl_points": trailing_sl_points,
             "strike_selection": strike_selection.upper(),
             "instrument_type": "OPTIONS", # Default for live trading in this context
-            "use_break_even": break_even,
+            "use_break_even": use_break_even,
             "record_papertrade_db": record_papertrade,
             "symbol": "NIFTY",
             "strategy_mode": strategy_mode,

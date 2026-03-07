@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     BACKTEST_STOP_LOSS: float = 15.0
     BACKTEST_TARGET_STEPS: str = "15,25,50"
     BACKTEST_INVEST_MODE: str = "compound"
-    BACKTEST_WARMUP_CANDLES: int = 200
+    GLOBAL_WARMUP_CANDLES: int = 200
     BACKTEST_PRICE_SOURCE: str = "close" # Default price source for backtest (open or close)
     
     # 2. Core Operation Modes

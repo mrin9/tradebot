@@ -208,45 +208,45 @@ class FundManager:
             end_dt = DateUtils.market_timestamp_to_datetime(end_ts)
             history = self.fetch_ohlc_fn(segment, instrument_id, start_dt.strftime(fmt), end_dt.strftime(fmt))
             # fetch_ohlc_fn should return normalized list of dicts
-            return history[-limit:] if history else []
-        else:
-            # Backtest or Default: Fetch from DB
-            history_cursor = list(self.db[settings.OPTIONS_CANDLE_COLLECTION].find(
-                {"i": instrument_id, "t": {"$lte": end_ts}}
-            ).sort("t", -1).limit(limit))
-            return sorted(history_cursor, key=lambda x: x['t'])
+            if history:
+                return history[-limit:]
+            # API returned empty — fall through to DB fallback
+            logger.warning(f"⚠️ API returned no data for {instrument_id} ({start_dt.strftime('%Y-%m-%d %H:%M')} → {end_dt.strftime('%Y-%m-%d %H:%M')}). Falling back to DB...")
+
+        # Backtest, Default, or API Fallback: Fetch from DB
+        history_cursor = list(self.db[settings.OPTIONS_CANDLE_COLLECTION].find(
+            {"i": instrument_id, "t": {"$lte": end_ts}}
+        ).sort("t", -1).limit(limit))
+        return sorted(history_cursor, key=lambda x: x['t'])
 
     def _warmup_instrument(self, category: str, instrument_id: int, current_ts: float):
         """
         Fetches historical 1m candles for the new instrument and warms up the resampler/indicators.
         """
-        logger.debug(TradeFormatter.format_warmup(category, instrument_id, str(DateUtils.market_timestamp_to_datetime(current_ts))))
-        
         # Fetch 4 days of history (max 100 candles) for warmup to cross weekends
         start_ts = current_ts - 3600 * 24 * 4
+        start_dt_str = DateUtils.market_timestamp_to_datetime(start_ts).strftime('%Y-%m-%d %H:%M')
+        end_dt_str = DateUtils.market_timestamp_to_datetime(current_ts).strftime('%Y-%m-%d %H:%M')
+        logger.info(f"🔄 Warming up {category} ({instrument_id}): {start_dt_str} → {end_dt_str}")
+        
         history = self._fetch_historical_candles(2, instrument_id, start_ts, current_ts, limit=100)
         
         if not history:
-            logger.warning(f"⚠️ No history found for {category} ({instrument_id}) warmup.")
+            logger.warning(f"⚠️ No history found for {category} ({instrument_id}) warmup. Range: {start_dt_str} → {end_dt_str}")
             return
         
         resampler = self.resamplers.get(category)
         if resampler:
-            # Temporarily disable the normal callback to avoid triggering strategy logic during warmup 
-            # (though resampled candles are pushed to indicator_calculator via the callback)
-            # Actually, the callback _on_resampled_candle_closed is safe because it only 
-            # updates indicators if category != "SPOT".
-            saved_on_closed = resampler.on_candle_closed
-            
-            # We want indicators updated during warmup, so we keep the callback.
-            # But we must ensure it doesn't trigger strategy evaluation.
-            # Luckily, _on_resampled_candle_closed already check category != "SPOT"
+            # Suppress heartbeats during warmup replay
+            saved_heartbeat = self.log_heartbeat
+            self.log_heartbeat = False
             
             resampler.instrument_id = int(instrument_id)
             for candle in history:
                 resampler.add_candle(candle)
             
-            logger.debug(TradeFormatter.format_warmup(category, instrument_id, "", count=len(history), complete=True))
+            self.log_heartbeat = saved_heartbeat
+            logger.info(f"✅ Warmup complete for {category} ({instrument_id}): {len(history)} candles.")
 
     def _fetch_fallback_quote(self, segment: int, instrument_id: int, current_ts: float | None) -> float | None:
         """Unified helper to fetch a fallback quote from API (live) or DB (backtest)."""
@@ -415,7 +415,7 @@ class FundManager:
                     r.add_candle({'t': ts, 'is_flush': True}) # Dummy tick to force close if needed
                     # Note: add_candle logic handles period jumps internally
 
-        if self.log_heartbeat and not self.is_warming_up:
+        if self.log_heartbeat and not self.is_warming_up and category == InstrumentCategoryType.SPOT:
             ind_str = ", ".join([f"{k}: {v:.2f}" if isinstance(v, (int, float)) else f"{k}: {v}" for k, v in self.latest_indicators_state.items()])
             
             # Format candle start and end times for clarity

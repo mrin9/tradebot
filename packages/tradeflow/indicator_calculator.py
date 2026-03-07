@@ -11,12 +11,14 @@ logger = logging.getLogger(__name__)
 
 # InstrumentCategory Enum removed - now imported as InstrumentCategoryType from tradeflow.types
 
+from packages.config import settings
+
 class IndicatorCalculator:
     """
     Calculates technical indicators dynamically based on strategy rules.
     Maintains separate rolling windows of historical candles per instrument category (SPOT, CE, PE).
     """
-    def __init__(self, indicators_config: List[Dict[str, Any]], max_window_size: int = 200):
+    def __init__(self, indicators_config: List[Dict[str, Any]], max_window_size: int = settings.GLOBAL_WARMUP_CANDLES):
         """
         Args:
             indicators_config (List[Dict]): The 'indicators' array from strategy_rules DB.

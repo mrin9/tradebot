@@ -19,11 +19,11 @@ class BacktestDataFeeder(ABC):
     Allows for different data sources (MongoDB, Socket simulator, etc.)
     """
     @abstractmethod
-    def start(self, bot, fund_manager, warmup_candles: int = 0):
+    def start(self, bot, fund_manager):
         """Starts the data flow and feeds it to the fund manager."""
         pass
 
-    def setup_backtest(self, bot, fund_manager, warmup_candles: int):
+    def setup_backtest(self, bot, fund_manager):
         """
         Common setup for all backtest feeders:
         - Parses start/end dates
@@ -41,9 +41,8 @@ class BacktestDataFeeder(ABC):
         
         db = MongoRepository.get_db()
         
-        # Run Indicator Warmup
-        if warmup_candles > 0:
-            MarketUtils.run_indicator_warmup(db, fund_manager, iso_start, warmup_candles, logger)
+        # Run Indicator Warmup (Hardcoded to 200)
+        MarketUtils.run_indicator_warmup(db, fund_manager, iso_start, settings.GLOBAL_WARMUP_CANDLES, logger)
             
         return iso_start, iso_end, db
 
@@ -194,9 +193,28 @@ Indicators:
             short_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=3))
             session_id = f"{prefix}-{date_range}-{short_id}"
 
-            # Prepare config dict
-            config = self.args.__dict__.copy()
-            config["ruleId"] = strategy_id
+            # Prepare standardized config dict
+            config = {
+                "rule_id": strategy_id,
+                "strategy_mode": self.args.strategy_mode,
+                "python_strategy_path": getattr(self.args, 'python_strategy_path', None),
+                "timeframe": self.fm.global_timeframe,
+                "indicators": [
+                    f"{ind.get('InstrumentType', 'SPOT')}|{ind.get('type', 'N/A')}|{'-'.join(str(v) for v in ind.get('params', {}).values())}"
+                    for ind in self.fm.indicator_calculator.config
+                ],
+                "budget": self.args.budget,
+                "invest_mode": self.fm.invest_mode,
+                "stop_loss_points": self.fm.stop_loss_points,
+                "target_points": self.fm.target_points,
+                "trailing_sl_points": self.fm.trailing_sl_points,
+                "use_break_even": self.fm.use_break_even,
+                "strike_selection": getattr(self.args, 'strike_selection', 'ATM'),
+                "price_source": self.fm.price_source,
+                # Include any other relevant CLI args for completeness
+                "pyramid_steps": getattr(self.args, 'pyramid_steps', None),
+                "pyramid_confirm_pts": getattr(self.args, 'pyramid_confirm_pts', None),
+            }
             
             # Use centralized persistence
             persistence = TradePersistence()
@@ -210,10 +228,6 @@ Indicators:
             
             logger.info(f"✅ Backtest saved! sessionId: {session_id}")
             return session_id
-        except Exception as e:
-            logger.error(f"Failed to save backtest results: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
         except Exception as e:
             logger.error(f"Failed to save backtest results: {e}")
             import traceback

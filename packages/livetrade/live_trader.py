@@ -3,6 +3,7 @@ import threading
 import queue
 import random
 import string
+import json
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 
@@ -320,7 +321,7 @@ class LiveTradeEngine:
         candles = self._fetch_ohlc_api(1, nifty_id, start_str, end_str)
         
         if not candles:
-            logger.warning("⚠️ No historical data returned from API for warmup. Checking DB fallback...")
+            logger.warning(f"⚠️ API returned no data for NIFTY ({nifty_id}) warmup ({start_str} → {end_str}). Falling back to DB...")
             # DB Fallback if API fails
             search_window = 7 * 24 * 3600
             fallback_ticks = list(self.db[settings.NIFTY_CANDLE_COLLECTION].find({
@@ -336,15 +337,17 @@ class LiveTradeEngine:
                 self.fund_manager.on_tick_or_base_candle(t)
                 count += 1
             
-        self.fund_manager.is_warming_up = False
         self.has_warmed_up = True
         logger.info(f"✅ Warmup complete. Processed {count} candles for NIFTY ending before {anchor_timestamp}.")
         
         # Resolve current CE/PE strike chain once after warmup (avoids API burst during replay)
+        # Note: is_warming_up stays True here to suppress heartbeats during option warmup
         spot = self.fund_manager.latest_tick_prices.get(26000)
         if spot:
             logger.info(f"🎯 Post-warmup: Resolving option strikes for SPOT={spot}...")
             self.fund_manager._check_and_update_monitored_instruments(spot, anchor_timestamp)
+        
+        self.fund_manager.is_warming_up = False
 
         # Record Engine Initialization in PaperTrade DB
         init_data = {
@@ -358,11 +361,26 @@ class LiveTradeEngine:
             "price": self.fund_manager.latest_tick_prices.get(26000, 0.0),
             "msg": "Trading session initialized after successful warmup.",
             "config": {
+                "strategy_name": self.strategy_config.get("name"),
+                "rule_id": self.strategy_config.get("ruleId"),
+                "strategy_mode": self.position_config.get("strategy_mode", "rule"),
+                "python_strategy_path": self.position_config.get("python_strategy_path"),
+                "timeframe": self.fund_manager.global_timeframe,
+                "indicators": [
+                    f"{ind.get('InstrumentType', 'SPOT')}|{ind.get('type', 'N/A')}|{'-'.join(str(v) for v in ind.get('params', {}).values())}"
+                    for ind in self.strategy_config.get("indicators", [])
+                ],
                 "budget": self.position_config.get("budget"),
-                "sl": self.position_config.get("stop_loss_points"),
-                "target": self.position_config.get("target_points"),
-                "trailing_sl": self.position_config.get("trailing_sl_points"),
-                "strategy_mode": self.position_config.get("strategy_mode")
+                "invest_mode": self.fund_manager.invest_mode,
+                "stop_loss_points": self.position_config.get("stop_loss_points"),
+                "target_points": self.position_config.get("target_points"),
+                "trailing_sl_points": self.position_config.get("trailing_sl_points"),
+                "use_break_even": self.fund_manager.use_break_even,
+                "instrument_type": self.fund_manager.trade_instrument_type,
+                "strike_selection": self.fund_manager.strike_selection,
+                "price_source": self.fund_manager.price_source,
+                "quantity": self.position_config.get("quantity"),
+                "pyramid_steps": self.position_config.get("pyramid_steps"),
             }
         }
         self._record_papertrade_event(init_data)
