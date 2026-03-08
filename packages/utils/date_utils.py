@@ -31,8 +31,10 @@ class DateUtils:
 
     @staticmethod
     def to_iso(dt: datetime.datetime) -> str:
-        """Returns ISO 8601 formatted string (YYYY-MM-DDTHH:MM:SS)."""
-        return dt.strftime(DATETIME_FORMAT)
+        """Returns ISO 8601 formatted string with timezone offset (e.g. 2026-03-08T10:00:00+05:30)."""
+        if dt.tzinfo is None:
+            dt = MARKET_TZ.localize(dt)
+        return dt.isoformat(timespec='seconds')
 
     @staticmethod
     def to_iso_date(dt: datetime.datetime) -> str:
@@ -70,13 +72,30 @@ class DateUtils:
         return ts
 
     @staticmethod
+    def standardize_timestamp(ts: Union[int, float]) -> float:
+        """
+        Detects if a timestamp is XTS (1980-base, IST-shifted) or standard UTC (1970-base)
+        and returns a standard UTC epoch.
+        """
+        if not ts: return 0.0
+        
+        # XTS timestamps for 2020+ are typically < 1.5B 
+        # UTC timestamps for 2020+ are typically > 1.5B
+        # If it's less than 1.5B, we assume it's XTS.
+        if ts < 1500000000:
+            return DateUtils.xts_epoch_to_utc(ts)
+        return float(ts)
+
+    @staticmethod
     def market_timestamp_to_iso(ts: Union[int, float]) -> str:
-        """Converts a market/feed UTC epoch timestamp to Asia/Kolkata ISO string (YYYY-MM-DDTHH:MM:SS)."""
-        if ts is None:
+        """Converts a market/feed UTC epoch timestamp to Asia/Kolkata ISO string with offset."""
+        if ts is None or ts == 0:
             return ""
-        dt = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+        # Ensure it's not an XTS timestamp before converting to ISO
+        utc_ts = DateUtils.standardize_timestamp(ts)
+        dt = datetime.datetime.fromtimestamp(utc_ts, tz=datetime.timezone.utc)
         dt_kolkata = dt.astimezone(MARKET_TZ)
-        return dt_kolkata.strftime(DATETIME_FORMAT)
+        return dt_kolkata.isoformat(timespec='seconds')
 
     @staticmethod
     def market_timestamp_to_datetime(ts: Union[int, float]) -> datetime.datetime:
@@ -85,24 +104,30 @@ class DateUtils:
 
     @staticmethod
     def parse_iso(date_str: str) -> datetime.datetime:
-        """Parses an ISO string into a datetime object."""
-        # Check if it's just a date
-        try:
-            dt = datetime.datetime.strptime(date_str, DATE_FORMAT)
-            return MARKET_TZ.localize(dt)
-        except ValueError:
-            pass
+        """Parses ISO string into a localized datetime object. Handles offsets if present."""
+        if not date_str:
+            return datetime.datetime.now(MARKET_TZ)
         
-        # Check if it includes time
         try:
-            dt = datetime.datetime.strptime(date_str, DATETIME_FORMAT)
-            return MARKET_TZ.localize(dt)
-        except ValueError:
-            # Try with native fromisoformat for other variations
-            dt = datetime.datetime.fromisoformat(date_str)
+            # Normalize 'Z' to '+00:00' for fromisoformat compatibility on older Py3
+            normalized = date_str.replace('Z', '+00:00')
+            dt = datetime.datetime.fromisoformat(normalized)
             if dt.tzinfo is None:
-                dt = MARKET_TZ.localize(dt)
-            return dt
+                return MARKET_TZ.localize(dt)
+            return dt.astimezone(MARKET_TZ)
+        except Exception:
+            # Fallback for non-standard formats (e.g. spaces instead of T, or sub-seconds)
+            try:
+                clean_str = date_str.replace('T', ' ').split('.')[0].strip()
+                dt = datetime.datetime.strptime(clean_str, "%Y-%m-%d %H:%M:%S")
+                return MARKET_TZ.localize(dt)
+            except Exception:
+                # Last resort: just date
+                try:
+                    dt = datetime.datetime.strptime(date_str.split('T')[0], "%Y-%m-%d")
+                    return MARKET_TZ.localize(dt)
+                except Exception:
+                    return datetime.datetime.now(MARKET_TZ)
 
     @staticmethod
     def parse_date_range(range_str: str) -> Tuple[datetime.datetime, datetime.datetime]:

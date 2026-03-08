@@ -301,7 +301,7 @@ class LiveTradeEngine:
         if self.has_warmed_up:
             return
             
-        logger.info(f"🔥 Warmup: Fetching historical candles anchored at {anchor_timestamp}...")
+        # logger.info removed here to combine with complete message
         self.fund_manager.is_warming_up = True
         
         nifty_id = settings.NIFTY_EXCHANGE_INSTRUMENT_ID
@@ -327,7 +327,7 @@ class LiveTradeEngine:
             fallback_ticks = list(self.db[settings.NIFTY_CANDLE_COLLECTION].find({
                 "i": nifty_id,
                 "t": {"$gte": anchor_timestamp - search_window, "$lt": anchor_timestamp}
-            }).sort("t", -1).limit(300))
+            }).sort("t", -1).limit(settings.GLOBAL_WARMUP_CANDLES))
             candles = sorted(fallback_ticks, key=lambda x: x['t'])
 
         count = 0
@@ -338,7 +338,7 @@ class LiveTradeEngine:
                 count += 1
             
         self.has_warmed_up = True
-        logger.info(f"✅ Warmup complete. Processed {count} candles for NIFTY ending before {anchor_timestamp}.")
+        logger.info(f"Warmup complete: Processed {count} candles for NIFTY ({start_str} → {end_str}).")
         
         # Resolve current CE/PE strike chain once after warmup (avoids API burst during replay)
         # Note: is_warming_up stays True here to suppress heartbeats during option warmup
@@ -573,6 +573,7 @@ class LiveTradeEngine:
             
         config = self.strategy_config.copy()
         config.update({
+             "strategy": self.strategy_config.get('name'),
              "budget": self.position_config.get("budget"),
              "stopLoss": self.fund_manager.stop_loss_points,
              "targets": self.fund_manager.target_points,

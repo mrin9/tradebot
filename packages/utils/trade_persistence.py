@@ -149,6 +149,18 @@ class TradePersistence:
                 
                 trade_cycles.append(cycle_obj)
 
+            # Aggregate unique instruments for UI sidebar grouping
+            instruments_traded = []
+            seen_symbols = set()
+            for cyc in trade_cycles:
+                sym = cyc["entry"]["symbol"]
+                if sym not in seen_symbols:
+                    instruments_traded.append({
+                        "symbol": sym,
+                        "description": cyc["entry"].get("description") or cyc["entry"].get("symbol")
+                    })
+                    seen_symbols.add(sym)
+
             initial_budget = float(config.get("budget", 0.0))
             
             doc = {
@@ -163,6 +175,7 @@ class TradePersistence:
                     "tradeCount": len(trade_cycles)
                 },
                 "tradeCycles": trade_cycles,
+                "instrumentsTraded": instruments_traded,
                 "dailyPnl": daily_pnl,
                 "createdAt": datetime.now(DateUtils.MARKET_TZ).replace(microsecond=0).isoformat(),
                 "updatedAt": datetime.now(DateUtils.MARKET_TZ).replace(microsecond=0).isoformat()

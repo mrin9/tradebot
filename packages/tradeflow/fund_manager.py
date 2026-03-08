@@ -139,6 +139,12 @@ class FundManager:
         self.is_warming_up = False
         self.latest_market_time: float | None = None
         
+        # Track last sync timestamp per instrument to optimize re-warmups
+        self.instrument_last_sync: Dict[int, float] = {}
+
+        # Track the last processed day to force instrument re-selection on day change
+        self.last_day_str: str | None = None
+        
     def _resolve_option_contract(self, strike: float, is_ce: bool, current_ts: float) -> tuple[int | None, str | None]:
         """Resolves the nearest expiry option contract ID and description for NIFTY from DB given a strike."""
         # Convert timestamp to ISO string for comparison with contractExpiration
@@ -168,8 +174,15 @@ class FundManager:
             return  # Defer option resolution until warmup completes to avoid API burst
         atm_strike = round(current_spot / 50) * 50
         
+        # 0. Check for Day Change
+        current_day_str = DateUtils.market_timestamp_to_datetime(current_ts).strftime("%Y-%m-%d")
+        is_new_day = False
+        if self.last_day_str != current_day_str:
+            is_new_day = True
+            self.last_day_str = current_day_str
+            
         needs_update = False
-        if self.selection_spot_price is None:
+        if self.selection_spot_price is None or is_new_day:
             needs_update = True
         elif abs(current_spot - self.selection_spot_price) > 25:
             # Price drifted significantly, recalculate ATM and re-map
@@ -186,7 +199,14 @@ class FundManager:
                 if self.active_instruments.get("CE") != new_ce_id:
                     self.active_instruments["CE"] = new_ce_id
                     self.active_instruments["CE_DESC"] = ce_desc
-                    self.resamplers["CE"].current_candle = None # Reset partial candle on switch
+                    # 1. Reset Resampler for clean start
+                    self.resamplers["CE"].current_candle = None 
+                    self.resamplers["CE"].last_period_start = None
+                    # 2. Extract cached indicators immediately to avoid stale data
+                    cached_indicators = self.indicator_calculator.extract_indicators(new_ce_id, InstrumentCategoryType.CE)
+                    if cached_indicators:
+                        self.latest_indicators_state.update(cached_indicators)
+                    # 3. Perform Top-up/Initial Warmup
                     self._warmup_instrument("CE", new_ce_id, current_ts)
             
             # Resolve PE
@@ -196,10 +216,17 @@ class FundManager:
                 if self.active_instruments.get("PE") != new_pe_id:
                     self.active_instruments["PE"] = new_pe_id
                     self.active_instruments["PE_DESC"] = pe_desc
-                    self.resamplers["PE"].current_candle = None # Reset partial candle on switch
+                    # 1. Reset Resampler
+                    self.resamplers["PE"].current_candle = None
+                    self.resamplers["PE"].last_period_start = None
+                    # 2. Extract cached indicators immediately
+                    cached_indicators = self.indicator_calculator.extract_indicators(new_pe_id, InstrumentCategoryType.PE)
+                    if cached_indicators:
+                        self.latest_indicators_state.update(cached_indicators)
+                    # 3. Perform Warmup
                     self._warmup_instrument("PE", new_pe_id, current_ts)
 
-    def _fetch_historical_candles(self, segment: int, instrument_id: int, start_ts: float, end_ts: float, limit: int = 100) -> list[Dict]:
+    def _fetch_historical_candles(self, segment: int, instrument_id: int, start_ts: float, end_ts: float, limit: int = settings.GLOBAL_WARMUP_CANDLES) -> list[Dict]:
         """Unified helper to fetch historical candles from API (live) or DB (backtest)."""
         if self.fetch_ohlc_fn and not self.is_backtest:
             # Live Mode: Fetch from API
@@ -214,39 +241,77 @@ class FundManager:
             logger.warning(f"⚠️ API returned no data for {instrument_id} ({start_dt.strftime('%Y-%m-%d %H:%M')} → {end_dt.strftime('%Y-%m-%d %H:%M')}). Falling back to DB...")
 
         # Backtest, Default, or API Fallback: Fetch from DB
+        query = {"i": instrument_id, "t": {"$lte": end_ts}}
+        if start_ts:
+            query["t"]["$gte"] = start_ts
+            
         history_cursor = list(self.db[settings.OPTIONS_CANDLE_COLLECTION].find(
-            {"i": instrument_id, "t": {"$lte": end_ts}}
+            query
         ).sort("t", -1).limit(limit))
         return sorted(history_cursor, key=lambda x: x['t'])
 
     def _warmup_instrument(self, category: str, instrument_id: int, current_ts: float):
         """
         Fetches historical 1m candles for the new instrument and warms up the resampler/indicators.
+        Uses intelligent top-up syncing to avoid redundant fetches.
         """
-        # Fetch 4 days of history (max 100 candles) for warmup to cross weekends
-        start_ts = current_ts - 3600 * 24 * 4
-        start_dt_str = DateUtils.market_timestamp_to_datetime(start_ts).strftime('%Y-%m-%d %H:%M')
-        end_dt_str = DateUtils.market_timestamp_to_datetime(current_ts).strftime('%Y-%m-%d %H:%M')
-        logger.info(f"🔄 Warming up {category} ({instrument_id}): {start_dt_str} → {end_dt_str}")
+        last_sync = self.instrument_last_sync.get(instrument_id)
         
-        history = self._fetch_historical_candles(2, instrument_id, start_ts, current_ts, limit=100)
+        # 1. Temporal Caching: If synced very recently (< 5 mins), skip entirely
+        if last_sync and (current_ts - last_sync) < 300:
+             # logger.debug(f"⚡ Skipping re-warmup for {category} ({instrument_id}). Already synced recently.")
+             return
+
+        # 2. Determine Sync Range
+        is_same_day = False
+        if last_sync:
+            last_dt = DateUtils.market_timestamp_to_datetime(last_sync)
+            current_dt = DateUtils.market_timestamp_to_datetime(current_ts)
+            is_same_day = last_dt.date() == current_dt.date()
+
+        if last_sync and is_same_day:
+            # Top-up: Fetch missing gap since last seen (only within the same day)
+            start_ts = last_sync
+            limit = 500 # Generous cap for a drift gap
+            mode_desc = "Top-up"
+        else:
+            # Full/Initial Warmup: Fetch baseline (e.g. 200 candles)
+            # We do this on a new day to ensure indicators have full historical context
+            start_ts = current_ts - 3600 * 24 * 4 # 4 days back to cover weekends
+            limit = settings.GLOBAL_WARMUP_CANDLES
+            mode_desc = "Initial"
+
+        # 3. Suppress signals during replay logic
+        saved_warming_up = self.is_warming_up
+        self.is_warming_up = True
         
-        if not history:
-            logger.warning(f"⚠️ No history found for {category} ({instrument_id}) warmup. Range: {start_dt_str} → {end_dt_str}")
-            return
-        
-        resampler = self.resamplers.get(category)
-        if resampler:
-            # Suppress heartbeats during warmup replay
-            saved_heartbeat = self.log_heartbeat
-            self.log_heartbeat = False
+        try:
+            start_dt_str = DateUtils.market_timestamp_to_datetime(start_ts).strftime('%Y-%m-%d %H:%M')
+            end_dt_str = DateUtils.market_timestamp_to_datetime(current_ts).strftime('%Y-%m-%d %H:%M')
             
-            resampler.instrument_id = int(instrument_id)
-            for candle in history:
-                resampler.add_candle(candle)
+            history = self._fetch_historical_candles(2, instrument_id, start_ts, current_ts, limit=limit)
             
-            self.log_heartbeat = saved_heartbeat
-            logger.info(f"✅ Warmup complete for {category} ({instrument_id}): {len(history)} candles.")
+            if not history:
+                logger.warning(f"⚠️ No history found for {category} ({instrument_id}) warmup. Range: {start_dt_str} → {end_dt_str}")
+                return
+            
+            resampler = self.resamplers.get(category)
+            if resampler:
+                # Suppress heartbeats during warmup replay
+                saved_heartbeat = self.log_heartbeat
+                self.log_heartbeat = False
+                
+                resampler.instrument_id = int(instrument_id)
+                for candle in history:
+                    resampler.add_candle(candle)
+                
+                self.log_heartbeat = saved_heartbeat
+                
+                # 4. Update sync state
+                self.instrument_last_sync[instrument_id] = current_ts
+                logger.info(f"Warmup complete for {category} ({instrument_id}): {len(history)} candles ({mode_desc} sync {start_dt_str} → {end_dt_str}).")
+        finally:
+            self.is_warming_up = saved_warming_up
 
     def _fetch_fallback_quote(self, segment: int, instrument_id: int, current_ts: float | None) -> float | None:
         """Unified helper to fetch a fallback quote from API (live) or DB (backtest)."""

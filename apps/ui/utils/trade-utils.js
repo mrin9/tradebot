@@ -266,6 +266,28 @@ export function generateMarkersFromTrade(currentTrade) {
         }
     });
 
+    // Final Pass: "Nudge" logic for visual separation of overlapping markers
+    // Group by time and instrument to apply "Nudge" logic for visual separation
+    const timeGroups = {};
+    list.forEach(m => {
+        const k = `${m.time}`;
+        if (!timeGroups[k]) timeGroups[k] = [];
+        timeGroups[k].push(m);
+    });
+
+    Object.values(timeGroups).forEach(group => {
+        if (group.length > 1) {
+            // Sort by type (ENTRY first, then TARGET, then EXIT)
+            const typeOrder = { 'ENTRY': 0, 'BE': 1, 'TARGET': 2, 'EXIT': 3 };
+            group.sort((a, b) => (typeOrder[a.type] || 99) - (typeOrder[b.type] || 99));
+
+            // Nudge each subsequent marker by 5 seconds visually so they are side-by-side
+            group.forEach((m, i) => {
+                m.time = m.time + (i * 5);
+            });
+        }
+    });
+
     return list;
 }
 
@@ -278,7 +300,7 @@ export function parseTradeCycle(currentTrade) {
     if (!currentTrade) return [];
 
     const list = [];
-    const cycles = currentTrade.trades || [currentTrade];
+    const cycles = currentTrade.tradeCycles || currentTrade.trades || [currentTrade];
 
     cycles.forEach(trade => {
         // DETECT NEW STRUCTURE
@@ -350,7 +372,13 @@ export function GetMaxTimestampOfTrade(currentTrade) {
         }
     });
 
-    if (lastExit === 0) return null;
+    if (lastExit === 0) {
+        // Fallback to backtest range if provided
+        if (currentTrade.backtestRange?.end) {
+            return parseSafeTimestamp(currentTrade.backtestRange.end) + 3600;
+        }
+        return null;
+    }
 
     // Add 1 hour buffer (3600 seconds)
     return lastExit + 3600;

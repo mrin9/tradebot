@@ -28,24 +28,21 @@ class IndicatorCalculator:
         self.config = indicators_config
         self.max_window_size = max_window_size
         
-        # Dictionary of deques, keyed by instrument_category (e.g., InstrumentCategoryType.SPOT)
-        self.category_candles: Dict[InstrumentCategoryType, deque] = {}
-        # Track last instrument ID per category to detect switches
-        self.category_instrument_ids: Dict[InstrumentCategoryType, int | None] = {}
+        # Dictionary of deques, keyed by instrument_id (e.g., 26000 for NIFTY SPOT)
+        self.instrument_candles: Dict[int, deque] = {}
+        # Track the 'current' active instrument ID per category
+        self.active_instrument_ids: Dict[InstrumentCategoryType, int | None] = {}
         
-        # Initialize deques for each unique instrument category
+        # Initialize deques for each unique instrument category from config
         for ind in self.config:
             cat_str = ind.get('InstrumentType', 'SPOT')
             try:
                 cat = InstrumentCategoryType(cat_str)
             except ValueError:
-                logger.warning(f"Unrecognized InstrumentType '{cat_str}' in config, defaulting to SPOT")
-                # InstrumentCategoryType Enum removed - now imported as InstrumentCategoryTypeType from tradeflow.types
                 cat = InstrumentCategoryType.SPOT
 
-            if cat not in self.category_candles:
-                self.category_candles[cat] = deque(maxlen=self.max_window_size)
-                self.category_instrument_ids[cat] = None
+            if cat not in self.active_instrument_ids:
+                self.active_instrument_ids[cat] = None
                 
     def add_candle(self, candle: Dict, instrument_category: InstrumentCategoryType = InstrumentCategoryType.SPOT, instrument_id: int | None = None) -> Dict[str, float | str | None]:
         """
@@ -55,27 +52,35 @@ class IndicatorCalculator:
             try:
                 instrument_category = InstrumentCategoryType(instrument_category)
             except ValueError:
-                logger.warning(f"Unrecognized instrument category string '{instrument_category}', defaulting to SPOT")
                 instrument_category = InstrumentCategoryType.SPOT
 
-        if instrument_category not in self.category_candles:
-            self.category_candles[instrument_category] = deque(maxlen=self.max_window_size)
-            self.category_instrument_ids[instrument_category] = None
+        # Fallback for old calls or missing IDs
+        if instrument_id is None:
+            instrument_id = candle.get('instrument_id', candle.get('i'))
             
-        # Detect Instrument Switch
-        if instrument_id is not None:
-            last_id = self.category_instrument_ids.get(instrument_category)
-            if last_id is not None and last_id != instrument_id:
-                logger.info(TradeFormatter.format_instrument_switch(instrument_category.value, last_id, instrument_id))
-                self.category_candles[instrument_category].clear()
-            
-            self.category_instrument_ids[instrument_category] = instrument_id
+        if instrument_id is None:
+            # If still None, we can't store by ID. Use a virtual ID based on category hash
+            instrument_id = hash(instrument_category)
             
         ts = candle.get('timestamp', candle.get('t'))
+
+        # Deduplication per instrument: If already seen, just return current cached state
+        if instrument_id in self.instrument_candles:
+            target_deque = self.instrument_candles[instrument_id]
+            if target_deque and target_deque[-1]['timestamp'] == ts:
+                return self.extract_indicators(instrument_id, instrument_category)
         
-        # Deduplication
-        if self.category_candles[instrument_category] and self.category_candles[instrument_category][-1]['timestamp'] == ts:
-            return {}
+        # 1. Update active pointer
+        self.active_instrument_ids[instrument_category] = instrument_id
+
+        # 2. Initialize deque if new instrument seen
+        if instrument_id not in self.instrument_candles:
+            self.instrument_candles[instrument_id] = deque(maxlen=self.max_window_size)
+            # logger.info(f"🆕 Initialized cache for Instrument ID: {instrument_id}")
+            
+        target_deque = self.instrument_candles[instrument_id]
+        if target_deque and target_deque[-1]['timestamp'] == ts:
+            return self.extract_indicators(instrument_id, instrument_category)
 
         c = {
             'open': candle.get('open', candle.get('o')),
@@ -85,12 +90,12 @@ class IndicatorCalculator:
             'volume': candle.get('volume', candle.get('v', 0)),
             'timestamp': ts
         }
-        self.category_candles[instrument_category].append(c)
+        target_deque.append(c)
         
-        if len(self.category_candles[instrument_category]) < 1:
+        if len(target_deque) < 1:
             return {}
             
-        # Create DataFrame with explicit schema to avoid inference errors (e.g., Int64 vs Float64)
+        # Create DataFrame from the specific instrument's history
         schema = {
             'open': pl.Float64,
             'high': pl.Float64,
@@ -99,7 +104,7 @@ class IndicatorCalculator:
             'volume': pl.Float64,
             'timestamp': pl.Int64
         }
-        df = pl.DataFrame(list(self.category_candles[instrument_category]), schema=schema)
+        df = pl.DataFrame(list(target_deque), schema=schema)
         
         # Calculate indicators for this specific category
         indicators_to_calc = []
@@ -119,35 +124,82 @@ class IndicatorCalculator:
             for ind in indicators_to_calc:
                 df = self.calculate_indicator(df, ind['type'], ind['params'], ind['indicatorId'])
 
-            # Extract latest values
-            result = {}
-            last_row = df.row(-1, named=True)
-            prev_row = df.row(-2, named=True) if df.height >= 2 else None
-            
-            cat_val = instrument_category.value if hasattr(instrument_category, "value") else str(instrument_category)
-            prefix = "NIFTY_" if instrument_category == InstrumentCategoryType.SPOT else f"{cat_val}_"
-            
-            for ind in indicators_to_calc:
-                orig_key = ind['indicatorId']
-                ind_type = ind.get('type')
-                
-                keys_to_extract = [orig_key]
-                if ind_type == 'SUPERTREND':
-                    keys_to_extract.append(f"{orig_key}_dir")
-                elif ind_type == 'MACD':
-                    keys_to_extract.extend([f"{orig_key}_signal", f"{orig_key}_hist"])
-                    
-                for k in keys_to_extract:
-                    prefixed_key = f"{prefix}{k}"
-                    if k in last_row:
-                        result[prefixed_key] = last_row[k]
-                    if prev_row and k in prev_row:
-                        result[f"{prefixed_key}_prev"] = prev_row[k]
-            
-            return result
+            return self._extract_results_from_df(df, instrument_category, indicators_to_calc)
         except Exception as e:
             logger.error(f"Error calculating indicators for category {instrument_category}: {e}", exc_info=True)
             return {}
+
+    def extract_indicators(self, instrument_id: int, instrument_category: InstrumentCategoryType) -> Dict[str, float | str | None]:
+        """
+        Manually extracts the latest indicator values for a specific instrument from the internal cache.
+        Useful for refreshing 'latest_indicators_state' immediately after an instrument switch.
+        """
+        if instrument_id not in self.instrument_candles:
+            return {}
+            
+        target_deque = self.instrument_candles[instrument_id]
+        if not target_deque:
+            return {}
+
+        try:
+            schema = {
+                'open': pl.Float64, 'high': pl.Float64, 'low': pl.Float64, 
+                'close': pl.Float64, 'volume': pl.Float64, 'timestamp': pl.Int64
+            }
+            df = pl.DataFrame(list(target_deque), schema=schema)
+            
+            # Determine which indicators in config apply to this category
+            indicators_to_calc = []
+            for ind in self.config:
+                itype_str = ind.get('InstrumentType', 'SPOT')
+                try:
+                    itype = InstrumentCategoryType(itype_str)
+                except ValueError:
+                    itype = InstrumentCategoryType.SPOT
+
+                if itype == instrument_category:
+                    indicators_to_calc.append(ind)
+                elif itype == InstrumentCategoryType.OPTIONS_BOTH and instrument_category in [InstrumentCategoryType.CE, InstrumentCategoryType.PE]:
+                    indicators_to_calc.append(ind)
+            
+            for ind in indicators_to_calc:
+                df = self.calculate_indicator(df, ind['type'], ind['params'], ind['indicatorId'])
+                
+            return self._extract_results_from_df(df, instrument_category, indicators_to_calc)
+        except Exception as e:
+            logger.error(f"Error extracting indicators for instrument {instrument_id}: {e}")
+            return {}
+
+    def _extract_results_from_df(self, df: pl.DataFrame, category: InstrumentCategoryType, indicators: List[Dict]) -> Dict[str, float | str | None]:
+        """Helper to pull latest and prev rows from a calculated Polars DataFrame."""
+        if df.height < 1:
+            return {}
+            
+        result = {}
+        last_row = df.row(-1, named=True)
+        prev_row = df.row(-2, named=True) if df.height >= 2 else None
+        
+        cat_val = category.value if hasattr(category, "value") else str(category)
+        prefix = "NIFTY_" if category == InstrumentCategoryType.SPOT else f"{cat_val}_"
+        
+        for ind in indicators:
+            orig_key = ind['indicatorId']
+            ind_type = ind.get('type')
+            
+            keys_to_extract = [orig_key]
+            if ind_type == 'SUPERTREND':
+                keys_to_extract.append(f"{orig_key}_dir")
+            elif ind_type == 'MACD':
+                keys_to_extract.extend([f"{orig_key}_signal", f"{orig_key}_hist"])
+                
+            for k in keys_to_extract:
+                prefixed_key = f"{prefix}{k}"
+                if k in last_row:
+                    result[prefixed_key] = last_row[k]
+                if prev_row and k in prev_row:
+                    result[f"{prefixed_key}_prev"] = prev_row[k]
+        
+        return result
 
     @staticmethod
     def calculate_indicator(df: pl.DataFrame, ind_type: str, params: Dict[str, Any], result_key: str) -> pl.DataFrame:

@@ -117,7 +117,12 @@ const fetchChartData = async (id, timeframe, endTime = null) => {
     try {
         let url = `/api/ticks?id=${id}&candle-interval=${timeframe}&limit=1000`;
         if (endTime) {
-            const isoStr = new Date(endTime * 1000).toISOString();
+            // Convert to Asia/Kolkata ISO string for backend consistency
+            const dt = new Date(endTime * 1000);
+            // Use Intl to format as IST ISO or just adjust offset manually if needed.
+            // Simplified: backends usually handle UTC 'Z' fine, but user asked for IST normalization.
+            // Let's use a helper if available or a standard local string.
+            const isoStr = dt.toLocaleString('sv', { timeZone: 'Asia/Kolkata' }).replace(' ', 'T');
             url += `&end-dt=${isoStr}`;
         }
         const res = await fetch(url);
@@ -336,7 +341,17 @@ onUnmounted(() => {
     if (chartInstance.value) dispose(chartRef.value);
 });
 
-watch(() => [props.instrumentId, props.timeframe, props.maxTimestamp], async () => {
+watch(() => [props.instrumentId, props.timeframe, props.maxTimestamp], async (newVal, oldVal) => {
+    // If instrumentId changed, we might need a full reset to fix scaling
+    const instrChanged = newVal[0] !== oldVal?.[0];
+    
+    if (instrChanged && chartInstance.value) {
+        dispose(chartRef.value);
+        chartInstance.value = null;
+        await initCharts();
+        return;
+    }
+
     loading.value = true;
     hasMoreData.value = true;
     lastProcessedTimestamp.value = null;

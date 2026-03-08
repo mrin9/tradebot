@@ -262,7 +262,7 @@ class MarketUtils:
     # --- Derived CE and PE Logic ---
 
     @staticmethod
-    def run_indicator_warmup(db, fund_manager, start_date: str, logger, warmup_candles: int = None):
+    def run_indicator_warmup(db, fund_manager, start_date: str, warmup_candles: int, logger):
         """
         Feeds historical data into FundManager to warm up indicators before backtest.
         """

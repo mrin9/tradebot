@@ -23,7 +23,7 @@ export const backtestStore = reactive({
         if (this.selectedCycleId && (this.selectedInstrumentId || this.selectedInstrumentDesc)) {
             const instrId = this.selectedInstrumentId || this.selectedInstrumentDesc;
             const cycleTrades = trades.filter(t => {
-                const mapInstrId = t.entry?.instrumentDescription || t.entry?.exchangeInstrumentId || t.instrumentId || t.symbol;
+                const mapInstrId = t.entry?.exchangeInstrumentId || t.entry?.symbol || t.instrumentId || t.symbol || t.entry?.description || t.entry?.instrumentDescription;
                 const mapCycleId = t.cycleId || t.tradeCycle;
                 return mapInstrId === instrId && mapCycleId === this.selectedCycleId;
             });
@@ -42,8 +42,12 @@ export const backtestStore = reactive({
         if (this.selectedInstrumentId) {
             const instrId = this.selectedInstrumentId;
             const instrumentTrades = trades.filter(t => {
-                const mapInstrId = t.entry?.instrumentDescription || t.entry?.exchangeInstrumentId || t.instrumentId || t.symbol;
-                return mapInstrId === instrId;
+                // Prefer descriptive symbol for instrumentId to help backend resolution if IDs are inconsistent
+                const instrumentId = t.entry?.description || t.entry?.instrumentDescription || t.entry?.exchangeInstrumentId || t.entry?.symbol || t.instrumentId || t.symbol;
+                // Note: instrMap is not defined in this snippet, assuming it's available in the actual context or needs to be handled.
+                // For now, it's commented out to avoid reference errors if not present.
+                // const symbol = t.entry?.description || t.entry?.instrumentDescription || instrMap[instrumentId] || t.symbol || t.instrumentDesc || t.id || 'Unknown';
+                return instrumentId === instrId;
             });
             if (instrumentTrades.length === 0) return null;
 
@@ -51,7 +55,11 @@ export const backtestStore = reactive({
                 instrumentId: instrId,
                 instrumentDesc: this.selectedInstrumentDesc || instrId,
                 trades: instrumentTrades,
-                isInstrumentView: true
+                isInstrumentView: true,
+                backtestRange: {
+                    start: this.selectedBacktest.startDate || this.selectedBacktest.config?.startDate,
+                    end: this.selectedBacktest.endDate || this.selectedBacktest.config?.endDate
+                }
             };
         }
 

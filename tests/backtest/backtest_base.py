@@ -10,6 +10,7 @@ from packages.utils.log_utils import setup_logger
 from packages.utils.date_utils import DateUtils
 from packages.utils.mongo import MongoRepository
 from packages.utils.trade_persistence import TradePersistence
+from packages.config import settings
 
 logger = setup_logger("BacktestBase")
 
@@ -85,7 +86,7 @@ class BacktestBot:
         daily_increment = current_total_pnl - self._last_pnl_checkpoint
         self.daily_pnl[day_str] = daily_increment
         self._last_pnl_checkpoint = current_total_pnl
-        logger.info(f"📊 Recorded Daily PnL for {day_str}: ₹{daily_increment:,.2f} | Total: ₹{current_total_pnl:,.2f}")
+        logger.info(f"Recorded Daily PnL for {day_str}: {int(daily_increment):,} | Total: {int(current_total_pnl):,}")
 
     def _log_config(self, trading_days: List[str] | None = None):
         """
@@ -116,7 +117,7 @@ Budget: ₹{args.budget:,.2f} | Invest Mode: {self.fm.invest_mode.upper()}
 Stop Loss: {self.fm.stop_loss_points} pts | Targets: {self.fm.target_points} pts
 Trailing SL: {self.fm.trailing_sl_points} pts | Break-Even: {self.fm.use_break_even}
 Option Selection: {getattr(args, 'strike_selection', 'ATM')} | Price Source: {getattr(args, 'price_source', 'close').upper()}
-Warmup Candles: {args.warmup_candles}
+Warmup Candles: {settings.GLOBAL_WARMUP_CANDLES}
 
 Indicators:
 """
@@ -181,7 +182,10 @@ Indicators:
                 strategy_id = os.path.basename(self.args.python_strategy_path).split(':')[0].split('.')[0]
             else:
                 strategy_id = (self.args.rule_id or "ml-model")
-            prefix = strategy_id.split('-')[0][:10].lower()
+            # Prefix: first word (hyphen/underscore) or 10 chars, whichever is smaller
+            import re
+            first_word = re.split('[-_]', strategy_id)[0]
+            prefix = first_word[:10].lower()
             
             # Formulate date range
             start_dt = DateUtils._parse_keyword(self.args.start, is_end=False)
@@ -195,6 +199,7 @@ Indicators:
 
             # Prepare standardized config dict
             config = {
+                "strategy": strategy_id,
                 "rule_id": strategy_id,
                 "strategy_mode": self.args.strategy_mode,
                 "python_strategy_path": getattr(self.args, 'python_strategy_path', None),

@@ -23,6 +23,13 @@
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import CompareChartComp from './CompareChartComp.vue';
+import { 
+    generateMarkersFromTrade, 
+    parseTradeCycle, 
+    GetMaxTimestampOfTrade, 
+    getIndicatorsFromConfig, 
+    formatTimeframe 
+} from '@/utils/trade-utils';
 
 const currentTrade = computed(() => backtestStore.currentTrade);
 
@@ -31,7 +38,7 @@ const indicators = computed(() => {
 });
 
 const candleTimeframe = computed(() => {
-  const sec = backtestStore.selectedBacktest?.config?.candleTimeframeSeconds || 60;
+  const sec = backtestStore.selectedBacktest?.config?.timeframe || 60;
   return formatTimeframe(sec);
 });
 

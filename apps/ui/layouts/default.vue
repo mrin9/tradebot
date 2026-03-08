@@ -17,14 +17,17 @@
                 :loading="backtestStore.loading">
                 <template #option="slotProps">
                   <div class="backtest-option" v-if="slotProps.option">
-                    <span class="strategy-name">{{ slotProps.option.config?.strategy || 'Unknown Strategy' }}</span>
-                    <span class="backtest-dates text-xs" v-if="slotProps.option.startDate">
-                      {{ slotProps.option.startDate }} - {{ slotProps.option.endDate }}
-                    </span>
-                    <span class="backtest-dates text-xs"
-                      v-else-if="slotProps.option.createdAt || slotProps.option.timestamp">
-                      {{ slotProps.option.createdAt || slotProps.option.timestamp }}
-                    </span>
+                    <span class="strategy-name font-bold">{{ slotProps.option.id || slotProps.option.sessionId || 'Unknown Session' }}</span>
+                    <span class="text-xs text-secondary">{{ slotProps.option.config?.strategy || slotProps.option.config?.rule_id || 'Unknown Strategy' }}</span>
+                    <div class="flex gap-2 mt-1">
+                      <span class="backtest-dates text-xs" v-if="slotProps.option.startDate">
+                        {{ slotProps.option.startDate }} - {{ slotProps.option.endDate }}
+                      </span>
+                      <span class="backtest-dates text-xs"
+                        v-else-if="slotProps.option.createdAt || slotProps.option.timestamp">
+                        {{ slotProps.option.createdAt || slotProps.option.timestamp }}
+                      </span>
+                    </div>
                   </div>
                 </template>
               </Select>
@@ -93,21 +96,36 @@
                 </div>
 
                 <Timeline :value="cycle.executions" class="customized-timeline">
-                  <template #opposite="slotProps">
-                    <small class="text-secondary">{{ formatTimeOnly(slotProps.item.time) }}</small>
-                  </template>
-                  <template #content="slotProps">
-                    <div class="execution-content">
-                      <div class="exec-title flex align-items-center gap-2">
-                        <Tag :value="slotProps.item.type" :severity="getExecutionSeverity(slotProps.item.type)"
-                          class="exec-tag" />
-                        <span class="exec-price">@ {{ slotProps.item.price }}</span>
+                    <template #opposite="slotProps">
+                      <div class="flex flex-column align-items-start">
+                        <small class="text-secondary font-bold">{{ formatTimeOnly(slotProps.item.time) }}</small>
+                        <small class="text-xs text-secondary opacity-70" v-if="slotProps.item.niftyPrice">
+                          NIFTY: {{ slotProps.item.niftyPrice }}
+                        </small>
                       </div>
-                      <div class="exec-reason text-xs text-secondary mt-1">
-                        {{ slotProps.item.reasonDesc || slotProps.item.reason }}
+                    </template>
+                    <template #content="slotProps">
+                      <div class="execution-content p-2 border-round surface-hover">
+                        <div class="exec-header flex align-items-center justify-content-between mb-1">
+                          <div class="flex align-items-center gap-2">
+                            <i :class="getExecutionIcon(slotProps.item.type)" :style="{ color: getExecutionColor(slotProps.item.type) }"></i>
+                            <Tag :value="slotProps.item.type" :severity="getExecutionSeverity(slotProps.item.type)" class="exec-tag" />
+                            <span class="exec-price font-bold">@ {{ slotProps.item.price }}</span>
+                          </div>
+                          <div class="exec-pnl" v-if="slotProps.item.pnl !== undefined">
+                            <Tag :value="formatCurrency(slotProps.item.pnl)" :severity="slotProps.item.pnl >= 0 ? 'success' : 'danger'" outlined />
+                          </div>
+                        </div>
+                        <div class="exec-details flex align-items-center gap-3 text-xs text-secondary">
+                          <span v-if="slotProps.item.quantity" class="flex align-items-center gap-1">
+                            <i class="pi pi-shopping-cart text-xs"></i> {{ slotProps.item.quantity }} units
+                          </span>
+                          <span v-if="slotProps.item.reasonDesc || slotProps.item.reason" class="flex align-items-center gap-1">
+                            <i class="pi pi-info-circle text-xs"></i> {{ slotProps.item.reasonDesc || slotProps.item.reason }}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  </template>
+                    </template>
                 </Timeline>
               </div>
             </div>
@@ -152,7 +170,7 @@
             <div class="sidebar-header" v-if="sidebarVisible">INSTRUMENTS</div>
             <div class="trades-list" v-if="sidebarVisible">
               <Tree :value="treeNodes" selectionMode="single" @node-select="onNodeSelect"
-                v-model:selectionKeys="selectionKeys" v-model:expandedKeys="expandedKeys" class="w-full trades-tree">
+                :selectionKeys="selectionKeys" v-model:expandedKeys="expandedKeys" class="w-full trades-tree">
                 <template #default="slotProps">
                   <div class="tree-node-content"
                     :class="{ 'instrument-node': slotProps.node.data.type === 'instrument' }">
@@ -188,12 +206,14 @@ import Timeline from 'primevue/timeline';
 import Tag from 'primevue/tag';
 import Tree from 'primevue/tree';
 import ThemeSwitcherComp from '~/components/ThemeSwitcherComp.vue';
+import { parseSafeTimestamp } from '@/utils/trade-utils';
 
 const getDateYYYYMMDD = (tObj) => {
   if (!tObj) return 'Unknown';
   let epoch = tObj.epochTime;
   if (!epoch && tObj.time) epoch = parseSafeTimestamp(tObj.time);
   if (!epoch && typeof tObj === 'string') epoch = parseSafeTimestamp(tObj);
+  if (!epoch && tObj.t) epoch = tObj.t; // Support for ticks/candles if needed
   if (!epoch) return 'Unknown';
 
   const d = new Date(epoch * 1000);
@@ -227,16 +247,26 @@ const isAnalysisRoute = computed(() =>
 );
 
 const treeNodes = computed(() => {
-  const trades = backtestStore.selectedBacktest?.instrumentsTraded || backtestStore.selectedBacktest?.tradeCycles || backtestStore.selectedBacktest?.trades || [];
+  const instrSummary = backtestStore.selectedBacktest?.instrumentsTraded || [];
+  const trades = backtestStore.selectedBacktest?.tradeCycles || backtestStore.selectedBacktest?.trades || [];
+  
+  // Create a lookup for descriptions
+  const instrMap = {};
+  instrSummary.forEach(i => {
+    instrMap[i.symbol] = i.description;
+  });
+
   const instrumentGroups = {};
 
   trades.forEach((t, index) => {
-    const symbol = t.entry?.instrumentDescription || t.entry?.exchangeInstrumentId || t.symbol || t.instrumentDesc || t.id || 'Unknown';
+    const instrumentId = t.entry?.description || t.entry?.instrumentDescription || t.entry?.exchangeInstrumentId || t.entry?.symbol || t.instrumentId || t.symbol;
+    const symbol = t.entry?.description || t.entry?.instrumentDescription || instrMap[instrumentId] || t.symbol || t.instrumentDesc || t.id || 'Unknown';
+
     if (!instrumentGroups[symbol]) {
       instrumentGroups[symbol] = {
         key: symbol,
         label: symbol,
-        data: { type: 'instrument', id: t.entry?.instrumentDescription || t.entry?.exchangeInstrumentId || t.instrumentId || t.symbol, desc: symbol },
+        data: { type: 'instrument', id: instrumentId, desc: symbol },
         children: {} // Temp object to group by cycle
       };
     }
@@ -247,7 +277,7 @@ const treeNodes = computed(() => {
       instrumentGroups[symbol].children[cycleId] = {
         key: `${symbol}-${cycleId}`,
         label: `${cycleId} (${entryTimeStr})`,
-        data: { type: 'cycle', instrumentId: t.entry?.instrumentDescription || t.entry?.exchangeInstrumentId || t.instrumentId || t.symbol, cycleId: cycleId },
+        data: { type: 'cycle', instrumentId: instrumentId, cycleId: cycleId },
         children: []
       };
     }
@@ -255,7 +285,7 @@ const treeNodes = computed(() => {
     const exitTimeStr = formatTimeLocalized(t.exit || t.exitTime);
     const exitReason = t.exit?.signal || t.exit?.reason || t.exitReason || 'OPEN';
     const label = `${exitTimeStr} [${exitReason}]`;
-    const pnl = t.cyclePnL !== undefined ? t.cyclePnL : t.pnl;
+    const pnl = t.cyclePnL !== undefined ? t.cyclePnL : (t.pnl || 0);
 
     instrumentGroups[symbol].children[cycleId].children.push({
       key: `trade-${index}`,
@@ -266,8 +296,8 @@ const treeNodes = computed(() => {
 
   return Object.values(instrumentGroups).map(instr => ({
     ...instr,
-    children: Object.values(instr.children)
-  }));
+    children: Object.values(instr.children).sort((a, b) => b.key.localeCompare(a.key))
+  })).sort((a, b) => a.label.localeCompare(b.label));
 });
 
 const availableDates = computed(() => {
@@ -289,7 +319,6 @@ const availableDates = computed(() => {
 const groupedTradesByDate = computed(() => {
   const trades = backtestStore.selectedBacktest?.tradeCycles || backtestStore.selectedBacktest?.trades || [];
   const groups = {};
-
   trades.forEach(t => {
     const entryObj = t.entry || t.entryTime;
     const exitObj = t.exit || t.exitTime;
@@ -301,7 +330,13 @@ const groupedTradesByDate = computed(() => {
     const date = entryObj ? getDateYYYYMMDD(entryObj) : 'Unknown';
     if (!groups[date]) groups[date] = {};
 
-    const symbol = t.entry?.instrumentDescription || t.entry?.exchangeInstrumentId || t.symbol || t.id || 'Unknown';
+    // Use a robust symbol/description lookup
+    const instrSummary = backtestStore.selectedBacktest?.instrumentsTraded || [];
+    const instrumentId = t.entry?.exchangeInstrumentId || t.instrumentId || t.symbol;
+    const symbol = t.entry?.instrumentDescription || t.entry?.description || 
+                   instrSummary.find(i => i.symbol === instrumentId)?.description || 
+                   t.symbol || t.id || 'Unknown';
+
     if (!groups[date][symbol]) groups[date][symbol] = { totalPnl: 0, cycles: {} };
 
     const cycleId = t.cycleId || t.tradeCycle || 'N/A';
@@ -340,29 +375,53 @@ const groupedTradesByDate = computed(() => {
         type: 'ENTRY',
         time: entryEp,
         price: entryPrice,
+        quantity: t.initial_quantity || (t.entry?.quantity),
         reason: t.entry?.signal || t.signal,
-        reasonDesc: t.entry?.signalDescription || t.entryReasonDescription
+        reasonDesc: t.entry?.signalDescription || t.entryReasonDescription,
+        niftyPrice: t.nifty_price_at_entry || t.entry?.niftyPrice
+      });
+    }
+
+    // Prepare for targets
+    let sumTargetsQty = 0;
+    if (t.targets) {
+      t.targets.forEach(tgt => sumTargetsQty += (tgt.quantity || 0));
+    }
+
+    let exitPrice = t.exitPrice;
+    if (t.exit && !exitPrice) {
+      exitPrice = t.exit.price || 0;
+    }
+
+    // Add Target executions
+    if (t.targets && t.targets.length > 0) {
+      t.targets.forEach(tgt => {
+        cycle.executions.push({
+          type: `TARGET_${tgt.step}`,
+          time: parseSafeTimestamp(tgt.time),
+          price: tgt.price,
+          quantity: tgt.quantity,
+          pnl: tgt.pnl,
+          reason: `Target ${tgt.step} Hit`,
+          reasonDesc: tgt.transaction,
+          niftyPrice: tgt.niftyPrice
+        });
       });
     }
 
     // Add Exit execution
-    let exitPrice = t.exitPrice;
-    if (t.exit && !exitPrice) {
-      exitPrice = t.exit.price || 0;
-      if (!exitPrice && t.exit.transaction) {
-        const m = t.exit.transaction.match(/(?:@|at)\s+([\d.]+)/);
-        if (m) exitPrice = parseFloat(m[1]);
-      }
-      if (!exitPrice && t.exit.totalPrice) exitPrice = t.exit.totalPrice / 65;
+    if (exitEp) {
+      cycle.executions.push({
+        type: t.exit?.signal || t.exit?.reason || t.exitReason || 'EXIT',
+        time: exitEp,
+        price: exitPrice,
+        quantity: t.exit?.quantity || (t.initial_quantity - sumTargetsQty),
+        pnl: t.exit?.pnl || t.pnl,
+        reason: t.exit?.signal || t.exit?.reason || t.exitReason,
+        reasonDesc: t.exit?.signalDescription || t.exitReasonDescription,
+        niftyPrice: t.exit?.niftyPrice || t.nifty_price_at_exit
+      });
     }
-
-    cycle.executions.push({
-      type: t.exit?.signal || t.exit?.reason || t.exitReason || 'EXIT',
-      time: exitEp,
-      price: exitPrice,
-      reason: t.exit?.signal || t.exit?.reason || t.exitReason,
-      reasonDesc: t.exit?.signalDescription || t.exitReasonDescription
-    });
   });
 
   // Post-process to sort executions and calculate durations
@@ -410,7 +469,25 @@ const getExecutionSeverity = (type) => {
   if (type === 'EOD') return 'secondary';
   if (type.startsWith('TARGET')) return 'success';
   if (type.includes('SL')) return 'danger';
+  if (type === 'EXIT') return 'warn';
   return 'warn';
+};
+
+const getExecutionIcon = (type) => {
+  if (type === 'ENTRY') return 'pi pi-sign-in';
+  if (type === 'EOD') return 'pi pi-moon';
+  if (type.startsWith('TARGET')) return 'pi pi-bolt';
+  if (type.includes('SL')) return 'pi pi-exclamation-triangle';
+  if (type.includes('BE') || type.includes('BREAKEVEN')) return 'pi pi-sync';
+  return 'pi pi-sign-out';
+};
+
+const getExecutionColor = (type) => {
+  if (type === 'ENTRY') return 'var(--blue-400)';
+  if (type === 'EOD') return 'var(--text-secondary)';
+  if (type.startsWith('TARGET')) return 'var(--green-400)';
+  if (type.includes('SL')) return 'var(--red-400)';
+  return 'var(--orange-400)';
 };
 
 const formatCurrency = (val) => {
@@ -425,7 +502,10 @@ const onNodeSelect = (node) => {
     backtestStore.selectedCycleId = null;
   } else if (node.data.type === 'cycle') {
     backtestStore.selectedInstrumentId = node.data.instrumentId;
-    backtestStore.selectedInstrumentDesc = node.label; // Or instrumentGroup key
+    // Map instrumentId back to description for the store
+    const instrSummary = backtestStore.selectedBacktest?.instrumentsTraded || [];
+    const desc = instrSummary.find(i => i.symbol === node.data.instrumentId)?.description || node.data.instrumentId;
+    backtestStore.selectedInstrumentDesc = desc;
     backtestStore.selectedCycleId = node.data.cycleId;
     backtestStore.selectedTradeIndex = -1;
   } else {

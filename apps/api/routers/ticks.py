@@ -40,12 +40,12 @@ async def get_ticks(
     except ValueError:
         raise HTTPException(status_code=404, detail=f"Instrument {id} not found")
 
-    # Choose collection based on ID pattern
-    collection_name = settings.NIFTY_CANDLE_COLLECTION
-    if any(x in id for x in ['CE', 'PE']):
+    # 2. Choose collection based on resolved Instrument ID
+    if inst_id == settings.NIFTY_EXCHANGE_INSTRUMENT_ID:
+        collection_name = settings.NIFTY_CANDLE_COLLECTION
+    else:
+        # All other FO/Options go to options_candle
         collection_name = settings.OPTIONS_CANDLE_COLLECTION
-
-    # 2. Build Query & Handle Auto-Shifting
     # Find latest data point for this instrument
     latest_record = db[collection_name].find_one({"i": inst_id}, sort=[("t", -1)])
     latest_t = latest_record["t"] if latest_record else None
