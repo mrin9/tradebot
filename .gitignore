@@ -82,6 +82,7 @@ pnpm-debug.log*
 logs/
 *.log
 simulator_service.pid
+.xts_session.json
 
 # AI Tooling
 .gemini/

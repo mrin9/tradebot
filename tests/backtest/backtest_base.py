@@ -204,7 +204,7 @@ Indicators:
                 "python_strategy_path": getattr(self.args, "python_strategy_path", None),
                 "timeframe": self.fm.global_timeframe,
                 "indicators": [
-                    f"{ind.get('InstrumentType', 'SPOT')}|{ind.get('indicator', 'N/A')}|{ind.get('indicatorId', 'N/A')}"
+                    f"{ind.get('InstrumentType', 'SPOT')}|{ind.get('indicator', 'N/A')}"
                     for ind in self.fm.indicator_calculator.config
                 ],
                 "tsl_indicator_id": self.fm.tsl_indicator_id,

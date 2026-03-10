@@ -366,7 +366,7 @@ class LiveTradeEngine:
                 "python_strategy_path": self.position_config.get("python_strategy_path"),
                 "timeframe": self.fund_manager.global_timeframe,
                 "indicators": [
-                    f"{ind.get('InstrumentType', 'SPOT')}|{ind.get('type', 'N/A')}|{'-'.join(str(v) for v in ind.get('params', {}).values())}"
+                    f"{ind.get('InstrumentType', 'SPOT')}|{ind.get('indicator', 'N/A')}"
                     for ind in self.strategy_config.get("indicators", [])
                 ],
                 "budget": self.position_config.get("budget"),
