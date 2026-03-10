@@ -33,7 +33,7 @@ class BacktestDataFeeder(ABC):
         - Runs indicator warmup
         """
         from packages.utils.mongo import MongoRepository
-        from packages.utils.market_utils import MarketUtils
+        from packages.data.connectors.xts_normalizer import XTSNormalizer
         
         start_date = bot.args.start
         end_date = bot.args.end
@@ -43,8 +43,9 @@ class BacktestDataFeeder(ABC):
         
         db = MongoRepository.get_db()
         
-        # Run Indicator Warmup (Hardcoded to 200)
-        MarketUtils.run_indicator_warmup(db, fund_manager, iso_start, settings.GLOBAL_WARMUP_CANDLES, logger)
+        # Run Indicator Warmup
+        from packages.services.market_history import MarketHistoryService
+        MarketHistoryService(db).run_full_backtest_warmup(fund_manager, iso_start, settings.GLOBAL_WARMUP_CANDLES)
             
         return iso_start, iso_end, db
 
@@ -199,26 +200,8 @@ Indicators:
             short_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=3))
             session_id = f"{prefix}-{date_range}-{short_id}"
 
-            config = {
-                "strategyId": strategy_id,
-                "python_strategy_path": getattr(self.args, "python_strategy_path", None),
-                "timeframe": self.fm.global_timeframe,
-                "indicators": [
-                    f"{ind.get('InstrumentType', 'SPOT')}|{ind.get('indicator', 'N/A')}"
-                    for ind in self.fm.indicator_calculator.config
-                ],
-                "tsl_indicator_id": self.fm.tsl_indicator_id,
-                "budget": self.args.budget,
-                "invest_mode": self.fm.invest_mode,
-                "stop_loss_points": self.fm.stop_loss_points,
-                "target_points": self.fm.target_points,
-                "trailing_sl_points": self.fm.trailing_sl_points,
-                "use_break_even": self.fm.use_break_even,
-                "strike_selection": getattr(self.args, 'strike_selection', 'ATM'),
-                "price_source": self.fm.price_source,
-                "pyramid_steps": getattr(self.args, 'pyramid_steps', None),
-                "pyramid_confirm_pts": getattr(self.args, 'pyramid_confirm_pts', None),
-            }
+            from packages.services.trade_event import TradeEventService
+            config = TradeEventService.build_config_summary(self.fm, mode=getattr(self.args, 'mode', 'db'))
             
             # Use centralized persistence
             persistence = TradePersistence()

@@ -64,12 +64,12 @@ class XTSManager:
         return None
 
     @classmethod
-    def get_market_client(cls, force_login: bool = False) -> XTSConnect:
-        """Returns an authenticated XTSConnect instance for Market Data API."""
+    def _get_market_client(cls, force_login: bool = False) -> XTSConnect:
+        """Returns an authenticated XTSConnect instance for Market Data API (Private)."""
         if cls._market_client is None:
             cls._market_client = XTSConnect(
-                apiKey=settings.MARKET_API_KEY,
-                secretKey=settings.MARKET_API_SECRET,
+                api_key=settings.MARKET_API_KEY,
+                secret_key=settings.MARKET_API_SECRET,
                 source=settings.XTS_SOURCE,
                 root=settings.XTS_ROOT_URL,
                 disable_ssl=settings.XTS_DISABLE_SSL
@@ -113,13 +113,13 @@ class XTSManager:
         """Returns an authenticated Socket IO client for Market Data."""
         if cls._socket_client is None:
             # Ensure we have a valid token first
-            market_client = cls.get_market_client()
+            market_client = cls._get_market_client()
             token = market_client.token
             
             logger.info("Initializing Market Data Socket...")
             cls._socket_client = MDSocket_io(
                 token=token,
-                userID=market_client.userID,
+                user_id=market_client.user_id,
                 logger=debug, 
                 engineio_logger=debug,
                 get_raw_data=True
@@ -128,12 +128,12 @@ class XTSManager:
         return cls._socket_client
 
     @classmethod
-    def get_interactive_client(cls, force_login: bool = False) -> XTSConnect:
-        """Returns an authenticated XTSConnect instance for Interactive API."""
+    def _get_interactive_client(cls, force_login: bool = False) -> XTSConnect:
+        """Returns an authenticated XTSConnect instance for Interactive API (Private)."""
         if cls._interactive_client is None or force_login:
              cls._interactive_client = XTSConnect(
-                 apiKey=settings.INTERACTIVE_API_KEY,
-                 secretKey=settings.INTERACTIVE_API_SECRET,
+                 api_key=settings.INTERACTIVE_API_KEY,
+                 secret_key=settings.INTERACTIVE_API_SECRET,
                  source=settings.XTS_SOURCE,
                  root=settings.XTS_ROOT_URL,
                  disable_ssl=settings.XTS_DISABLE_SSL
@@ -163,14 +163,14 @@ class XTSManager:
     def call_api(cls, client_type: str, func_name: str, *args, **kwargs):
         """
         Generic wrapper to call XTS API functions with automatic re-login on session failure
-        and basic rate-limit awareness.
+        and robust rate-limit handling with exponential backoff.
         """
         import time
-        client = cls.get_market_client() if client_type == "market" else cls.get_interactive_client()
+        client = cls._get_market_client() if client_type == "market" else cls._get_interactive_client()
         func = getattr(client, func_name)
         
         attempt = 0
-        max_attempts = 2
+        max_attempts = kwargs.pop('max_retries', 3) # Allow custom retry count
         
         while attempt < max_attempts:
             attempt += 1
@@ -182,6 +182,7 @@ class XTSManager:
 
             is_invalid = False
             is_rate_limited = False
+            error_code = ""
             
             if isinstance(response, str):
                 err_msg = response.lower()
@@ -192,21 +193,18 @@ class XTSManager:
                 if response.get('type') == 'error':
                     desc = str(response.get('description', '')).lower()
                     code = str(response.get('code', '')).lower()
+                    error_code = code
                     if any(x in desc for x in ["token", "session", "not logged in"]):
                         is_invalid = True
                     if "apirl" in code or "limit" in desc:
                         is_rate_limited = True
-                # Handle edge cases where 'type' might be missing but error present
-                elif 'description' in response and not response.get('type'):
-                    desc = response['description'].lower()
-                    if any(x in desc for x in ["token", "session", "not logged in"]):
-                        is_invalid = True
                 # User's error: {'err': True, 'data': {'type': 'error', ...}}
                 elif response.get('err') is True and isinstance(response.get('data'), dict):
                     data = response['data']
                     if data.get('type') == 'error':
                         desc = str(data.get('description', '')).lower()
                         code = str(data.get('code', '')).lower()
+                        error_code = code
                         if any(x in desc for x in ["token", "session", "not logged in"]):
                             is_invalid = True
                         if "apirl" in code or "limit" in desc:
@@ -217,20 +215,20 @@ class XTSManager:
                 if client_type == "market":
                     cls._market_client = None
                     cls._socket_client = None
-                    client = cls.get_market_client(force_login=True)
+                    client = cls._get_market_client(force_login=True)
                 else:
                     cls._interactive_client = None
-                    client = cls.get_interactive_client(force_login=True)
+                    client = cls._get_interactive_client(force_login=True)
                 func = getattr(client, func_name)
                 continue
                 
             if is_rate_limited and attempt < max_attempts:
-                # Short sleep and retry for burst limits
-                wait_sec = 2 * attempt
-                logger.warning(f"XTS Rate Limit hit ({func_name}). Waiting {wait_sec}s...")
+                # e-apirl-0004 is 'max limit reached', usually needs longer wait
+                wait_sec = 5 * attempt if error_code == "e-apirl-0004" else 2 * attempt
+                logger.warning(f"XTS Rate Limit hit ({func_name}, {error_code}). Waiting {wait_sec}s...")
                 time.sleep(wait_sec)
                 continue
                 
-            break # Success or max attempts reached
+            break
             
         return response

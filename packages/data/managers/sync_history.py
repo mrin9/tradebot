@@ -32,8 +32,8 @@ class HistoricalDataCollector:
         coll = db[collection_name]
 
         # Determine segment
-        xts = XTSManager.get_market_client()
-        segment = xts.EXCHANGE_NSECM if is_index else xts.EXCHANGE_NSEFO  # Simplified assumption for now
+        from packages.data.connectors.xts_sdk.XTSConnect import XTSConnect
+        segment = XTSConnect.EXCHANGE_NSECM if is_index else XTSConnect.EXCHANGE_NSEFO
 
         # Chunking (7 days for large ranges, or just use 7 days default)
         chunks = DateUtils.get_date_chunks(start_dt, end_dt, chunk_size_days=7)
@@ -52,12 +52,15 @@ class HistoricalDataCollector:
             end_str = end_chunk.strftime("%b %d %Y %H%M%S")
             
             try:
-                response = xts.get_ohlc(
-                    exchangeSegment=segment,
-                    exchangeInstrumentID=instrument_id,
-                    startTime=start_str,
-                    endTime=end_str,
-                    compressionValue=self.COMPRESSION_VALUE
+                response = XTSManager.call_api(
+                    "market", 
+                    "get_ohlc",
+                    exchange_segment=segment,
+                    exchange_instrument_id=instrument_id,
+                    start_time=start_str,
+                    end_time=end_str,
+                    compression_value=self.COMPRESSION_VALUE,
+                    max_retries=5 # Higher retries for history
                 )
                 
                 if isinstance(response, dict) and response.get('type') == 'success' and 'result' in response:
@@ -96,7 +99,7 @@ class HistoricalDataCollector:
         1. Sync NIFTY for the whole range.
         2. Sync daily options for each day in range.
         """
-        from packages.utils.market_utils import MarketUtils
+
         
         db = MongoRepository.get_db()
         
@@ -115,7 +118,8 @@ class HistoricalDataCollector:
             day_str = current_dt.strftime("%Y-%m-%d")
             
             # Derive contracts for this day
-            contracts = MarketUtils.derive_target_contracts(db, current_dt, strike_count=strike_count)
+            from packages.services.contract_discovery import ContractDiscoveryService
+            contracts = ContractDiscoveryService(db).derive_target_contracts(current_dt, strike_count=strike_count)
             
             if not contracts:
                 logger.warning(f"No contracts derived for {day_str}. Skipping.")
@@ -127,8 +131,8 @@ class HistoricalDataCollector:
                 for c in contracts:
                     inst_id = c['exchangeInstrumentID']
                     self.sync_for_instrument(inst_id, day_start, day_end, is_index=False)
-                    # Small delay between instruments
-                    time.sleep(0.1)
+                    # Increased delay between instruments to avoid burst limits
+                    time.sleep(0.5)
                     
             current_dt += timedelta(days=1)
 

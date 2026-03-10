@@ -24,14 +24,14 @@ def test_update_rolling_strikes_access():
         "target_points": 20
     }
     
-    with patch('packages.data.connectors.xts_wrapper.XTSManager.get_market_client'), \
+    with patch('packages.data.connectors.xts_wrapper.XTSManager._get_market_client'), \
          patch('packages.data.connectors.xts_wrapper.XTSManager.get_market_data_socket'), \
          patch('packages.utils.mongo.MongoRepository.get_db'):
         
         engine = LiveTradeEngine(mock_strategy, pos_cfg)
         
-        # Mock resolve_strike_ids to return dummy IDs
-        engine._resolve_strike_ids = MagicMock(return_value={101, 102, 103})
+        # Mock ContractDiscoveryService to return dummy IDs
+        engine.discovery_service.get_strike_window_ids = MagicMock(return_value={101, 102, 103})
         
         # Test case 1: No active position
         engine.fund_manager.position_manager.current_position = None
@@ -50,7 +50,7 @@ def test_atm_hysteresis_logic():
     mock_strategy = {"ruleId": "T1", "name": "T", "indicators": []}
     pos_cfg = {"budget": 100000, "symbol": "NIFTY", "quantity": 50, "stop_loss_points": 10, "target_points": 20, "python_strategy_path": "packages/tradeflow/python_strategies.py:TripleLockStrategy"}
     
-    with patch('packages.data.connectors.xts_wrapper.XTSManager.get_market_client'), \
+    with patch('packages.data.connectors.xts_wrapper.XTSManager._get_market_client'), \
          patch('packages.data.connectors.xts_wrapper.XTSManager.get_market_data_socket'), \
          patch('packages.utils.mongo.MongoRepository.get_db'):
         

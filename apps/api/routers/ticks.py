@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from packages.utils.mongo import get_db
 from packages.utils.date_utils import DateUtils
-from packages.utils.market_utils import MarketUtils
+from packages.data.connectors.xts_normalizer import XTSNormalizer
 import polars as pl
 from typing import Optional
 from datetime import datetime, timedelta
@@ -36,7 +36,7 @@ async def get_ticks(
     
     # 1. Resolve Instrument ID
     try:
-        inst_id = MarketUtils.get_instrument_id(db, id)
+        inst_id = XTSNormalizer.get_instrument_id(db, id)
     except ValueError:
         raise HTTPException(status_code=404, detail=f"Instrument {id} not found")
 

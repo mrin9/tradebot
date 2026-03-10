@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class PythonStrategy:
     """
     A wrapper Strategy class that delegates execution to a dynamically loaded Python script.
-    Bypasses the JSON DSL strategy_rules entirely.
+    Delegates to a Python script for strategy logic.
     """
     def __init__(self, script_path: str):
         self.script_path = script_path

@@ -18,11 +18,11 @@ class XTSCommon:
     Base variables class
     """
 
-    def __init__(self, token=None, userID=None, isInvestorClient=None):
+    def __init__(self, token=None, user_id=None, is_investor_client=None):
         """Initialize the common variables."""
         self.token = token
-        self.userID = userID
-        self.isInvestorClient = isInvestorClient
+        self.user_id = user_id
+        self.is_investor_client = is_investor_client
 
 
 class XTSConnect(XTSCommon):
@@ -132,8 +132,8 @@ class XTSConnect(XTSCommon):
     }
 
     def __init__(self,
-                 apiKey,
-                 secretKey,
+                 api_key,
+                 secret_key,
                  source,
                  root=None,
                  debug=False,
@@ -159,8 +159,8 @@ class XTSConnect(XTSCommon):
         If set requests won't throw SSLError if its set to custom `root` url without SSL.
         """
         self.debug = debug
-        self.apiKey = apiKey
-        self.secretKey = secretKey
+        self.api_key = api_key
+        self.secret_key = secret_key
         self.source = source
         self.disable_ssl = disable_ssl
         self.root = root or self._default_root_uri
@@ -180,9 +180,9 @@ class XTSConnect(XTSCommon):
         # disable requests SSL warning
         requests.packages.urllib3.disable_warnings()
 
-    def _set_common_variables(self, access_token,userID, isInvestorClient):
+    def _set_common_variables(self, access_token, user_id, is_investor_client):
         """Set the `access_token` received after a successful authentication."""
-        super().__init__(access_token,userID, isInvestorClient)
+        super().__init__(access_token, user_id, is_investor_client)
 
     def _login_url(self):
         """Get the remote login url to which a user should be redirected to initiate the login flow."""
@@ -193,8 +193,8 @@ class XTSConnect(XTSCommon):
         response = None
         try:
             params = {
-                "appKey": self.apiKey,
-                "secretKey": self.secretKey,
+                "appKey": self.api_key,
+                "secretKey": self.secret_key,
                 "source": self.source
             }
             response = self._post("user.login", json.dumps(params))
@@ -206,256 +206,256 @@ class XTSConnect(XTSCommon):
         except Exception as e:
             return response.get('description', str(e)) if isinstance(response, dict) else str(e)
 
-    def get_order_book(self, clientID=None):
+    def get_order_book(self, client_id=None):
         """Request Order book gives states of all the orders placed by an user"""
         try:
             params = {}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._get("order.status", params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 		
-    def get_dealer_orderbook(self, clientID=None):
+    def get_dealer_orderbook(self, client_id=None):
         """Request Order book gives states of all the orders placed by an user"""
         try:
             params = {}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._get("order.dealer.status", params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
 
     def place_order(self,
-                    exchangeSegment,
-                    exchangeInstrumentID,
-                    productType,
-                    orderType,
-                    orderSide,
-                    timeInForce,
-                    disclosedQuantity,
-                    orderQuantity,
-                    limitPrice,
-                    stopPrice,
-                    orderUniqueIdentifier,
-                    apiOrderSource,
-                    clientID=None
+                    exchange_segment,
+                    exchange_instrument_id,
+                    product_type,
+                    order_type,
+                    order_side,
+                    time_in_force,
+                    disclosed_quantity,
+                    order_quantity,
+                    limit_price,
+                    stop_price,
+                    order_unique_identifier,
+                    api_order_source,
+                    client_id=None
                     ):
         """To place an order"""
         try:
 
             params = {
-                "exchangeSegment": exchangeSegment,
-                "exchangeInstrumentID": exchangeInstrumentID,
-                "productType": productType,
-                "orderType": orderType,
-                "orderSide": orderSide,
-                "timeInForce": timeInForce,
-                "disclosedQuantity": disclosedQuantity,
-                "orderQuantity": orderQuantity,
-                "limitPrice": limitPrice,
-                "stopPrice": stopPrice,
-                "apiOrderSource":apiOrderSource,
-                "orderUniqueIdentifier": orderUniqueIdentifier
+                "exchangeSegment": exchange_segment,
+                "exchangeInstrumentID": exchange_instrument_id,
+                "productType": product_type,
+                "orderType": order_type,
+                "orderSide": order_side,
+                "timeInForce": time_in_force,
+                "disclosedQuantity": disclosed_quantity,
+                "orderQuantity": order_quantity,
+                "limitPrice": limit_price,
+                "stopPrice": stop_price,
+                "apiOrderSource":api_order_source,
+                "orderUniqueIdentifier": order_unique_identifier
             }
 
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
 
             response = self._post('order.place', json.dumps(params))
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
     def modify_order(self,
-                     appOrderID,
-                     modifiedProductType,
-                     modifiedOrderType,
-                     modifiedOrderQuantity,
-                     modifiedDisclosedQuantity,
-                     modifiedLimitPrice,
-                     modifiedStopPrice,
-                     modifiedTimeInForce,
-                     orderUniqueIdentifier,
-                     clientID=None
+                     app_order_id,
+                     modified_product_type,
+                     modified_order_type,
+                     modified_order_quantity,
+                     modified_disclosed_quantity,
+                     modified_limit_price,
+                     modified_stop_price,
+                     modified_time_in_force,
+                     order_unique_identifier,
+                     client_id=None
                      ):
         """The facility to modify your open orders by allowing you to change limit order to market or vice versa,
         change Price or Quantity of the limit open order, change disclosed quantity or stop-loss of any
         open stop loss order. """
         try:
-            appOrderID = int(appOrderID)
+            app_order_id = int(app_order_id)
             params = {
-                'appOrderID': appOrderID,
-                'modifiedProductType': modifiedProductType,
-                'modifiedOrderType': modifiedOrderType,
-                'modifiedOrderQuantity': modifiedOrderQuantity,
-                'modifiedDisclosedQuantity': modifiedDisclosedQuantity,
-                'modifiedLimitPrice': modifiedLimitPrice,
-                'modifiedStopPrice': modifiedStopPrice,
-                'modifiedTimeInForce': modifiedTimeInForce,
-                'orderUniqueIdentifier': orderUniqueIdentifier
+                'appOrderID': app_order_id,
+                'modifiedProductType': modified_product_type,
+                'modifiedOrderType': modified_order_type,
+                'modifiedOrderQuantity': modified_order_quantity,
+                'modifiedDisclosedQuantity': modified_disclosed_quantity,
+                'modifiedLimitPrice': modified_limit_price,
+                'modifiedStopPrice': modified_stop_price,
+                'modifiedTimeInForce': modified_time_in_force,
+                'orderUniqueIdentifier': order_unique_identifier
             }
 
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
 
             response = self._put('order.modify', json.dumps(params))
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
 
         
     def place_bracketorder(self,
-                    exchangeSegment,
-                    exchangeInstrumentID,
-                    orderType,
-                    orderSide,
-                    disclosedQuantity,
-                    orderQuantity,
-                    limitPrice,
-                    squarOff,
-                    stopLossPrice,
-	                trailingStoploss,
-                    isProOrder,
-                    apiOrderSource,
-                    orderUniqueIdentifier,
+                    exchange_segment,
+                    exchange_instrument_id,
+                    order_type,
+                    order_side,
+                    disclosed_quantity,
+                    order_quantity,
+                    limit_price,
+                    square_off,
+                    stop_loss_price,
+                    trailing_stop_loss,
+                    is_pro_order,
+                    api_order_source,
+                    order_unique_identifier,
                      ):
         """To place a bracketorder"""
         try:
 
             params = {
-                "exchangeSegment": exchangeSegment,
-                "exchangeInstrumentID": exchangeInstrumentID,
-                "orderType": orderType,
-                "orderSide": orderSide,
-                "disclosedQuantity": disclosedQuantity,
-                "orderQuantity": orderQuantity,
-                "limitPrice": limitPrice,
-                "squarOff": squarOff,
-                "stopLossPrice": stopLossPrice,
-                "trailingStoploss": trailingStoploss,
-                "isProOrder": isProOrder,
-                "apiOrderSource":apiOrderSource,
-                "orderUniqueIdentifier": orderUniqueIdentifier
+                "exchangeSegment": exchange_segment,
+                "exchangeInstrumentID": exchange_instrument_id,
+                "orderType": order_type,
+                "orderSide": order_side,
+                "disclosedQuantity": disclosed_quantity,
+                "orderQuantity": order_quantity,
+                "limitPrice": limit_price,
+                "squarOff": square_off,
+                "stopLossPrice": stop_loss_price,
+                "trailingStoploss": trailing_stop_loss,
+                "isProOrder": is_pro_order,
+                "apiOrderSource":api_order_source,
+                "orderUniqueIdentifier": order_unique_identifier
             }
             response = self._post('bracketorder.place', json.dumps(params))
             logger.info(response)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def bracketorder_cancel(self, appOrderID, clientID=None):
+    def bracketorder_cancel(self, app_order_id, client_id=None):
         """This API can be called to cancel any open order of the user by providing correct appOrderID matching with
         the chosen open order to cancel. """
         try:
-            params = {'boEntryOrderId': int(appOrderID)}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            params = {'boEntryOrderId': int(app_order_id)}
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._delete('bracketorder.cancel', params)
             return response
         except Exception as e:
             return response['description']   
 
     def modify_bracketorder(self,
-                     appOrderID,
-                     orderQuantity,
-                     limitPrice,
-                     stopPrice,
-                     clientID=None
+                     app_order_id,
+                     order_quantity,
+                     limit_price,
+                     stop_price,
+                     client_id=None
                      ):
         try:
-            appOrderID = int(appOrderID)
+            app_order_id = int(app_order_id)
             params = {
-                'appOrderID': appOrderID,
-                'bracketorder.modify': orderQuantity,
-                'limitPrice': limitPrice,
-                'stopPrice': stopPrice
+                'appOrderID': app_order_id,
+                'bracketorder.modify': order_quantity,
+                'limitPrice': limit_price,
+                'stopPrice': stop_price
             }
 
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
 
             response = self._put('bracketorder.modify', json.dumps(params))
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
 
     def place_cover_order(self, 
-                          exchangeSegment, 
-                          exchangeInstrumentID, 
-                          orderSide,orderType, 
-                          orderQuantity, 
-                          disclosedQuantity,
-                          limitPrice, 
-                          stopPrice, 
-                          apiOrderSource,
-                          orderUniqueIdentifier, 
-                          clientID=None):
+                          exchange_segment, 
+                          exchange_instrument_id, 
+                          order_side, order_type, 
+                          order_quantity, 
+                          disclosed_quantity,
+                          limit_price, 
+                          stop_price, 
+                          api_order_source,
+                          order_unique_identifier, 
+                          client_id=None):
         """A Cover Order is an advance intraday order that is accompanied by a compulsory Stop Loss Order. This helps
         users to minimize their losses by safeguarding themselves from unexpected market movements. A Cover Order
         offers high leverage and is available in Equity Cash, Equity F&O, Commodity F&O and Currency F&O segments. It
         has 2 orders embedded in itself, they are Limit/Market Order Stop Loss Order """
         try:
 
-            params = {'exchangeSegment': exchangeSegment, 
-                      'exchangeInstrumentID': exchangeInstrumentID,
-                      'orderSide': orderSide, 
-                      "orderType": orderType,
-                      'orderQuantity': orderQuantity, 
-                      'disclosedQuantity': disclosedQuantity,
-                      'limitPrice': limitPrice, 
-                      'stopPrice': stopPrice, 
-                      'apiOrderSource': apiOrderSource,
-                      'orderUniqueIdentifier': orderUniqueIdentifier
+            params = {'exchangeSegment': exchange_segment, 
+                      'exchangeInstrumentID': exchange_instrument_id,
+                      'orderSide': order_side, 
+                      "orderType": order_type,
+                      'orderQuantity': order_quantity, 
+                      'disclosedQuantity': disclosed_quantity,
+                      'limitPrice': limit_price, 
+                      'stopPrice': stop_price, 
+                      'apiOrderSource': api_order_source,
+                      'orderUniqueIdentifier': order_unique_identifier
                       }
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._post('order.place.cover', json.dumps(params))
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def exit_cover_order(self, appOrderID, clientID=None):
+    def exit_cover_order(self, app_order_id, client_id=None):
         """Exit Cover API is a functionality to enable user to easily exit an open stoploss order by converting it
         into Exit order. """
         try:
 
-            params = {'appOrderID': appOrderID}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            params = {'appOrderID': app_order_id}
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._put('order.exit.cover', json.dumps(params))
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
 
 
-    def get_profile(self, clientID=None):
+    def get_profile(self, client_id=None):
         """Using session token user can access his profile stored with the broker, it's possible to retrieve it any
         point of time with the http: //ip:port/interactive/user/profile API. """
         try:
             params = {}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
 
             response = self._get('user.profile', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def get_balance(self, clientID=None):
+    def get_balance(self, client_id=None):
         """Get Balance API call grouped under this category information related to limits on equities, derivative,
         upfront margin, available exposure and other RMS related balances available to the user."""
-        if self.isInvestorClient:
+        if self.is_investor_client:
             try:
                 params = {}
-                if not self.isInvestorClient:
-                    params['clientID'] = clientID
+                if not self.is_investor_client:
+                    params['clientID'] = client_id
                 response = self._get('user.balance', params)
                 return response
             except Exception as e:
@@ -464,182 +464,182 @@ class XTSConnect(XTSCommon):
             logger.info("Balance API available for retail API users only, dealers can watch the same on dealer terminal")
 
 
-    def get_trade(self, clientID=None):
+    def get_trade(self, client_id=None):
         """Trade book returns a list of all trades executed on a particular day , that were placed by the user . The
         trade book will display all filled and partially filled orders. """
         try:
             params = {}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._get('trades', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def get_dealer_tradebook(self, clientID=None):
+    def get_dealer_tradebook(self, client_id=None):
         """Trade book returns a list of all trades executed on a particular day , that were placed by the user . The
         trade book will display all filled and partially filled orders. """
         try:
             params = {}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._get('dealer.trades', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 		
-    def get_holding(self, clientID=None):
+    def get_holding(self, client_id=None):
         """Holdings API call enable users to check their long term holdings with the broker."""
         try:
             params = {}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
 
             response = self._get('portfolio.holdings', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
 
-    def get_dealerposition_netwise(self, clientID=None):
+    def get_dealerposition_netwise(self, client_id=None):
         """The positions API positions by net. Net is the actual, current net position portfolio."""
         try:
             params = {'dayOrNet': 'NetWise'}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._get('portfolio.dealerpositions', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
 
            
-    def get_dealerposition_daywise(self, clientID=None):
+    def get_dealerposition_daywise(self, client_id=None):
         """The positions API returns positions by day, which is a snapshot of the buying and selling activity for
         that particular day."""
         try:
             params = {'dayOrNet': 'DayWise'}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
 
             response = self._get('portfolio.dealerpositions', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 		
-    def get_position_daywise(self, clientID=None):
+    def get_position_daywise(self, client_id=None):
 	    
         """The positions API returns positions by day, which is a snapshot of the buying and selling activity for
         that particular day."""
         try:
             params = {'dayOrNet': 'DayWise'}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
 
             response = self._get('portfolio.positions', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def get_position_netwise(self, clientID=None):
+    def get_position_netwise(self, client_id=None):
         """The positions API positions by net. Net is the actual, current net position portfolio."""
         try:
             params = {'dayOrNet': 'NetWise'}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._get('portfolio.positions', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def convert_position(self, exchangeSegment, exchangeInstrumentID, targetQty, isDayWise, oldProductType,
-                         newProductType, clientID=None):
+    def convert_position(self, exchange_segment, exchange_instrument_id, target_qty, is_day_wise, old_product_type,
+                         new_product_type, client_id=None):
         """Convert position API, enable users to convert their open positions from NRML intra-day to Short term MIS or
         vice versa, provided that there is sufficient margin or funds in the account to effect such conversion """
         try:
             params = {
-                'exchangeSegment': exchangeSegment,
-                'exchangeInstrumentID': exchangeInstrumentID,
-                'targetQty': targetQty,
-                'isDayWise': isDayWise,
-                'oldProductType': oldProductType,
-                'newProductType': newProductType
+                'exchangeSegment': exchange_segment,
+                'exchangeInstrumentID': exchange_instrument_id,
+                'targetQty': target_qty,
+                'isDayWise': is_day_wise,
+                'oldProductType': old_product_type,
+                'newProductType': new_product_type
             }
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._put('portfolio.positions.convert', json.dumps(params))
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def cancel_order(self, appOrderID, orderUniqueIdentifier, clientID=None):
+    def cancel_order(self, app_order_id, order_unique_identifier, client_id=None):
         """This API can be called to cancel any open order of the user by providing correct appOrderID matching with
         the chosen open order to cancel. """
         try:
-            params = {'appOrderID': int(appOrderID), 'orderUniqueIdentifier': orderUniqueIdentifier}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            params = {'appOrderID': int(app_order_id), 'orderUniqueIdentifier': order_unique_identifier}
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._delete('order.cancel', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
         
-    def cancelall_order(self, exchangeSegment, exchangeInstrumentID):
+    def cancelall_order(self, exchange_segment, exchange_instrument_id):
         """This API can be called to cancel all open order of the user by providing exchange segment and exchange instrument ID """
         try:
-            params = {"exchangeSegment": exchangeSegment, "exchangeInstrumentID": exchangeInstrumentID}
-            if not self.isInvestorClient:
-                params['clientID'] = self.userID
+            params = {"exchangeSegment": exchange_segment, "exchangeInstrumentID": exchange_instrument_id}
+            if not self.is_investor_client:
+                params['clientID'] = self.user_id
             response = self._post('order.cancelall', json.dumps(params))
             return response
         except Exception as e:
-            return response['description']    
+            return {'type': 'error', 'description': str(e)}
 
 
-    def squareoff_position(self, exchangeSegment, exchangeInstrumentID, productType, squareoffMode,
-                           positionSquareOffQuantityType, squareOffQtyValue, blockOrderSending, cancelOrders,
-                           clientID=None):
+    def squareoff_position(self, exchange_segment, exchange_instrument_id, product_type, square_off_mode,
+                           position_square_off_quantity_type, square_off_qty_value, block_order_sending, cancel_orders,
+                           client_id=None):
         """User can request square off to close all his positions in Equities, Futures and Option. Users are advised
         to use this request with caution if one has short term holdings. """
         try:
 
-            params = {'exchangeSegment': exchangeSegment, 'exchangeInstrumentID': exchangeInstrumentID,
-                      'productType': productType, 'squareoffMode': squareoffMode,
-                      'positionSquareOffQuantityType': positionSquareOffQuantityType,
-                      'squareOffQtyValue': squareOffQtyValue, 'blockOrderSending': blockOrderSending,
-                      'cancelOrders': cancelOrders
+            params = {'exchangeSegment': exchange_segment, 'exchangeInstrumentID': exchange_instrument_id,
+                      'productType': product_type, 'squareoffMode': square_off_mode,
+                      'positionSquareOffQuantityType': position_square_off_quantity_type,
+                      'squareOffQtyValue': square_off_qty_value, 'blockOrderSending': block_order_sending,
+                      'cancelOrders': cancel_orders
                       }
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._put('portfolio.squareoff', json.dumps(params))
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def get_order_history(self, appOrderID, clientID=None):
+    def get_order_history(self, app_order_id, client_id=None):
         """Order history will provide particular order trail chain. This indicate the particular order & its state
         changes. i.e.Pending New to New, New to PartiallyFilled, PartiallyFilled, PartiallyFilled & PartiallyFilled
         to Filled etc """
         try:
-            params = {'appOrderID': appOrderID}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            params = {'appOrderID': app_order_id}
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._get('order.history', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def interactive_logout(self, clientID=None):
+    def interactive_logout(self, client_id=None):
         """This call invalidates the session token and destroys the API session. After this, the user should go
         through login flow again and extract session token from login response before further activities. """
         try:
             params = {}
-            if not self.isInvestorClient:
-                params['clientID'] = clientID
+            if not self.is_investor_client:
+                params['clientID'] = client_id
             response = self._delete('user.logout', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
 ########################################################################################################
 # Market data API
@@ -649,14 +649,14 @@ class XTSConnect(XTSCommon):
         response = None
         try:
             params = {
-                "appKey": self.apiKey,
-                "secretKey": self.secretKey,
+                "appKey": self.api_key,
+                "secretKey": self.secret_key,
                 "source": self.source
             }
             response = self._post("market.login", json.dumps(params))
 
             if response and isinstance(response, dict) and "token" in response.get('result', {}):
-                self._set_common_variables(response['result']['token'], response['result']['userID'],False)
+                self._set_common_variables(response['result']['token'], response['result']['userID'], False)
             return response
         except Exception as e:
             return response.get('description', str(e)) if isinstance(response, dict) else str(e)
@@ -669,126 +669,125 @@ class XTSConnect(XTSCommon):
         except Exception as e:
             return str(e)
 
-    def get_quote(self, Instruments, xtsMessageCode, publishFormat):
+    def get_quote(self, instruments, xts_message_code, publish_format):
         try:
-
-            params = {'instruments': Instruments, 'xtsMessageCode': xtsMessageCode, 'publishFormat': publishFormat}
+            params = {'instruments': instruments, 'xtsMessageCode': xts_message_code, 'publishFormat': publish_format}
             response = self._post('market.instruments.quotes', json.dumps(params))
             return response
         except Exception as e:
-            return str(e)
+            return {'type': 'error', 'description': str(e)}
 
-    def send_subscription(self, Instruments, xtsMessageCode):
+    def send_subscription(self, instruments, xts_message_code):
         try:
-            params = {'instruments': Instruments, 'xtsMessageCode': xtsMessageCode}
+            params = {'instruments': instruments, 'xtsMessageCode': xts_message_code}
             response = self._post('market.instruments.subscription', json.dumps(params))
             return response
         except Exception as e:
-            return str(e)
+            return {'type': 'error', 'description': str(e)}
 
-    def send_unsubscription(self, Instruments, xtsMessageCode):
+    def send_unsubscription(self, instruments, xts_message_code):
         try:
-            params = {'instruments': Instruments, 'xtsMessageCode': xtsMessageCode}
+            params = {'instruments': instruments, 'xtsMessageCode': xts_message_code}
             response = self._put('market.instruments.unsubscription', json.dumps(params))
             return response
         except Exception as e:
-            return str(e)
+            return {'type': 'error', 'description': str(e)}
 
-    def get_master(self, exchangeSegmentList):
+    def get_master(self, exchange_segment_list):
         try:
-            params = {"exchangeSegmentList": exchangeSegmentList}
+            params = {"exchangeSegmentList": exchange_segment_list}
             response = self._post('market.instruments.master', json.dumps(params))
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def get_ohlc(self, exchangeSegment, exchangeInstrumentID, startTime, endTime, compressionValue):
+    def get_ohlc(self, exchange_segment, exchange_instrument_id, start_time, end_time, compression_value):
         response = None
         try:
             params = {
-                'exchangeSegment': exchangeSegment,
-                'exchangeInstrumentID': exchangeInstrumentID,
-                'startTime': startTime,
-                'endTime': endTime,
-                'compressionValue': compressionValue}
+                'exchangeSegment': exchange_segment,
+                'exchangeInstrumentID': exchange_instrument_id,
+                'startTime': start_time,
+                'endTime': end_time,
+                'compressionValue': compression_value}
             response = self._get('market.instruments.ohlc', params)
             return response
         except Exception as e:
-            return response['description'] if response else str(e)
+            return {'type': 'error', 'description': response['description'] if response else str(e)}
 
-    def get_series(self, exchangeSegment):
+    def get_series(self, exchange_segment):
         try:
-            params = {'exchangeSegment': exchangeSegment}
+            params = {'exchangeSegment': exchange_segment}
             response = self._get('market.instruments.instrument.series', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def get_equity_symbol(self, exchangeSegment, series, symbol):
+    def get_equity_symbol(self, exchange_segment, series, symbol):
         try:
 
-            params = {'exchangeSegment': exchangeSegment, 'series': series, 'symbol': symbol}
+            params = {'exchangeSegment': exchange_segment, 'series': series, 'symbol': symbol}
             response = self._get('market.instruments.instrument.equitysymbol', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def get_expiry_date(self, exchangeSegment, series, symbol):
+    def get_expiry_date(self, exchange_segment, series, symbol):
         try:
-            params = {'exchangeSegment': exchangeSegment, 'series': series, 'symbol': symbol}
+            params = {'exchangeSegment': exchange_segment, 'series': series, 'symbol': symbol}
             response = self._get('market.instruments.instrument.expirydate', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def get_future_symbol(self, exchangeSegment, series, symbol, expiryDate):
+    def get_future_symbol(self, exchange_segment, series, symbol, expiry_date):
         try:
-            params = {'exchangeSegment': exchangeSegment, 'series': series, 'symbol': symbol, 'expiryDate': expiryDate}
+            params = {'exchangeSegment': exchange_segment, 'series': series, 'symbol': symbol, 'expiryDate': expiry_date}
             response = self._get('market.instruments.instrument.futuresymbol', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def get_option_symbol(self, exchangeSegment, series, symbol, expiryDate, optionType, strikePrice):
+    def get_option_symbol(self, exchange_segment, series, symbol, expiry_date, option_type, strike_price):
         try:
-            params = {'exchangeSegment': exchangeSegment, 'series': series, 'symbol': symbol, 'expiryDate': expiryDate,
-                      'optionType': optionType, 'strikePrice': strikePrice}
+            params = {'exchangeSegment': exchange_segment, 'series': series, 'symbol': symbol, 'expiryDate': expiry_date,
+                      'optionType': option_type, 'strikePrice': strike_price}
             response = self._get('market.instruments.instrument.optionsymbol', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def get_option_type(self, exchangeSegment, series, symbol, expiryDate):
+    def get_option_type(self, exchange_segment, series, symbol, expiry_date):
         try:
-            params = {'exchangeSegment': exchangeSegment, 'series': series, 'symbol': symbol, 'expiryDate': expiryDate}
+            params = {'exchangeSegment': exchange_segment, 'series': series, 'symbol': symbol, 'expiryDate': expiry_date}
             response = self._get('market.instruments.instrument.optiontype', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def get_index_list(self, exchangeSegment):
+    def get_index_list(self, exchange_segment):
         try:
-            params = {'exchangeSegment': exchangeSegment}
+            params = {'exchangeSegment': exchange_segment}
             response = self._get('market.instruments.indexlist', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def search_by_instrumentid(self, Instruments):
+    def search_by_instrumentid(self, instruments):
         try:
-            params = {'source': self.source, 'instruments': Instruments}
+            params = {'source': self.source, 'instruments': instruments}
             response = self._post('market.search.instrumentsbyid', json.dumps(params))
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
-    def search_by_scriptname(self, searchString):
+    def search_by_scriptname(self, search_string):
         try:
-            params = {'searchString': searchString}
+            params = {'searchString': search_string}
             response = self._get('market.search.instrumentsbystring', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
     def marketdata_logout(self):
         try:
@@ -796,7 +795,7 @@ class XTSConnect(XTSCommon):
             response = self._delete('market.logout', params)
             return response
         except Exception as e:
-            return response['description']
+            return {'type': 'error', 'description': str(e)}
 
     ########################################################################################################
     # Common Methods

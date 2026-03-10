@@ -39,7 +39,7 @@ class OrderSocket_io(socketio.Client):
                  versions.
     """
 
-    def __init__(self, token, userID, reconnection=True, reconnection_attempts=0, reconnection_delay=1,
+    def __init__(self, token, user_id, reconnection=True, reconnection_attempts=0, reconnection_delay=1,
                  reconnection_delay_max=50000, randomization_factor=0.5, logger=False, binary=False, json=None,
                  **kwargs):
         self.sid = socketio.Client(logger=True, engineio_logger=True)
@@ -55,7 +55,7 @@ class OrderSocket_io(socketio.Client):
         self.sid.on('logout', self.on_messagelogout)
         self.sid.on('disconnect', self.on_disconnect)
 
-        self.userID = userID
+        self.user_id = user_id
         self.token = token
 
         """Get root url from settings"""
@@ -63,7 +63,7 @@ class OrderSocket_io(socketio.Client):
 
         port = f'{self.port}/?token='
 
-        self.connection_url = port + self.token + '&userID=' + self.userID + "&apiType=INTERACTIVE"
+        self.connection_url = port + self.token + '&userID=' + self.user_id + "&apiType=INTERACTIVE"
 
     def connect(self, headers={}, transports='websocket', namespaces=None, socketio_path='/interactive/socket.io',
                 verify=False):

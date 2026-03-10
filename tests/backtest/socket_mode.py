@@ -14,7 +14,7 @@ from tests.backtest.backtest_base import BacktestDataFeeder
 from packages.config import settings
 from packages.utils.mongo import MongoRepository
 from packages.simulator.socket_server import SocketDataService
-from packages.utils.market_utils import MarketUtils
+from packages.data.connectors.xts_normalizer import XTSNormalizer
 
 logger = setup_logger("SocketFeeder")
 

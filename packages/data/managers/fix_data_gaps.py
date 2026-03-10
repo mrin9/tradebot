@@ -4,7 +4,7 @@ from packages.utils.mongo import MongoRepository
 from packages.utils.log_utils import setup_logger
 from packages.utils.date_utils import DateUtils, FMT_ISO_DATE
 from packages.data.managers.sync_history import HistoricalDataCollector
-from packages.utils.market_utils import MarketUtils
+from packages.data.connectors.xts_normalizer import XTSNormalizer
 
 logger = setup_logger(__name__)
 
@@ -57,8 +57,9 @@ def _generate_diagnostic_report(s_dt: datetime, e_dt: datetime, strike_count: in
             report.append(row)
             continue
 
-        # 2. Identify Target Contracts via MarketUtils
-        expected_contracts = MarketUtils.derive_target_contracts(db, dt, strike_count=strike_count)
+        # 2. Identify Target Contracts via ContractDiscoveryService
+        from packages.services.contract_discovery import ContractDiscoveryService
+        expected_contracts = ContractDiscoveryService(db).derive_target_contracts(dt, strike_count=strike_count)
         
         if expected_contracts:
             active_ids = [c["exchangeInstrumentID"] for c in expected_contracts]

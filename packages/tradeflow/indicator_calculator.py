@@ -32,6 +32,8 @@ class IndicatorCalculator:
         self.instrument_candles: Dict[int, deque] = {}
         # Track the 'current' active instrument ID per category
         self.active_instrument_ids: Dict[InstrumentCategoryType, int | None] = {}
+        # Cache of the latest calculated results per instrument
+        self.latest_results: Dict[int, Dict[str, Any]] = {}
         
         # Initialize deques for each unique instrument category from config
         for ind in self.config:
@@ -121,10 +123,13 @@ class IndicatorCalculator:
         
         try:
             for ind in indicators_to_calc:
-                key = ind.get('indicatorId') or ind['indicator']
-                df = self.calculate_indicator(df, ind['indicator'], key)
+                ind_shorthand = ind.get('indicator', ind.get('type', 'N/A'))
+                key = ind.get('indicatorId') or ind_shorthand
+                df = self.calculate_indicator(df, ind_shorthand, key)
 
-            return self._extract_results_from_df(df, instrument_category, indicators_to_calc)
+            res = self._extract_results_from_df(df, instrument_category, indicators_to_calc)
+            self.latest_results[instrument_id] = res
+            return res
         except Exception as e:
             logger.error(f"Error calculating indicators for category {instrument_category}: {e}", exc_info=True)
             return {}
@@ -132,44 +137,8 @@ class IndicatorCalculator:
     def extract_indicators(self, instrument_id: int, instrument_category: InstrumentCategoryType) -> Dict[str, float | str | None]:
         """
         Manually extracts the latest indicator values for a specific instrument from the internal cache.
-        Useful for refreshing 'latest_indicators_state' immediately after an instrument switch.
         """
-        if instrument_id not in self.instrument_candles:
-            return {}
-            
-        target_deque = self.instrument_candles[instrument_id]
-        if not target_deque:
-            return {}
-
-        try:
-            schema = {
-                'open': pl.Float64, 'high': pl.Float64, 'low': pl.Float64, 
-                'close': pl.Float64, 'volume': pl.Float64, 'timestamp': pl.Int64
-            }
-            df = pl.DataFrame(list(target_deque), schema=schema)
-            
-            # Determine which indicators in config apply to this category
-            indicators_to_calc = []
-            for ind in self.config:
-                itype_str = ind.get('InstrumentType', 'SPOT')
-                try:
-                    itype = InstrumentCategoryType(itype_str)
-                except ValueError:
-                    itype = InstrumentCategoryType.SPOT
-
-                if itype == instrument_category:
-                    indicators_to_calc.append(ind)
-                elif itype == InstrumentCategoryType.OPTIONS_BOTH and instrument_category in [InstrumentCategoryType.CE, InstrumentCategoryType.PE]:
-                    indicators_to_calc.append(ind)
-            
-            for ind in indicators_to_calc:
-                key = ind.get('indicatorId') or ind['indicator']
-                df = self.calculate_indicator(df, ind['indicator'], key)
-                
-            return self._extract_results_from_df(df, instrument_category, indicators_to_calc)
-        except Exception as e:
-            logger.error(f"Error extracting indicators for instrument {instrument_id}: {e}")
-            return {}
+        return self.latest_results.get(instrument_id, {})
 
     def _extract_results_from_df(self, df: pl.DataFrame, category: InstrumentCategoryType, indicators: List[Dict]) -> Dict[str, float | str | None]:
         """Helper to pull latest and prev rows from a calculated Polars DataFrame."""
@@ -180,12 +149,14 @@ class IndicatorCalculator:
         last_row = df.row(-1, named=True)
         prev_row = df.row(-2, named=True) if df.height >= 2 else None
         
-        cat_val = category.value.lower() if hasattr(category, "value") else str(category).lower()
-        prefix = "nifty-" if category == InstrumentCategoryType.SPOT else f"{cat_val}-"
+        prefix = "nifty-" if category == InstrumentCategoryType.SPOT else f"{category.value.lower()}-"
+        
+        # logger.debug(f"Extracting results for {category} with prefix {prefix}. Indicators: {[i.get('indicatorId') for i in indicators]}")
         
         for ind in indicators:
-            orig_key = ind.get('indicatorId') or ind['indicator']
-            ind_str = ind['indicator'].lower()
+            ind_shorthand = ind.get('indicator', ind.get('type', 'N/A'))
+            orig_key = ind.get('indicatorId') or ind_shorthand
+            ind_str = ind_shorthand.lower()
             
             keys_to_extract = [orig_key]
             if ind_str.startswith('supertrend'):
@@ -259,8 +230,8 @@ class IndicatorCalculator:
             macd_hist = macd_line - macd_signal
             return df.with_columns([
                 macd_line.alias(f"{result_key}"),
-                macd_signal.alias(f"{result_key}_signal"),
-                macd_hist.alias(f"{result_key}_hist")
+                macd_signal.alias(f"{result_key}-signal"),
+                macd_hist.alias(f"{result_key}-hist")
             ])
             
         elif ind_type == "bbands":
@@ -271,9 +242,9 @@ class IndicatorCalculator:
             upper_band = middle_band + (std_dev * std_dev_mult)
             lower_band = middle_band - (std_dev * std_dev_mult)
             return df.with_columns([
-                upper_band.alias(f"{result_key}_upper"),
-                middle_band.alias(f"{result_key}_middle"),
-                lower_band.alias(f"{result_key}_lower")
+                upper_band.alias(f"{result_key}-upper"),
+                middle_band.alias(f"{result_key}-middle"),
+                lower_band.alias(f"{result_key}-lower")
             ])
             
         elif ind_type == "vwap":
@@ -359,5 +330,5 @@ class IndicatorCalculator:
         
         return df.with_columns([
             pl.Series(name=result_key, values=supertrend),
-            pl.Series(name=f"{result_key}_dir", values=direction)
+            pl.Series(name=f"{result_key}-dir", values=direction)
         ])

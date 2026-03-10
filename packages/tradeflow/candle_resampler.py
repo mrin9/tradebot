@@ -20,6 +20,11 @@ class CandleResampler:
         self.current_candle: Dict | None = None
         self.last_period_start: int | None = None
 
+    def reset(self):
+        """Resets the resampler state for a clean start."""
+        self.current_candle = None
+        self.last_period_start = None
+
     def add_candle(self, candle: Dict) -> Dict | None:
         """
         Aggregates a smaller timeframe candle into the current larger timeframe candle.

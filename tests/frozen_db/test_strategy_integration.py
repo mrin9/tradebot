@@ -59,7 +59,7 @@ def db_conn():
 @pytest.fixture
 def strategy_config():
     return {
-        "ruleId": "test-rule-1",
+        "strategyId": "test-rule-1",
         "timeframe": 300, # 5-min
         "indicators": [
             {
@@ -188,10 +188,17 @@ class TestIntegrationStrategy:
         
     @sio.on('1501-json-full')
     def on_1501(data):
+        xts_ts = int(data.get('ExchangeTimeStamp'))
+        # Reverse XTS offset: ts = xts_ts - offset + epoch_offset
+        # settings.XTS_TIME_OFFSET is 19800 (5.5h)
+        # DateUtils.XTS_EPOCH_OFFSET is 315532800 (10y)
+        from packages.utils.date_utils import DateUtils
+        ts = xts_ts - settings.XTS_TIME_OFFSET + DateUtils.XTS_EPOCH_OFFSET
+        
         tick = {
             'p': data.get('LastTradedPrice'),
             'v': data.get('LastTradedQunatity', data.get('LastTradedQuantity', 0)),
-            't': int(data.get('ExchangeTimeStamp')),
+            't': int(ts),
             'i': int(data.get('ExchangeInstrumentID')) 
         }
         if tick['p']:

@@ -11,7 +11,7 @@ sys.path.append(os.getcwd())
 
 from packages.config import settings
 from packages.data.connectors.xts_wrapper import XTSManager
-from packages.utils.market_utils import MarketUtils
+from packages.data.connectors.xts_normalizer import XTSNormalizer
 from packages.utils.log_utils import setup_logger
 from packages.utils.mongo import MongoRepository
 
@@ -58,8 +58,8 @@ class XTSSocketTester:
         """Generic handler for all market events."""
         logger.info(f"🎯 Market Event: {event_code} | Data: {data}")
         
-        parsed_data = MarketUtils.normalize_xts_event(str(event_code), data)
-        logger.info(f"✅ Parsed Data: {parsed_data}")
+        tick = XTSNormalizer.normalize_xts_event("1501-json-full", data)
+        logger.info(f"✅ Parsed Data: {tick}")
         
         if self.store_in_db:
             doc = {

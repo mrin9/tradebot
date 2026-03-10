@@ -75,23 +75,9 @@ class ContractManager:
 
     def _get_nifty_closing_price(self, db, dt: datetime):
         """Gets the last traded price of NIFTY for the active day."""
-        coll = db[settings.NIFTY_CANDLE_COLLECTION]
-        
-        # Find last tick of the day
-        start_ts = DateUtils.to_timestamp(dt, end_of_day=False)
-        end_ts = DateUtils.to_timestamp(dt, end_of_day=True)
-        
-        doc = coll.find_one(
-            {"i": settings.NIFTY_EXCHANGE_INSTRUMENT_ID, "t": {"$gte": start_ts, "$lte": end_ts}},
-            sort=[("t", -1)]
-        )
-        
-        if doc:
-            return doc['p']
-        
-        # Fallback: Check if it's "today" and we have live data?
-        # For now, strictly history based.
-        return None
+        from packages.services.market_history import MarketHistoryService
+        history_service = MarketHistoryService(db)
+        return history_service.get_last_nifty_price(dt)
 
     def _identify_contracts(self, db, spot_price, dt: datetime):
         """Identifies ATM, ITM, OTM options and Futures."""

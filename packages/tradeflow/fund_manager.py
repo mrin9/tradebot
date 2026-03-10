@@ -1,10 +1,13 @@
-from typing import Dict, Callable, Any, List
+from typing import Dict, Callable, Any, List, Optional
 from packages.utils.date_utils import DateUtils
 from datetime import datetime
 from packages.utils.trade_formatter import TradeFormatter
 import logging
 from packages.tradeflow.indicator_calculator import IndicatorCalculator
 from packages.tradeflow.python_strategy_loader import PythonStrategy
+from packages.services.trade_config_service import TradeConfigService
+from packages.services.contract_discovery import ContractDiscoveryService
+from packages.services.market_history import MarketHistoryService
 from packages.utils.log_utils import setup_logger
 from packages.tradeflow.types import SignalType, MarketIntentType, InstrumentKindType, InstrumentCategoryType
 
@@ -20,99 +23,84 @@ logger = setup_logger(__name__)
 class FundManager:
     """
     The Orchestrator (Brain) for Multi-Timeframe Analysis (MTFA).
-    Coordinates data flow between Market Data, multiple Timeframe Resamplers, Indicators, and Strategy Logic.
+    Coordinates data flow between Market Data, Resamplers, Indicators, and Strategy Logic.
     """
-    def __init__(self, strategy_config: Dict[str, Any], position_config: Dict[str, Any] | None = None, log_heartbeat: bool = False, is_backtest: bool = False, fetch_ohlc_fn: Callable = None, fetch_quote_fn: Callable = None):
-        """
-        Args:
-            strategy_config (Dict): The full JSON-DSL strategy rule document from the database.
-            position_config (Dict, optional): Configuration for PositionManager (quantity, stop_loss, target).
-            log_heartbeat (bool): If True, logs indicator state on every candle close (useful for live).
-            is_backtest (bool): If True, running in backtest mode.
-            fetch_ohlc_fn (Callable, optional): API callback to fetch historical OHLC (for live warmup).
-            fetch_quote_fn (Callable, optional): API callback to fetch latest Quote (for live fallbacks).
-        """
-        self.config = strategy_config
-        self.indicators_config = self.config.get('Indicators', self.config.get('indicators', []))
+    def __init__(
+        self, 
+        strategy_config: Dict[str, Any], 
+        position_config: Dict[str, Any] | None = None, 
+        log_heartbeat: bool = False, 
+        is_backtest: bool = False,
+        config_service: Optional[TradeConfigService] = None,
+        discovery_service: Optional[ContractDiscoveryService] = None,
+        history_service: Optional[MarketHistoryService] = None,
+        fetch_ohlc_fn: Callable = None, # Legacy injection
+        fetch_quote_fn: Callable = None # Legacy injection
+    ):
+        # 1. Initialize Services
+        self.config_service = config_service or TradeConfigService()
+        self.discovery_service = discovery_service or ContractDiscoveryService()
+        self.history_service = history_service or MarketHistoryService(fetch_ohlc_api_fn=fetch_ohlc_fn)
+        
+        # 2. Normalize and Build Configs
+        self.config = self.config_service.normalize_strategy_config(strategy_config)
+        self.position_config = self.config_service.build_position_config(**(position_config or {}))
+        
+        self.indicators_config = self.config.get('indicators', [])
         self.log_heartbeat = log_heartbeat
         self.is_backtest = is_backtest
-        self.pos_config = position_config or {}
         
-        # 1. Initialize Indicator Calculator (managing multiple timeframes)
         self.indicator_calculator = IndicatorCalculator(indicators_config=self.indicators_config)
         
-        # 2. Initialize Strategy Logic (Python script only)
-        # Priority: pos_config (CLI override) > strategy_config (DB)
-        python_path = self.pos_config.get("python_strategy_path") or self.config.get("pythonStrategyPath")
-        
+        # 3. Load Strategy
+        python_path = self.position_config.get("python_strategy_path") or self.config.get("pythonStrategyPath")
         if not python_path:
             raise ValueError("No 'python_strategy_path' found in position_config or strategy_config.")
             
         self.strategy = PythonStrategy(script_path=python_path)
-        logger.info(f"🐍 Strategy: Python Code ({python_path})")
+        logger.info(f"🐍 Strategy: {python_path}")
         
-        # 3. Core Parameters (using centralized defaults)
-        self.initial_budget = self.pos_config.get("budget", 200000.0)
-        self.invest_mode = self.pos_config.get("invest_mode", settings.BACKTEST_INVEST_MODE)
-        self.stop_loss_points = self.pos_config.get('stop_loss_points', settings.BACKTEST_STOP_LOSS)
+        # 4. Core Parameters
+        self.initial_budget = self.position_config["budget"]
+        self.invest_mode = self.position_config["invest_mode"]
+        self.stop_loss_points = self.position_config['stop_loss_points']
+        self.target_points = self.position_config['target_points']
+        self.trailing_sl_points = self.position_config['trailing_sl_points']
+        self.tsl_indicator_id = self.position_config.get('tsl_indicator_id')
+        self.use_break_even = self.position_config['use_break_even']
         
-        target_pts = self.pos_config.get('target_points', settings.BACKTEST_TARGET_STEPS)
-        if isinstance(target_pts, str):
-            self.target_points = [float(x.strip()) for x in target_pts.split(',')]
-        else:
-            self.target_points = target_pts
-            
-        self.trailing_sl_points = self.pos_config.get('trailing_sl_points', 0.0)
-        self.tsl_indicator_id = self.pos_config.get('tsl_indicator_id', self.config.get('tslIndicatorId'))
-        self.use_break_even = self.pos_config.get('use_break_even', True)
-        self.record_papertrade_db = self.pos_config.get('record_papertrade_db', True)
+        self.trade_instrument_type = self.position_config["instrument_type"]
+        self.strike_selection = self.position_config["strike_selection"]
+        self.price_source = self.position_config["price_source"]
+        self.record_papertrade_db = self.position_config.get("record_papertrade_db", False)
         
-        self.trade_instrument_type = self.pos_config.get("instrument_type", "CASH").upper() # CASH, OPTIONS, FUTURES
-        self.strike_selection = self.pos_config.get("strike_selection", self.pos_config.get("option_type", "ATM")).upper() # ATM, ITM, OTM
-        
-        # Map string to InstrumentKindType enum
         enum_map = {
             "CASH": InstrumentKindType.CASH,
             "OPTIONS": InstrumentKindType.OPTIONS,
             "FUTURES": InstrumentKindType.FUTURES
         }
         instr_enum = enum_map.get(self.trade_instrument_type, InstrumentKindType.CASH)
-        if self.trade_instrument_type not in enum_map:
-            logger.warning(f"Unrecognized instrument type '{self.trade_instrument_type}', defaulting to CASH")
-        
-        # Parse pyramid steps
-        pyramid_steps_raw = self.pos_config.get("pyramid_steps", "100")
-        if isinstance(pyramid_steps_raw, str):
-            pyramid_steps = [int(s.strip()) for s in pyramid_steps_raw.split(',')]
-        else:
-            pyramid_steps = pyramid_steps_raw
         
         self.position_manager = PositionManager(
-            symbol=self.pos_config.get("symbol", "NIFTY"), 
-            quantity=self.pos_config.get("quantity", 50), 
+            symbol=self.position_config["symbol"], 
+            quantity=self.position_config.get("quantity", 50), 
             stop_loss_points=self.stop_loss_points, 
             target_points=self.target_points,
             instrument_type=instr_enum,
             trailing_sl_points=self.trailing_sl_points,
             use_break_even=self.use_break_even,
-            pyramid_steps=pyramid_steps,
-            pyramid_confirm_pts=self.pos_config.get("pyramid_confirm_pts", 10.0),
-            price_source=self.pos_config.get("price_source", settings.BACKTEST_PRICE_SOURCE),
+            pyramid_steps=self.position_config["pyramid_steps"],
+            pyramid_confirm_pts=self.position_config["pyramid_confirm_pts"],
+            price_source=self.position_config["price_source"],
             tsl_indicator_id = self.tsl_indicator_id
         )
         self.order_manager = PaperTradingOrderManager()
         self.position_manager.set_order_manager(self.order_manager)
         
-        self.price_source = self.pos_config.get("price_source", settings.BACKTEST_PRICE_SOURCE).lower() # "open" or "close"
-        
         self.on_signal: Callable[[Dict], None] | None = None
-        self.db = MongoRepository.get_db()
         self.latest_tick_prices: Dict[int, float] = {}
-        self.fetch_ohlc_fn = fetch_ohlc_fn
-        self.fetch_quote_fn = fetch_quote_fn
         
-        # 4. Global Timeframe and Multi-Instrument Streams
-        self.global_timeframe = self.config.get('timeframe_seconds', self.config.get('timeframe', settings.DEFAULT_TIMEFRAME))
+        self.global_timeframe = self.config['timeframe_seconds']
         
         # Track active instruments being monitored {category: instrument_id}
         self.active_instruments: Dict[str, int] = {"SPOT": 26000}
@@ -141,39 +129,17 @@ class FundManager:
                 interval_seconds=self.global_timeframe,
                 on_candle_closed=lambda c, cat=category: self._on_resampled_candle_closed(c, cat)
             )
-            logger.debug(f"🛠️ Created dynamic resampler for {category.value} ({instrument_id})")
-        
-    def _resolve_option_contract(self, strike: float, is_ce: bool, current_ts: float) -> tuple[int | None, str | None]:
-        """Resolves the nearest expiry option contract ID and description for NIFTY from DB given a strike."""
-        # Convert timestamp to ISO string for comparison with contractExpiration
-        dt_iso = DateUtils.market_timestamp_to_iso(current_ts)
-        
-        opt_type_num = 3 if is_ce else 4 # CE=3, PE=4 in XTS
-        
-        # Simplification: Sort by contractExpiration and get the first one (nearest expiry)
-        contract = self.db[settings.INSTRUMENT_MASTER_COLLECTION].find_one(
-            {
-                "name": "NIFTY", 
-                "series": "OPTIDX", 
-                "strikePrice": strike, 
-                "optionType": opt_type_num,
-                "contractExpiration": {"$gte": dt_iso}
-            },
-            sort=[("contractExpiration", 1)]
-        )
-        
-        if contract:
-            return contract["exchangeInstrumentID"], contract.get("description", contract.get("displayName"))
-        return None, None
+            logger.debug(f"🛠️ Created resampler for {category.value} ({instrument_id})")
         
     def _check_and_update_monitored_instruments(self, current_spot: float, current_ts: float):
         """Continuously manages the CE and PE instruments being monitored. Handles drift re-selection."""
-        if self.is_warming_up:
-            return  # Defer option resolution until warmup completes to avoid API burst
+        if self.trade_instrument_type != "OPTIONS":
+            return
+        if self.is_warming_up: return
             
-        atm_strike = round(current_spot / 50) * 50
+        atm_strike = self.discovery_service.get_atm_strike(current_spot)
         
-        # 0. Check for Day Change
+        # 0. Check for Day Change and Drift
         current_day_str = DateUtils.market_timestamp_to_datetime(current_ts).strftime("%Y-%m-%d")
         is_new_day = False
         if self.last_day_str != current_day_str:
@@ -191,155 +157,22 @@ class FundManager:
         if needs_update:
             self.selection_spot_price = current_spot
             
-            # Resolve CE
-            ce_id, ce_desc = self._resolve_option_contract(atm_strike, True, current_ts)
-            if ce_id:
-                new_ce_id = int(ce_id)
-                if self.active_instruments.get("CE") != new_ce_id:
-                    self.active_instruments["CE"] = new_ce_id
-                    self.active_instruments["CE_DESC"] = ce_desc
-                    # 1. Ensure Resampler and Reset it for clean start
-                    self._ensure_resampler(new_ce_id, InstrumentCategoryType.CE)
-                    self.resamplers[new_ce_id].current_candle = None 
-                    self.resamplers[new_ce_id].last_period_start = None
-                    # 2. Extract cached indicators immediately to avoid stale data
-                    cached_indicators = self.indicator_calculator.extract_indicators(new_ce_id, InstrumentCategoryType.CE)
-                    if cached_indicators:
-                        self.latest_indicators_state.update(cached_indicators)
-                    # 3. Perform Top-up/Initial Warmup
-                    self._warmup_instrument("CE", new_ce_id, current_ts)
-            
-            # Resolve PE
-            pe_id, pe_desc = self._resolve_option_contract(atm_strike, False, current_ts)
-            if pe_id:
-                new_pe_id = int(pe_id)
-                if self.active_instruments.get("PE") != new_pe_id:
-                    self.active_instruments["PE"] = new_pe_id
-                    self.active_instruments["PE_DESC"] = pe_desc
-                    # 1. Ensure Resampler and Reset
-                    self._ensure_resampler(new_pe_id, InstrumentCategoryType.PE)
-                    self.resamplers[new_pe_id].current_candle = None
-                    self.resamplers[new_pe_id].last_period_start = None
-                    # 2. Extract cached indicators immediately
-                    cached_indicators = self.indicator_calculator.extract_indicators(new_pe_id, InstrumentCategoryType.PE)
-                    if cached_indicators:
-                        self.latest_indicators_state.update(cached_indicators)
-                    # 3. Perform Warmup
-                    self._warmup_instrument("PE", new_pe_id, current_ts)
-
-    def _fetch_historical_candles(self, segment: int, instrument_id: int, start_ts: float, end_ts: float, limit: int = settings.GLOBAL_WARMUP_CANDLES) -> list[Dict]:
-        """Unified helper to fetch historical candles from API (live) or DB (backtest)."""
-        if self.fetch_ohlc_fn and not self.is_backtest:
-            # Live Mode: Fetch from API
-            fmt = "%b %d %Y %H%M%S"
-            start_dt = DateUtils.market_timestamp_to_datetime(start_ts)
-            end_dt = DateUtils.market_timestamp_to_datetime(end_ts)
-            history = self.fetch_ohlc_fn(segment, instrument_id, start_dt.strftime(fmt), end_dt.strftime(fmt))
-            # fetch_ohlc_fn should return normalized list of dicts
-            if history:
-                return history[-limit:]
-            # API returned empty — fall through to DB fallback
-            logger.warning(f"⚠️ API returned no data for {instrument_id} ({start_dt.strftime('%Y-%m-%d %H:%M')} → {end_dt.strftime('%Y-%m-%d %H:%M')}). Falling back to DB...")
-
-        # Backtest, Default, or API Fallback: Fetch from DB
-        query = {"i": instrument_id, "t": {"$lte": end_ts}}
-        if start_ts:
-            query["t"]["$gte"] = start_ts
-            
-        history_cursor = list(self.db[settings.OPTIONS_CANDLE_COLLECTION].find(
-            query
-        ).sort("t", -1).limit(limit))
-        return sorted(history_cursor, key=lambda x: x['t'])
-
-    def _warmup_instrument(self, category: str, instrument_id: int, current_ts: float):
-        """
-        Fetches historical 1m candles for the new instrument and warms up the resampler/indicators.
-        Uses intelligent top-up syncing to avoid redundant fetches.
-        """
-        last_sync = self.instrument_last_sync.get(instrument_id)
-        
-        # 1. Temporal Caching: If synced very recently (< 5 mins), skip entirely
-        if last_sync and (current_ts - last_sync) < 300:
-             # logger.debug(f"⚡ Skipping re-warmup for {category} ({instrument_id}). Already synced recently.")
-             return
-
-        # 2. Determine Sync Range
-        is_same_day = False
-        if last_sync:
-            last_dt = DateUtils.market_timestamp_to_datetime(last_sync)
-            current_dt = DateUtils.market_timestamp_to_datetime(current_ts)
-            is_same_day = last_dt.date() == current_dt.date()
-
-        if last_sync and is_same_day:
-            # Top-up: Fetch missing gap since last seen (only within the same day)
-            start_ts = last_sync
-            limit = 500 # Generous cap for a drift gap
-            mode_desc = "Top-up"
-        else:
-            # Full/Initial Warmup: Fetch baseline (e.g. 200 candles)
-            # We do this on a new day to ensure indicators have full historical context
-            start_ts = current_ts - 3600 * 24 * 4 # 4 days back to cover weekends
-            limit = settings.GLOBAL_WARMUP_CANDLES
-            mode_desc = "Initial"
-
-        # 3. Suppress signals during replay logic
-        saved_warming_up = self.is_warming_up
-        self.is_warming_up = True
-        
-        try:
-            start_dt_str = DateUtils.market_timestamp_to_datetime(start_ts).strftime('%Y-%m-%d %H:%M')
-            end_dt_str = DateUtils.market_timestamp_to_datetime(current_ts).strftime('%Y-%m-%d %H:%M')
-            
-            history = self._fetch_historical_candles(2, instrument_id, start_ts, current_ts, limit=limit)
-            
-            if not history:
-                logger.warning(f"⚠️ No history found for {category} ({instrument_id}) warmup. Range: {start_dt_str} → {end_dt_str}")
-                return
-            
-            self._ensure_resampler(instrument_id, InstrumentCategoryType(category))
-            resampler = self.resamplers.get(instrument_id)
-            if resampler:
-                # Suppress heartbeats during warmup replay
-                saved_heartbeat = self.log_heartbeat
-                self.log_heartbeat = False
-                
-                resampler.instrument_id = int(instrument_id)
-                for candle in history:
-                    resampler.add_candle(candle)
-                
-                self.log_heartbeat = saved_heartbeat
-                
-                # 4. Update sync state
-                self.instrument_last_sync[instrument_id] = current_ts
-                
-                # Retrieve description if available
-                desc = self.active_instruments.get(f"{category}_DESC", f"{instrument_id}")
-                logger.info(f"Warmup complete for {category} ({instrument_id} - {desc}): {len(history)} candles ({mode_desc} sync {start_dt_str} → {end_dt_str}).")
-        finally:
-            self.is_warming_up = saved_warming_up
-
-    def _fetch_fallback_quote(self, segment: int, instrument_id: int, current_ts: float | None) -> float | None:
-        """Unified helper to fetch a fallback quote from API (live) or DB (backtest)."""
-        if self.fetch_quote_fn and not self.is_backtest:
-            # Live Mode: Fetch from API
-            quote = self.fetch_quote_fn(segment, instrument_id)
-            if quote and quote.get('p'):
-                logger.info(f"✅ Found API fallback price for {instrument_id}: {quote.get('p')}")
-                return quote.get('p')
-
-        # DB Fallback (Backup or Backtest)
-        query = {"i": instrument_id}
-        if current_ts:
-            query["t"] = {"$lte": current_ts}
-            
-        fallback = self.db['options_candle'].find_one(query, sort=[("t", -1)])
-        if fallback:
-            price = fallback.get('c', fallback.get('p'))
-            if price is not None:
-                logger.info(f"✅ Found DB fallback price for {instrument_id}: {price}")
-                return price
-                
-        return None
+            for cat, is_ce in [("CE", True), ("PE", False)]:
+                new_id, new_desc = self.discovery_service.resolve_option_contract(atm_strike, is_ce, current_ts)
+                if new_id:
+                    new_id_int = int(new_id)
+                    if self.active_instruments.get(cat) != new_id_int:
+                        self.active_instruments[cat] = new_id_int
+                        self.active_instruments[f"{cat}_DESC"] = new_desc
+                        # 1. Ensure Resampler and Reset it for clean start
+                        self._ensure_resampler(new_id_int, InstrumentCategoryType(cat))
+                        self.resamplers[new_id_int].reset() # Reset current_candle and last_period_start
+                        # 2. Extract cached indicators immediately to avoid stale data
+                        cached_indicators = self.indicator_calculator.extract_indicators(new_id_int, InstrumentCategoryType(cat))
+                        if cached_indicators:
+                            self.latest_indicators_state.update(cached_indicators)
+                        # 3. Perform Top-up/Initial Warmup
+                        self.history_service.run_warmup(self, new_id_int, current_ts, cat, use_api=not self.is_backtest)
 
     def _get_fallback_option_price(self, symbol_id: int, current_ts: float | None, is_entry: bool = False) -> float | None:
         """
@@ -356,9 +189,14 @@ class FundManager:
             
         # 2. API/DB Fallback
         logger.info(f"🔍 No live tick for {symbol_id}. Checking fallbacks...")
-        price = self._fetch_fallback_quote(2, symbol_id, current_ts)
-        if price is not None:
-            return price
+        
+        # Try fetching from history service (which handles API/DB)
+        history = self.history_service.fetch_historical_candles(symbol_id, start_ts=0, end_ts=current_ts or 0, limit=1, use_api=not self.is_backtest)
+        if history:
+            price = history[0].get('c', history[0].get('p'))
+            if price is not None:
+                logger.info(f"✅ Found history service fallback price for {symbol_id}: {price}")
+                return price
             
         # 3. Position Manager Fallback (Exits Only)
         if not is_entry and self.position_manager.current_position and str(symbol_id) == self.position_manager.current_position.symbol:
@@ -429,20 +267,12 @@ class FundManager:
                 # In Backtest Mode, if we receive a 1-minute Candle, we explode it into 
                 # 4 virtual ticks (O, H, L, C) to match Socket/Live granularity.
                 if self.is_backtest and is_candle:
-                    o = market_data.get('o', market_data.get('open', price))
-                    h = market_data.get('h', market_data.get('high', price))
-                    l = market_data.get('l', market_data.get('low', price))
-                    c = price
+                    from packages.utils.replay_utils import ReplayUtils
                     
-                    base_t = ts
-                    start_t = base_t - 59
-
-                    # Sequence: Open (0s) -> High (15s) -> Low (30s) -> Close (59s)
-                    # (Matching SocketDataProvider's fidelity)
-                    for p_val, t_val in [(o, start_t), (h, start_t+15), (l, start_t+30), (c, base_t)]:
+                    virtual_ticks = ReplayUtils.explode_bar_to_ticks(int(inst_id) if inst_id else 0, market_data, ts, default_price=price)
+                    for v_tick in virtual_ticks:
                         if not self.position_manager.current_position:
                             break
-                        v_tick = {'i': inst_id, 'p': p_val, 't': t_val}
                         self.position_manager.update_tick(v_tick, nifty_price=nifty_price, indicators=mapped)
                 else:
                     self.position_manager.update_tick(market_data, nifty_price=nifty_price, indicators=mapped)
@@ -535,9 +365,8 @@ class FundManager:
                 return
             
             # 0. Stale SignalType Protection (Max 30 minutes)
-            # This prevents the bot from acting on "catch-up" data using the latest known market time
             if ts and self.latest_market_time and (self.latest_market_time - ts) > 1800:
-                 logger.warning(f"⚠️ SignalType ignored: Triggered by stale data from {ts} (>{1800}s behind latest market time {self.latest_market_time})")
+                 logger.warning(f"⚠️ SignalType ignored: Triggered by stale data from {ts}")
                  return
 
             # Use period end for signal/entry time (signal is finalized at end of candle)
@@ -548,11 +377,7 @@ class FundManager:
             if self.position_manager.current_position:
                 if signal == SignalType.EXIT:
                     # Fallback to market time if signal_ts is missing
-                    ts_dt = (DateUtils.market_timestamp_to_datetime(signal_ts) 
-                             if isinstance(signal_ts, (int, float)) 
-                             else DateUtils.market_timestamp_to_datetime(self.latest_market_time) 
-                             if self.latest_market_time 
-                             else datetime.now(DateUtils.MARKET_TZ))
+                    ts_dt = self._resolve_signal_time(signal_ts)
                     ts_str = ts_dt.strftime('%d-%b %H:%M')
                     logger.info(TradeFormatter.format_signal("EXIT", reason, ts_str, self.global_timeframe, self.latest_indicators_state))
                     
@@ -571,11 +396,7 @@ class FundManager:
                     return
                 
                 # SignalType changed (flip) - log it and handle closure
-                ts_dt = (DateUtils.market_timestamp_to_datetime(signal_ts) 
-                         if isinstance(signal_ts, (int, float)) 
-                         else DateUtils.market_timestamp_to_datetime(self.latest_market_time) 
-                         if self.latest_market_time 
-                         else datetime.now(DateUtils.MARKET_TZ))
+                ts_dt = self._resolve_signal_time(signal_ts)
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
                 logger.info(TradeFormatter.format_signal(signal.name, reason, ts_str, self.global_timeframe, self.latest_indicators_state))
                 
@@ -593,11 +414,7 @@ class FundManager:
                 intent = MarketIntentType.LONG if signal == SignalType.LONG else MarketIntentType.SHORT
                 
                 # No existing position - log new entry signal
-                ts_dt = (DateUtils.market_timestamp_to_datetime(signal_ts) 
-                         if isinstance(signal_ts, (int, float)) 
-                         else DateUtils.market_timestamp_to_datetime(self.latest_market_time) 
-                         if self.latest_market_time 
-                         else datetime.now(DateUtils.MARKET_TZ))
+                ts_dt = self._resolve_signal_time(signal_ts)
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
                 logger.info(TradeFormatter.format_signal(signal.name, reason, ts_str, self.global_timeframe, self.latest_indicators_state))
                 
@@ -753,3 +570,11 @@ class FundManager:
         for k, v in inverse_source.items():
             if k.startswith(inverse_prefix):
                 target[k.replace(inverse_prefix, "inverse-", 1)] = v
+
+    def _resolve_signal_time(self, signal_ts: float | None) -> datetime:
+        """Centralized helper to resolve a signal timestamp to a market-aware datetime."""
+        if isinstance(signal_ts, (int, float)):
+            return DateUtils.market_timestamp_to_datetime(signal_ts)
+        if self.latest_market_time:
+            return DateUtils.market_timestamp_to_datetime(self.latest_market_time)
+        return datetime.now(DateUtils.MARKET_TZ)

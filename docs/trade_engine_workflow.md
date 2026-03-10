@@ -1,6 +1,6 @@
 # Trade Engine Workflow (Multi-Timeframe Architecture - MTFA)
 
-This document outlines the flow of data and execution within the Trade Bot V2 engine, which has been refactored to natively support Multi-Timeframe Analysis (MTFA) based on JSON-DSL strategy rules from the database.
+This document outlines the flow of data and execution within the Trade Bot V2 engine, which has been refactored to natively support Multi-Timeframe Analysis (MTFA) based on strategy configuration from the database.
 
 ## 1. Workflow Diagram (MTFA)
 
@@ -99,7 +99,7 @@ graph TD
 
 ### 2.2. Fund Manager (`packages/tradeflow/fund_manager.py`)
 - The **Active Orchestrator Engine**.
-- Initializes sub-components based on a `strategy_rules` DB document.
+- Initializes sub-components based on a `strategy_indicators` DB document.
 - **Tick Normalization**: Natively handles both raw ticks (price-only) and base 1-minute candles. If a raw tick is received, it automatically populates standard OHLC keys (`o`, `h`, `l`, `c`) to ensure compatibility with downstream resamplers and ML strategy windows.
 - Dynamically spawns `CandleResampler` instances for every unique timeframe required by the active strategy indicators.
 - Routes incoming ticks/base candles into all active resamplers.

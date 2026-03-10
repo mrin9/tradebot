@@ -85,28 +85,17 @@ class SocketDataProvider:
                 base_t = doc['t']
                 
                 # Tick Breakdown logic (4 sub-ticks per 1-min bar)
-                # Note: base_t in our DB is end-of-minute (XX:XX:59)
-                start_t = base_t - 59
-                vol_chunk = doc.get('v', 0) // 4
+                from packages.utils.replay_utils import ReplayUtils
+                virtual_ticks = ReplayUtils.explode_bar_to_ticks(inst_id, doc, base_t)
                 
-                # 1. Open
-                await self._emit_1501_tick(inst_id, doc['o'], start_t, vol_chunk)
-                if delay > 0: await asyncio.sleep(delay)
-                
-                # 2. High
-                if not self.running: break
-                await self._emit_1501_tick(inst_id, doc['h'], start_t + 15, vol_chunk)
-                if delay > 0: await asyncio.sleep(delay)
-                
-                # 3. Low
-                if not self.running: break
-                await self._emit_1512_snapshot(inst_id, doc['l'], start_t + 30, vol_chunk)
-                if delay > 0: await asyncio.sleep(delay)
-                
-                # 4. Close
-                if not self.running: break
-                await self._emit_1501_tick(inst_id, doc['c'], base_t, vol_chunk)
-                if delay > 0: await asyncio.sleep(delay)
+                for v_tick in virtual_ticks:
+                    if not self.running: break
+                    if v_tick['is_snapshot']:
+                        await self._emit_1512_snapshot(inst_id, v_tick['p'], v_tick['t'], v_tick['v'])
+                    else:
+                        await self._emit_1501_tick(inst_id, v_tick['p'], v_tick['t'], v_tick['v'])
+                    if delay > 0:
+                        await asyncio.sleep(delay)
                 
                 count += 1
                 if count % 100 == 0:

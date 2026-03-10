@@ -37,13 +37,14 @@ def test_orchestration():
     """
     # 1. Setup a valid strategy config
     strategy_config = {
-        "ruleId": "test-rule",
+        "strategyId": "test-rule",
         "name": "Test Rule",
         "indicators": [
-            {"indicatorId": "rsi_14", "displayLabel": "RSI", "type": "RSI", "params": {"period": 14}, "timeframe": 60}
+            {"indicatorId": "rsi-14", "displayLabel": "RSI", "type": "RSI", "params": {"period": 14}, "timeframe": 60}
         ],
         "entry": {
             "intent": "AUTO",
+            "instrument_kind": "CASH",
             "evaluateSpot": True,
             "evaluateInverse": False,
             "operator": "AND",
@@ -69,7 +70,7 @@ from packages.tradeflow.types import CandleType, SignalType, MarketIntentType
 
 class DummyRSIStrategy:
     def on_resampled_candle_closed(self, candle: CandleType, indicators: Dict[str, Any], current_position_intent: Optional[MarketIntentType] = None) -> Tuple[SignalType, str, float]:
-        rsi = indicators.get("NIFTY_rsi_14")
+        rsi = indicators.get("nifty-rsi-14")
         if rsi is not None and rsi > 70:
             return SignalType.LONG, "RSI > 70", 1.0
         return SignalType.NEUTRAL, "Pass-through", 0.0
@@ -78,12 +79,12 @@ class DummyRSIStrategy:
     with os.fdopen(fd, 'w') as f:
         f.write(dummy_strategy_code)
         
-    position_config = {"python_strategy_path": f"{path}:DummyRSIStrategy"}
+    position_config = {"python_strategy_path": f"{path}:DummyRSIStrategy", "instrument_type": "CASH"}
     fm = FundManager(strategy_config=strategy_config, position_config=position_config, is_backtest=True)
     
     signals_received = []
     original_on_signal = fm.position_manager.on_signal
-    fm.position_manager.on_signal = lambda data: signals_received.append(data) or original_on_signal(data)
+    fm.on_signal = lambda data: signals_received.append(data)
     
     # 2. Feed enough data to trigger indicators (Spot ID: 26000)
     start_price = 100

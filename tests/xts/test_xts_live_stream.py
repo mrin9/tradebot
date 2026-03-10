@@ -1,5 +1,5 @@
 """
-Tests for MarketDataListener, verifying socket connection and data subscription.
+Tests for LiveMarketService, verifying socket connection and data subscription.
 """
 import sys
 import os
@@ -9,13 +9,14 @@ import logging
 # Add project root
 sys.path.append(os.getcwd())
 
-from packages.data.stream.listener import MarketDataListener
+from packages.services.live_market import LiveMarketService
+from packages.config import settings
 from packages.utils.log_utils import setup_logger
 
 logger = setup_logger("TestStream")
 
 def test_listener():
-    """Verifies that the MarketDataListener can connect to the XTS socket and receive ticks."""
+    """Verifies that the LiveMarketService can connect to the XTS socket and receive ticks."""
     logger.info("Starting Stream Listener Test...")
     
     ticks_received = 0
@@ -26,23 +27,17 @@ def test_listener():
         if ticks_received % 10 == 0:
             logger.info(f"Received {ticks_received} ticks. Last: {tick['i']} -> {tick['p']}")
 
-    listener = MarketDataListener(on_tick_callback=on_tick)
+    service = LiveMarketService()
     
-    # Get instruments (Requires active contracts in DB)
-    instrs = listener.get_active_instruments()
-    
-    # If no instruments, manually add Nifty
-    if not instrs:
-        logger.warning("No active instruments found in DB! Adding NIFTY manual.")
-        instrs = [{'exchangeSegment': 1, 'exchangeInstrumentID': 26000}]
-        
-    logger.info(f"Subscribing to {len(instrs)} instruments...")
-    
-    # Start in background
-    listener.start(instrs, background=True)
+    # Subscribe to Nifty
+    service.start(on_tick=on_tick)
+    time.sleep(2)  # Wait for socket connection
+    service.subscribe([settings.NIFTY_EXCHANGE_INSTRUMENT_ID])
     
     logger.info("Listening for 15 seconds...")
     time.sleep(15)
+    
+    service.stop()
     
     logger.info(f"Test Complete. Total Ticks: {ticks_received}")
     

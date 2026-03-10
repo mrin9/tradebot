@@ -22,8 +22,10 @@ from packages.livetrade.live_trader import LiveTradeEngine
 from packages.utils.mongo import MongoRepository, get_db
 from packages.utils.date_utils import DateUtils
 
-from packages.utils.market_utils import MarketUtils
+from packages.data.connectors.xts_normalizer import XTSNormalizer
 from packages.utils.log_utils import setup_logger
+
+from packages.services.backtest_engine import BacktestEngine
 from scripts.seed_strategy_indicators import seed_strategy_indicators
 from packages.config import settings
 
@@ -61,7 +63,8 @@ def update_master():
     """Sync the internal instrument database with XTS."""
     typer.echo("Syncing Master Instruments...")
     try:
-        MasterDataCollector().update_master_db()
+        collector = MasterDataCollector()
+        collector.update_master_db()
         typer.secho("✅ Master Database Updated.", fg=typer.colors.GREEN)
     except Exception as e:
         typer.secho(f"❌ Error: {e}", fg=typer.colors.RED)
@@ -75,7 +78,8 @@ def sync_history(
     try:
         s_dt, e_dt = DateUtils.parse_date_range(dr)
         typer.echo(f"Syncing NIFTY and Options history from {s_dt} to {e_dt}...")
-        HistoricalDataCollector().sync_nifty_and_options_history(s_dt, e_dt)
+        collector = HistoricalDataCollector()
+        collector.sync_nifty_and_options_history(s_dt, e_dt)
         typer.secho("✅ Sync Complete.", fg=typer.colors.GREEN)
     except Exception as e:
         typer.secho(f"❌ Error: {e}", fg=typer.colors.RED)
@@ -102,8 +106,9 @@ def check_gaps(
     """Identify missing periods in NIFTY/Options history compared to the expected data."""
     dr = date_range
     try:
-        start_str, end_str = DateUtils.parse_date_range(dr)
-        do_check_data_gaps(start_str, end_str)
+        s_dt, e_dt = DateUtils.parse_date_range(dr)
+        from packages.utils.date_utils import FMT_ISO_DATE
+        do_check_data_gaps(s_dt.strftime(FMT_ISO_DATE), e_dt.strftime(FMT_ISO_DATE))
     except Exception as e:
         typer.secho(f"❌ Error: {e}", fg=typer.colors.RED)
 
@@ -403,7 +408,8 @@ def refresh_contracts(
     dr = date_range
     try:
         typer.echo(f"Refreshing active contracts for {dr}...")
-        ContractManager().refresh_active_contracts(dr)
+        manager = ContractManager()
+        manager.refresh_active_contracts(dr)
         typer.secho("✅ Active contracts updated.", fg=typer.colors.GREEN)
     except Exception as e:
         typer.secho(f"❌ Error: {e}", fg=typer.colors.RED)

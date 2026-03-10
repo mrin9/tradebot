@@ -92,7 +92,8 @@ def test_live_trader_recorded_at_reflects_market_time():
         "quantity": 50,
         "python_strategy_path": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
         "stop_loss_points": 10,
-        "target_points": 20
+        "target_points": 20,
+        "record_papertrade_db": True
     }
     
     mock_db = MagicMock()
@@ -100,7 +101,7 @@ def test_live_trader_recorded_at_reflects_market_time():
     
     # Use context managers to safely patch and unpatch
     with patch("packages.utils.mongo.MongoRepository.get_db", return_value=mock_db), \
-         patch("packages.data.connectors.xts_wrapper.XTSManager.get_market_client", return_value=MagicMock()), \
+         patch("packages.data.connectors.xts_wrapper.XTSManager._get_market_client", return_value=MagicMock()), \
          patch("packages.data.connectors.xts_wrapper.XTSManager.get_market_data_socket", return_value=mock_soc):
         
         engine = LiveTradeEngine(strategy_config, position_config)
@@ -110,8 +111,8 @@ def test_live_trader_recorded_at_reflects_market_time():
         engine.fund_manager.latest_market_time = fake_market_ts
         fake_market_iso = DateUtils.market_timestamp_to_iso(fake_market_ts)
         
-        event_data = {"type": "test_event", "instrument": "NIFTY"}
-        engine._record_papertrade_event(event_data)
+        event_data = {"type": "test_event", "instrument": "NIFTY", "tradetime": "2025-03-06T10:00:00"}
+        engine.event_service.record_trade_event(event_data, engine.fund_manager)
         
         # Verify what was inserted into DB
         inserted_doc = mock_db["papertrade"].insert_one.call_args[0][0]

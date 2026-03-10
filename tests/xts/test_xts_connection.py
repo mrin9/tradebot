@@ -22,7 +22,7 @@ def test_api_login():
     logger.info("--- Testing XTS Market Data API Login ---")
     try:
         # This will trigger the login flow if not already logged in
-        client = XTSManager.get_market_client()
+        client = XTSManager._get_market_client()
         
         if client.token:
             logger.info(f"✅ API Login Successful! Token: {client.token[:10]}...")

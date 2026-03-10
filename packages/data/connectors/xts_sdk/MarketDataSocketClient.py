@@ -8,7 +8,7 @@ logger = setup_logger(__name__)
 class MDSocket_io:
     """A Socket.IO client for XTS Market Data."""
 
-    def __init__(self, token, userID, logger=False, engineio_logger=False, get_raw_data=True):
+    def __init__(self, token, user_id, logger=False, engineio_logger=False, get_raw_data=True):
         if not logger:
             import logging
             # Set to a disabled logger if False
@@ -37,15 +37,15 @@ class MDSocket_io:
         self.sid.eio.ping_timeout = 120 
         self.get_raw_data = get_raw_data
 
-        self.userID = userID
+        self.user_id = user_id
         self.token = token
         self.port = settings.XTS_ROOT_URL
-        self.broadcastMode = settings.XTS_BROADCAST_MODE
+        self.broadcast_mode = settings.XTS_BROADCAST_MODE
         
         # Connection URL
-        publishFormat = 'JSON'
+        publish_format = 'JSON'
         port_part = f'{self.port}/?token='
-        self.connection_url = port_part + token + '&userID=' + self.userID + '&publishFormat=' + publishFormat + '&broadcastMode=' + self.broadcastMode
+        self.connection_url = port_part + token + '&userID=' + self.user_id + '&publishFormat=' + publish_format + '&broadcastMode=' + self.broadcast_mode
 
         self.on_connect = None
         self.on_message = None

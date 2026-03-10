@@ -3,7 +3,7 @@ Tests for LiveTradeEngine logic and MarketUtils tick normalization.
 """
 import pytest
 from unittest.mock import patch
-from packages.utils.market_utils import MarketUtils
+from packages.data.connectors.xts_normalizer import XTSNormalizer
 from packages.livetrade.live_trader import LiveTradeEngine
 
 
@@ -24,7 +24,7 @@ def test_engine_initialization():
         "target_points": 20
     }
     
-    with patch('packages.data.connectors.xts_wrapper.XTSManager.get_market_client'), \
+    with patch('packages.data.connectors.xts_wrapper.XTSManager._get_market_client'), \
          patch('packages.data.connectors.xts_wrapper.XTSManager.get_market_data_socket'):
         
         engine = LiveTradeEngine(mock_strategy, pos_cfg)

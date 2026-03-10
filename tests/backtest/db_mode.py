@@ -8,7 +8,7 @@ from packages.utils.date_utils import DateUtils
 from packages.utils.mongo import MongoRepository
 from tests.backtest.backtest_base import BacktestDataFeeder
 from packages.config import settings
-from packages.utils.market_utils import MarketUtils
+from packages.data.connectors.xts_normalizer import XTSNormalizer
 
 logger = setup_logger("DBFeeder")
 

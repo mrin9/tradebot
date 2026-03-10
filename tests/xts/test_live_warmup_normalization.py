@@ -18,7 +18,7 @@ def test_live_trader_warmup_normalization():
     }
     
     # Mock dependencies to avoid real connections
-    with patch('packages.data.connectors.xts_wrapper.XTSManager.get_market_client'), \
+    with patch('packages.data.connectors.xts_wrapper.XTSManager._get_market_client') as mock_xts, \
          patch('packages.data.connectors.xts_wrapper.XTSManager.get_market_data_socket'), \
          patch('packages.utils.mongo.MongoRepository.get_db'):
         
@@ -30,10 +30,12 @@ def test_live_trader_warmup_normalization():
         # We expect parsed 't' to be 1772711099 - 19800 = 1772691299
         mock_ohlc_str = "1772711099|100|110|90|105|1000|0|"
         
-        engine.xt_market.get_ohlc.return_value = {
+        mock_client = MagicMock()
+        mock_client.get_ohlc.return_value = {
             "type": "success",
             "result": {"dataReponse": mock_ohlc_str}
         }
+        mock_xts.return_value = mock_client
         
         candles = engine._fetch_ohlc_api(1, 26000, "Mar 05 2026 091500", "Mar 05 2026 114957")
         

@@ -6,14 +6,14 @@ from packages.config import settings
 @pytest.mark.live
 def test_live_market_login():
     """Verify that we can login to XTS Market Data API."""
-    client = XTSManager.get_market_client()
+    client = XTSManager._get_market_client()
     assert client is not None
     assert client.token is not None
 
 @pytest.mark.live
 def test_live_interactive_login():
     """Verify that we can login to XTS Interactive API."""
-    client = XTSManager.get_interactive_client()
+    client = XTSManager._get_interactive_client()
     assert client is not None
     assert client.token is not None
 
@@ -25,9 +25,9 @@ def test_live_get_quote_structure():
     response = XTSManager.call_api(
         "market",
         "get_quote",
-        Instruments=[{'exchangeSegment': 1, 'exchangeInstrumentID': nifty_id}],
-        xtsMessageCode=1501,
-        publishFormat="1"
+        instruments=[{'exchangeSegment': 1, 'exchangeInstrumentID': nifty_id}],
+        xts_message_code=1501,
+        publish_format="1"
     )
     
     assert response['type'] == 'success'
@@ -43,11 +43,11 @@ def test_live_get_ohlc_structure():
     response = XTSManager.call_api(
         "market",
         "get_ohlc",
-        exchangeSegment=1,
-        exchangeInstrumentID=nifty_id,
-        startTime='Feb 27 2026 100000', # Known trading day
-        endTime='Feb 27 2026 110000',
-        compressionValue=60
+        exchange_segment=1,
+        exchange_instrument_id=nifty_id,
+        start_time='Feb 27 2026 100000', # Known trading day
+        end_time='Feb 27 2026 110000',
+        compression_value=60
     )
     
     assert response['type'] == 'success'
@@ -58,7 +58,7 @@ def test_live_get_ohlc_structure():
 @pytest.mark.live
 def test_live_get_master_structure():
     """Verify that get_master returns pipe-separated data."""
-    response = XTSManager.call_api("market", "get_master", exchangeSegmentList=['NSECM'])
+    response = XTSManager.call_api("market", "get_master", exchange_segment_list=['NSECM'])
     
     assert response['type'] == 'success'
     result = response.get('result')

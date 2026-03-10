@@ -10,7 +10,7 @@ def calc_instance():
     # Mock indicator config from strategy_indicators DB format
     config = [
         {
-            "indicatorId": "fast_ema",
+            "indicatorId": "fast-ema",
             "indicator": "ema-5",
             "InstrumentType": "SPOT"
         },
@@ -34,15 +34,15 @@ def test_single_category_calculation(calc_instance):
         # Use unique timestamps to avoid deduplication logic
         res = calc_instance.add_candle({'c': i * 10, 'o': 0, 'h': 0, 'l': 0, 'v': 0, 't': 1000 + i*60}, instrument_category=InstrumentCategoryType.SPOT)
 
-    assert 'SPOT_fast_ema' in res
-    assert res['SPOT_fast_ema'] > 0
-    assert 'SPOT_fast_ema_prev' in res
-    assert 'CE_rsi' not in res # RSI is on CE
+    assert 'nifty-fast-ema' in res
+    assert res['nifty-fast-ema'] > 0
+    assert 'nifty-fast-ema-prev' in res
+    assert 'ce-rsi' not in res # RSI is on CE
     
     # EMA of linear sequence 10,20...200 with span 5 should lag by ~ (5-1)/2 * 10 = 20
     # 200 - 20 = 180.
-    assert 170 < res['SPOT_fast_ema'] < 190
-    assert 160 < res['SPOT_fast_ema_prev'] < 180
+    assert 170 < res['nifty-fast-ema'] < 190
+    assert 160 < res['nifty-fast-ema-prev'] < 180
 
 def test_dynamic_category_init(calc_instance):
     # Feed candle to PE (not in config)

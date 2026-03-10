@@ -90,45 +90,48 @@ def main():
         
     rule_config = fetch_strategy_config(args.strategy_id, args.python_strategy_path)
     
-    # Priority: CLI Argument > DB Configuration
     strategy_path = args.python_strategy_path or rule_config.get("pythonStrategyPath")
-    
     if not strategy_path:
-        logger.error("--python-strategy-path is required if not defined in the strategy document (e.g. packages/tradeflow/python_strategies.py:TripleLockStrategy)")
+        logger.error("--python-strategy-path is required.")
         sys.exit(1)
         
-    # Inject back into args for consistency if loaded from DB
     args.python_strategy_path = strategy_path
-    
-    fm = setup_fund_manager(args, rule_config)
-    bot = BacktestBot(fm, args=args)
-    
-    if args.mode == "db":
-        try:
-            from tests.backtest.db_mode import DBFeeder
-            feeder = DBFeeder()
-        except ImportError:
-            logger.error("DBFeeder not implemented yet.")
-            sys.exit(1)
-    else:
-        try:
-            from tests.backtest.socket_mode import SocketFeeder
-            feeder = SocketFeeder()
-        except ImportError:
-            logger.error("SocketFeeder not implemented yet.")
-            sys.exit(1)
-            
+
+    pos_config = {
+        "symbol": "NIFTY",
+        "quantity": 1,
+        "stop_loss_points": args.stop_loss_points,
+        "target_points": args.target_points,
+        "trailing_sl_points": args.trailing_sl_points,
+        "tsl_indicator_id": args.tsl_indicator_id,
+        "use_break_even": args.use_break_even,
+        "instrument_type": args.instrument_type,
+        "strike_selection": args.strike_selection,
+        "invest_mode": args.invest_mode,
+        "budget": args.budget,
+        "python_strategy_path": args.python_strategy_path,
+        "pyramid_steps": args.pyramid_steps,
+        "pyramid_confirm_pts": args.pyramid_confirm_pts,
+        "price_source": args.price_source
+    }
+
+    from packages.services.backtest_engine import BacktestEngine
+    engine = BacktestEngine(
+        strategy_config=rule_config,
+        position_config=pos_config,
+        start_date=args.start,
+        end_date=args.end,
+        mode=args.mode
+    )
+
     try:
-        feeder.start(bot, fm)
+        engine.run()
     except KeyboardInterrupt:
         logger.info("Backtest Interrupted.")
     except Exception as e:
-        logger.error(f"Backtest failed with error: {e}")
+        logger.error(f"Backtest failed: {e}")
         import traceback
         logger.error(traceback.format_exc())
-    finally:
-        logger.info("Generating Backtest Report...")
-        bot._report()
 
 if __name__ == "__main__":
     main()

@@ -21,7 +21,7 @@ def test_market_login_success(mock_xts):
     XTSManager._market_client = None
     
     # Use force_login=True to bypass session file and trigger marketdata_login
-    client = XTSManager.get_market_client(force_login=True)
+    client = XTSManager._get_market_client(force_login=True)
     assert client is not None
     mock_instance.marketdata_login.assert_called_once()
 
@@ -43,7 +43,7 @@ def test_get_ohlc_parsing(mock_xts):
     # We should test that in a normalization test or similar.
     
     XTSManager._market_client = mock_instance
-    response = XTSManager.get_market_client().get_ohlc(
+    response = XTSManager._get_market_client().get_ohlc(
         exchangeSegment=1,
         exchangeInstrumentID=26000,
         startTime='Mar 04 2026 100000',
@@ -73,7 +73,7 @@ def test_get_quote_parsing(mock_xts):
     }
     
     XTSManager._market_client = mock_instance
-    response = XTSManager.get_market_client().get_quote(
+    response = XTSManager._get_market_client().get_quote(
         Instruments=[{'exchangeSegment': 1, 'exchangeInstrumentID': 26000}],
         xtsMessageCode=1501,
         publishFormat="1"

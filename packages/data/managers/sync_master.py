@@ -3,7 +3,7 @@ from packages.data.connectors.xts_wrapper import XTSManager
 from packages.utils.mongo import MongoRepository
 from packages.utils.log_utils import setup_logger
 from packages.config import settings
-from packages.utils.market_utils import MarketUtils
+from packages.data.connectors.xts_normalizer import XTSNormalizer
 from packages.utils.date_utils import DateUtils
 
 logger = setup_logger(__name__)
@@ -19,26 +19,25 @@ class MasterDataCollector:
         """
         Main execution method to sync master data.
         """
-        xts = XTSManager.get_market_client()
-
         # 1. Fetch Data
-        segments = [xts.EXCHANGE_NSECM, xts.EXCHANGE_NSEFO]
+        from packages.data.connectors.xts_sdk.XTSConnect import XTSConnect
+        segments = [XTSConnect.EXCHANGE_NSECM, XTSConnect.EXCHANGE_NSEFO]
         logger.info(f"Fetching master data for segments: {segments}")
         
-        response = xts.get_master(exchangeSegmentList=segments)
-        
-        if not isinstance(response, dict) or response.get('type') != 'success' or 'result' not in response:
-            logger.error(f"Failed to fetch master data: {response}")
-            return False
+        response = XTSManager.call_api(
+            "market", 
+            "get_master", 
+            exchange_segment_list=segments
+        )
 
         content = response['result']
         logger.info(f"Master data received. Size: {len(content)} chars. Parsing...")
 
         # 2. Parse
-        raw_data = MarketUtils.parse_xts_master_data(content)
+        raw_docs = XTSNormalizer.parse_xts_master_data(content)
         
         # 3. Filter Logic (Replicated from legacy update_master_instrument.py)
-        filtered_data = self._filter_instruments(raw_data)
+        filtered_data = self._filter_instruments(raw_docs)
         
         if not filtered_data:
             logger.warning("No instruments remained after filtering.")

@@ -37,7 +37,7 @@ def test_fund_manager_tick_normalization_inplace():
     }
     
     position_config = {"python_strategy_path": "packages/tradeflow/python_strategies.py:TripleLockStrategy"}
-    fm = FundManager(strategy_config={"ruleId": "test", "indicators": []}, position_config=position_config, is_backtest=True)
+    fm = FundManager(strategy_config={"strategyId": "test", "indicators": []}, position_config=position_config, is_backtest=True)
     
     # 2. Feed the tick
     fm.on_tick_or_base_candle(tick)
