@@ -428,6 +428,7 @@ def live_trade(
     target_points: Annotated[str, typer.Option("--target-points", "-t", help="Target Points (Comma separated)")] = "15,25,45",
     trailing_sl_points: Annotated[float, typer.Option("--trailing-sl-points", "-L", help="Trailing Stop Loss Points")] = 15.0,
     use_break_even: Annotated[bool, typer.Option("--use-break-even", "-e", help="Enable Break-even Trailing")] = True,
+    tsl_indicator_id: Annotated[Optional[str], typer.Option(help="Indicator ID for Trailing SL (e.g. active-ema-5)")] = None,
     record_papertrade: Annotated[bool, typer.Option(help="Record detailed trade logs in 'paper_trades' collection")] = True,
     debug: Annotated[bool, typer.Option(help="Enable Socket Debug Logging")] = False
 ):
@@ -454,6 +455,7 @@ def live_trade(
             "strike_selection": strike_selection.upper(),
             "instrument_type": "OPTIONS",
             "use_break_even": use_break_even,
+            "tsl_indicator_id": tsl_indicator_id,
             "record_papertrade_db": record_papertrade,
             "symbol": "NIFTY",
             "python_strategy_path": python_strategy_path,
