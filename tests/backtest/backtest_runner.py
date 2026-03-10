@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+from typing import Optional
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -35,7 +36,7 @@ def get_parser():
     parser.add_argument("--tsl-indicator-id", type=str, default=None, help="Indicator ID for Trailing Stop Loss (e.g. active-ema-5)")
     return parser
 
-def fetch_strategy_config(strategy_id: str | None, python_strategy_path: str | None):
+def fetch_strategy_config(strategy_id: Optional[str], python_strategy_path: Optional[str]):
     """Build strategy_config for FundManager. Optional strategy_id loads indicators from DB."""
     if strategy_id:
         db = MongoRepository.get_db()

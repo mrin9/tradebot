@@ -2,6 +2,7 @@ import sys
 import os
 from datetime import datetime
 from abc import ABC, abstractmethod
+from typing import List, Dict, Optional, Union
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -88,7 +89,7 @@ class BacktestBot:
         self._last_pnl_checkpoint = current_total_pnl
         logger.info(f"Recorded Daily PnL for {day_str}: {int(daily_increment):,} | Total: {int(current_total_pnl):,}")
 
-    def _log_config(self, trading_days: List[str] | None = None):
+    def _log_config(self, trading_days: Optional[List[str]] = None):
         """
         Displays the final configuration being used.
         """
