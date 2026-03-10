@@ -24,7 +24,7 @@ from packages.utils.date_utils import DateUtils
 
 from packages.utils.market_utils import MarketUtils
 from packages.utils.log_utils import setup_logger
-from packages.utils.seed_strategy_rules import seed_strategy_rules
+from scripts.seed_strategy_indicators import seed_strategy_indicators
 from packages.config import settings
 
 app = typer.Typer(help="Trade Bot V2 Management CLI")
@@ -50,7 +50,7 @@ def run_pytest(test_path: str):
 def ensure_indexes():
     """Verify and create all necessary MongoDB indexes for performance."""
     try:
-        from packages.utils.db_manager import DatabaseManager
+        from scripts.db_init import DatabaseManager
         DatabaseManager.ensure_all_indexes()
         typer.secho("✅ Index synchronization complete.", fg=typer.colors.GREEN)
     except Exception as e:
@@ -102,10 +102,7 @@ def check_gaps(
     """Identify missing periods in NIFTY/Options history compared to the expected data."""
     dr = date_range
     try:
-        start_str = dr
-        end_str = dr
-        if "|" in dr:
-            start_str, end_str = dr.split("|")
+        start_str, end_str = DateUtils.parse_date_range(dr)
         do_check_data_gaps(start_str, end_str)
     except Exception as e:
         typer.secho(f"❌ Error: {e}", fg=typer.colors.RED)
@@ -147,19 +144,16 @@ def crossover(
 
 @app.command()
 def backtest(
-    rule_id: Annotated[Optional[str], typer.Option("--rule-id", "-r", help="Strategy Rule ID")] = None,
+    strategy_id: Annotated[Optional[str], typer.Option("--strategy-id", "-s", help="Strategy Indicator ID")] = None,
     start: Annotated[Optional[str], typer.Option(help="Start Date (YYYY-MM-DD)")] = None,
     end: Annotated[Optional[str], typer.Option(help="End Date (YYYY-MM-DD)")] = None,
     mode: Annotated[Optional[str], typer.Option(help="Backtest mode: db or socket")] = None,
     budget: Annotated[Optional[float], typer.Option("--budget", "-b", help="Initial Capital")] = None,
     invest_mode: Annotated[Optional[str], typer.Option("--invest-mode", "-i", help="ReInvest Type: fixed or compound")] = None,
-    stop_loss_points: Annotated[Optional[float], typer.Option("--stop-loss-points", "-s", help="Stop Loss Points")] = None,
+    stop_loss_points: Annotated[Optional[float], typer.Option("--stop-loss-points", "-l", help="Stop Loss Points")] = None,
     use_break_even: Annotated[Optional[bool], typer.Option("--use-break-even", "-e", help="Enable Break-Even trailing")] = None,
     trailing_sl_points: Annotated[Optional[float], typer.Option("--trailing-sl-points", "-L", help="Trailing Stop Loss Points")] = None,
     strike_selection: Annotated[Optional[str], typer.Option("--strike-selection", "-S", help="Option Strike Type (ATM, ITM, OTM)")] = None,
-    strategy_mode: Annotated[Optional[str], typer.Option(help="Strategy Mode: rule, ml, or python_code")] = None,
-    python_strategy_path: Annotated[Optional[str], typer.Option(help="Path to custom python strategy file")] = None,
-    ml_model_path: Annotated[Optional[str], typer.Option(help="Path to ML model")] = None,
     pyramid_steps: Annotated[Optional[str], typer.Option(help="Pyramid entry percentages (e.g., 25,50,25 or 100)")] = None,
     pyramid_confirm_pts: Annotated[Optional[float], typer.Option(help="Pyramid confirmation points")] = None,
     target_points: Annotated[Optional[str], typer.Option("--target-points", "-t", help="Target steps (comma separated, e.g. 15,25,50)")] = None,
@@ -167,7 +161,34 @@ def backtest(
     """Execute a strategy against historical data (Interactive)."""
     db = get_db()
     
-    # 1. Mode
+    # Initialize variables to avoid UnboundLocalError
+    python_strategy_path = None
+    tsl_indicator_id = None
+
+    # 1. Strategy ID (Primary selection first)
+    if not strategy_id:
+        strategies = list(db["strategy_indicators"].find({"enabled": True}, {"strategyId": 1, "name": 1}))
+        choices = [questionary.Choice(title=f"{s.get('name', 'Unnamed')} ({s['strategyId']})", value=s["strategyId"]) for s in strategies]
+        choices.append(questionary.Choice(title="Skip (use default indicators)", value="SKIP"))
+        choices.append(questionary.Choice(title="Back", value="BACK"))
+        
+        strategy_id = questionary.select(
+            "Select Strategy for indicators:", 
+            choices=choices,
+            default="triple-confirmation" if any(s['strategyId'] == 'triple-confirmation' for s in strategies) else None
+        ).ask()
+
+    if strategy_id == "BACK": return
+    if strategy_id == "SKIP": strategy_id = ""
+
+    # Fetch configuration for path and TSL
+    if strategy_id:
+        strat_doc = db["strategy_indicators"].find_one({"strategyId": strategy_id})
+        if strat_doc:
+            python_strategy_path = strat_doc.get("pythonStrategyPath")
+            tsl_indicator_id = strat_doc.get("tslIndicatorId")
+
+    # 2. Mode
     if not mode:
         mode = questionary.select("Select Backtest Mode:", choices=["db", "socket"]).ask()
     if not mode: return
@@ -215,102 +236,74 @@ def backtest(
         invest_mode = questionary.select("ReInvest Type:", choices=["fixed", "compound"]).ask()
     if not invest_mode: return
 
-    # 6. Enable Trailing Stop Loss
-    trailing_choice = None
-    if trailing_sl is None:
-        trailing_choice = questionary.select("Enable Trailing Stop Loss?", choices=["Yes", "No"]).ask()
-    
-    # 7. Stop Loss
-    if sl is None:
+    # 7. Stop Loss & Trailing SL
+    if stop_loss_points is None:
         sl_str = questionary.text("Stop Loss Points:", default="15").ask()
-        sl = float(sl_str) if sl_str else 15.0
+        stop_loss_points = float(sl_str) if sl_str else 15.0
 
-    # 8. Trailing SL Points (Conditional)
-    if trailing_sl is None:
-        if trailing_choice == "Yes":
-            tsl_str = questionary.text("Trailing SL Points:", default="10").ask()
-            trailing_sl = float(tsl_str) if tsl_str else 10.0
+    if trailing_sl_points is None:
+        tsl_choice = questionary.select("Enable Trailing Stop Loss?", choices=["No", "Yes"]).ask()
+        if tsl_choice == "Yes":
+            tsl_type = questionary.select("TSL Type:", choices=["Indicator", "Fixed Points"]).ask()
+            if tsl_type == "Indicator":
+                tsl_indicator_id = questionary.text("Trailing SL Indicator:", default=tsl_indicator_id or "active-ema-5").ask()
+                trailing_sl_points = 1.0 # Minimal value to signal TSL is active if points aren't used
+            else:
+                pts_str = questionary.text("Trailing SL Points:", default="15").ask()
+                trailing_sl_points = float(pts_str) if pts_str else 15.0
+                tsl_indicator_id = None
         else:
-            trailing_sl = 0.0
+            trailing_sl_points = 0.0
+            tsl_indicator_id = None
 
-    # 8. Targets
-    if not target_steps:
-        target_steps = questionary.text("Targets:", default="15,25,50").ask()
-    if not target_steps: target_steps = "15,25,50"
+    # 9. Targets
+    if not target_points:
+        target_points = questionary.text("Targets:", default="15,25,50").ask()
+    if not target_points:
+        target_points = "15,25,50"
 
-    # 9. Break Even
-    if break_even is None:
+    # 10. Break Even
+    if use_break_even is None:
         be_choice = questionary.select("Enable Break Even at First Target?", choices=["Yes", "No"]).ask()
-        break_even = (be_choice == "Yes")
+        use_break_even = (be_choice == "Yes")
 
-    # 10. Option Type
+    # 11. Option Type
     if not strike_selection:
         strike_selection = questionary.select("Option Strike Type:", choices=["ATM", "ITM", "OTM"]).ask()
-    if not strike_selection: return
+    if not strike_selection:
+        return
 
-    # 11. Strategy Mode
-    if not strategy_mode:
-        strategy_mode = questionary.select("Strategy Mode:", choices=["rule", "ml", "python_code"]).ask()
-    if not strategy_mode: return
-
-    # 11a. ML / Python Model Path
-    if strategy_mode == "ml" and not ml_model_path:
-        ml_model_path = questionary.text("Path to ML Model (.joblib):", default="models/model.joblib").ask()
-    elif strategy_mode == "python_code" and not python_strategy_path:
-        python_strategy_path = questionary.text("Path to Python Strategy (e.g. packages/tradeflow/python_strategies.py:Strategy):", default="packages/tradeflow/python_strategies.py:TripleLockStrategy").ask()
-
-    # 12. rule-id
-    if not rule_id:
-        rules = list(db['strategy_rules'].find({}, {"ruleId": 1, "name": 1}))
-        if not rules:
-            typer.secho("❌ No strategy rules found in database. Seed them first.", fg=typer.colors.RED)
-            return
-        
-        choices = [
-            questionary.Choice(
-                title=f"{r.get('name', 'Unnamed')} ({r['ruleId']})",
-                value=r['ruleId']
-            ) for r in rules
-        ]
-        
-        if strategy_mode in ["ml", "python_code"]:
-            choices.insert(0, questionary.Choice(title="Skip (Use Default Generated Feature Stub)", value="SKIP"))
-            
-        choices.append(questionary.Choice(title="Back", value="BACK"))
-        rule_id = questionary.select(f"Select Strategy Rule (Optional for {strategy_mode}):", choices=choices).ask()
-    
-    if not rule_id or rule_id == "BACK": return
-    if rule_id == "SKIP": rule_id = ""
-
-    # 13. Default Warmup is now hardcoded to 200 via settings.GLOBAL_WARMUP_CANDLES
+    # 11. Python strategy path
+    if not python_strategy_path:
+         python_strategy_path = questionary.text(
+            "Path to Python Strategy (file:ClassName):",
+            default="packages/tradeflow/python_strategies.py:TripleLockStrategy"
+        ).ask()
 
     # Construct and run the command
     cmd = [
         sys.executable, "-m", "tests.backtest.backtest_runner",
         "--mode", mode,
-        "--rule-id", rule_id,
         "--start", start,
         "--end", end,
         "--budget", str(budget),
         "--invest-mode", invest_mode,
         "--stop-loss-points", str(stop_loss_points),
-        "--target-points", target_points,
+        "--target-points", f'"{target_points}"',
         "--trailing-sl-points", str(trailing_sl_points),
         "--strike-selection", strike_selection,
-        "--strategy-mode", strategy_mode,
+        "--python-strategy-path", python_strategy_path,
         "--pyramid-steps", pyramid_steps,
-    ]
-    if ml_model_path:
-        cmd.extend(["--ml-model-path", ml_model_path])
-    if python_strategy_path:
-        cmd.extend(["--python-strategy-path", python_strategy_path])
-    cmd.extend([
         "--pyramid-confirm-pts", str(pyramid_confirm_pts),
-    ])
+    ]
+    if strategy_id:
+        cmd.extend(["--strategy-id", strategy_id])
+    if tsl_indicator_id:
+        cmd.extend(["--tsl-indicator-id", tsl_indicator_id])
     if use_break_even:
         cmd.append("--use-break-even")
 
-    typer.secho(f"\n🧪 Starting {mode.upper()} Backtest for {rule_id}...", fg=typer.colors.BLUE, bold=True)
+    typer.secho(f"\n🧪 Starting {mode.upper()} Backtest: {python_strategy_path}...", fg=typer.colors.BLUE, bold=True)
     try:
         subprocess.run(cmd, check=True)
     except Exception as e:
@@ -334,20 +327,19 @@ def tests_menu():
             test = questionary.select(
                 "Select Unit Test:",
                 choices=[
-                    "Collectors", "Fund Manager", "Position Manager", 
-                    "Indicator Calculator", "Strategy Logic", "ML Strategy", "Candle Resampler", "Back"
+                    "Collectors", "Fund Manager", "Position Manager",
+                    "Indicator Calculator", "Strategy Integration", "Candle Resampler", "Back"
                 ]
             ).ask()
             if test == "Back": continue
-            
+
             mapping = {
-                "Collectors": "tests/test_collectors.py",
-                "Fund Manager": "tests/test_fund_manager.py",
-                "Position Manager": "tests/test_position_manager.py",
-                "Indicator Calculator": "tests/test_indicator_calculator.py",
-                "Strategy Logic": "tests/test_strategy.py",
-                "ML Strategy": "tests/test_ml_strategy.py",
-                "Candle Resampler": "tests/test_candle_resampler.py"
+                "Collectors": "tests/readwrite_db/test_collectors.py",
+                "Fund Manager": "tests/readwrite_db/test_fund_manager_ticks.py",
+                "Position Manager": "tests/no_db/test_position_manager.py",
+                "Indicator Calculator": "tests/no_db/test_indicator_calculator.py",
+                "Strategy Integration": "tests/frozen_db/test_strategy_integration.py",
+                "Candle Resampler": "tests/no_db/test_candle_resampler.py",
             }
             run_pytest(mapping[test])
             
@@ -359,8 +351,8 @@ def tests_menu():
             if test == "Back": continue
             
             mapping = {
-                "Full Strategy Flow": "tests/test_strategy_integration.py",
-                "Market Utils": "tests/test_market_utils_parsing.py"
+                "Full Strategy Flow": "tests/frozen_db/test_strategy_integration.py",
+                "Market Utils": "tests/no_db/test_rolling_strikes.py",
             }
             run_pytest(mapping[test])
             
@@ -372,8 +364,8 @@ def tests_menu():
             if test == "Back": continue
             
             mapping = {
-                "XTS API Connection": "tests/test_xts_connection.py",
-                "Market Stream Test": "tests/test_stream.py"
+                "XTS API Connection": "tests/no_db/test_xts_connection.py",
+                "Market Stream Test": "tests/read_db/test_xts_live_stream.py",
             }
             run_pytest(mapping[test])
 
@@ -387,10 +379,8 @@ def configuration_menu():
     
     if action == "Show Settings":
         typer.secho("\n--- Active Settings ---", bold=True)
-        typer.echo(f"DB_NAME: {settings.MONGO_DB_NAME}")
-        typer.echo(f"XTS_API_BASE: {settings.XTS_INTERACTIVE_URL}")
-        typer.echo(f"INDICES_SET: {settings.INDICES_SET}")
-        typer.echo(f"LOG_LEVEL: {settings.LOG_LEVEL}")
+        typer.echo(f"DB_NAME: {settings.DB_NAME}")
+        typer.echo(f"XTS_API_BASE: {settings.XTS_ROOT_URL}")
         input("\nPress Enter to continue...")
         
     elif action == "Environment Check":
@@ -419,112 +409,42 @@ def refresh_contracts(
         typer.secho(f"❌ Error: {e}", fg=typer.colors.RED)
 
 @app.command()
-def seed_rules():
-    """Seed the database with predefined strategy rules."""
+def seed_strategies():
+    """Seed the database with predefined strategy indicators."""
     try:
-        typer.echo("Seeding strategy rules...")
-        seed_strategy_rules()
+        typer.echo("Seeding strategy indicators...")
+        seed_strategy_indicators()
         typer.secho("✅ Seed complete.", fg=typer.colors.GREEN)
     except Exception as e:
         typer.secho(f"❌ Error: {e}", fg=typer.colors.RED)
 
-@app.command(name="train-model")
-def train_model(
-    start: Annotated[Optional[str], typer.Option(help="Start Date (YYYY-MM-DD)")] = None,
-    end: Annotated[Optional[str], typer.Option(help="End Date (YYYY-MM-DD)")] = None,
-    forward_bars: Annotated[int, typer.Option(help="Bars ahead for labeling")] = 6,
-    threshold: Annotated[float, typer.Option(help="% move threshold for labels")] = 0.15,
-    folds: Annotated[int, typer.Option(help="Walk-Forward folds")] = 3,
-    output_dir: Annotated[str, typer.Option(help="Model output directory")] = "models",
-    model_name: Annotated[str, typer.Option(help="Output filename (without .joblib). Auto-generated if empty.")] = "",
-    no_balance: Annotated[bool, typer.Option("--no-balance", help="Disable class balancing")] = False,
-    trees: Annotated[int, typer.Option(help="XGBoost n_estimators")] = 300,
-    depth: Annotated[int, typer.Option(help="XGBoost max_depth")] = 4,
-    lr: Annotated[float, typer.Option(help="XGBoost learning_rate")] = 0.05,
-    min_child: Annotated[int, typer.Option(help="Min samples per leaf")] = 5,
-    features: Annotated[str, typer.Option(help="Feature groups: base,indicators,candles")] = "base,indicators,candles",
-    model_type: Annotated[str, typer.Option(help="Model algorithm: xgboost, random_forest")] = "xgboost",
-):
-    """Train an XGBoost ML model on historical NIFTY data."""
-    import logging
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s", datefmt="%H:%M:%S")
-
-    db = get_db()
-
-    if not start or not end:
-        available_days = DateUtils.get_available_dates(db, settings.NIFTY_CANDLE_COLLECTION)
-        latest_10 = sorted(available_days, reverse=True)[:10]
-        oldest = sorted(available_days)[:1]
-
-        if not start:
-            default_start = oldest[0] if oldest else ""
-            start = questionary.text("Training Start Date (YYYY-MM-DD):", default=default_start).ask()
-        if not end:
-            default_end = latest_10[0] if latest_10 else ""
-            end = questionary.text("Training End Date (YYYY-MM-DD):", default=default_end).ask()
-
-    if not start or not end:
-        typer.secho("❌ Start and End dates required.", fg=typer.colors.RED)
-        return
-
-    typer.secho(f"\n🧠 Training ML Model: {start} → {end}", fg=typer.colors.BLUE, bold=True)
-    typer.secho(f"   Threshold: {threshold}% | Forward: {forward_bars} bars | Folds: {folds}", fg=typer.colors.CYAN)
-    typer.secho(f"   XGB: trees={trees}, depth={depth}, lr={lr}, min_child={min_child}", fg=typer.colors.CYAN)
-    typer.secho(f"   Model Type: {model_type}", fg=typer.colors.CYAN)
-    typer.secho(f"   Class Balance: {'OFF' if no_balance else 'ON'}", fg=typer.colors.CYAN)
-    typer.secho(f"   Features: {features}", fg=typer.colors.CYAN)
-
-    feature_list = [s.strip() for s in features.split(',')]
-
-    try:
-        from packages.ml.train import train
-        model_path = train(
-            start_date=start,
-            end_date=end,
-            model_output_dir=output_dir,
-            model_name=model_name,
-            forward_bars=forward_bars,
-            threshold_pct=threshold,
-            n_folds=folds,
-            class_balance=not no_balance,
-            n_estimators=trees,
-            max_depth=depth,
-            learning_rate=lr,
-            min_child_weight=min_child,
-            feature_sets=feature_list,
-            model_type=model_type,
-        )
-        if model_path:
-            typer.secho(f"\n🎉 Model saved to: {model_path}", fg=typer.colors.GREEN, bold=True)
-        else:
-            typer.secho("\n❌ Training failed — insufficient data.", fg=typer.colors.RED)
-    except Exception as e:
-        typer.secho(f"\n❌ Training failed: {e}", fg=typer.colors.RED)
-        import traceback
-        traceback.print_exc()
-
 @app.command()
 def live_trade(
-    strategy_mode: Annotated[str, typer.Option(help="Strategy Mode: rule, ml, or python_code")] = "python_code",
-    python_strategy_path: Annotated[Optional[str], typer.Option(help="Path to custom python strategy file")] = "packages/tradeflow/python_strategies.py:TripleLockStrategy",
-    rule_id: Annotated[str, typer.Option("--rule-id", "-r", help="Strategy Rule ID (e.g. R001)")] = "triple-lock-momentum",
+    python_strategy_path: Annotated[Optional[str], typer.Option(help="Python strategy (file:ClassName)")] = None,
+    strategy_id: Annotated[str, typer.Option("--strategy-id", "-s", help="Strategy ID for indicators and path")] = "triple-confirmation",
     strike_selection: Annotated[str, typer.Option("--strike-selection", "-S", help="Option Selection Basis (ATM, ITM, OTM)")] = "ATM",
     budget: Annotated[float, typer.Option("--budget", "-b", help="Initial Budget for Live Trading")] = 200000.0,
-    stop_loss_points: Annotated[float, typer.Option("--stop-loss-points", "-s", help="Stop Loss Points")] = 15.0,
+    stop_loss_points: Annotated[float, typer.Option("--stop-loss-points", "-l", help="Stop Loss Points")] = 15.0,
     target_points: Annotated[str, typer.Option("--target-points", "-t", help="Target Points (Comma separated)")] = "15,25,45",
     trailing_sl_points: Annotated[float, typer.Option("--trailing-sl-points", "-L", help="Trailing Stop Loss Points")] = 15.0,
     use_break_even: Annotated[bool, typer.Option("--use-break-even", "-e", help="Enable Break-even Trailing")] = True,
-    record_papertrade: Annotated[bool, typer.Option(help="Record detailed trade logs in 'papertrade' collection")] = True,
-    ml_model_path: Annotated[Optional[str], typer.Option(help="Path to ML model")] = None,
+    record_papertrade: Annotated[bool, typer.Option(help="Record detailed trade logs in 'paper_trades' collection")] = True,
     debug: Annotated[bool, typer.Option(help="Enable Socket Debug Logging")] = False
 ):
     """Starts the Live Trading Engine."""
     try:
         db = MongoRepository.get_db()
-        rule = db["strategy_rules"].find_one({"$or": [{"ruleId": rule_id}, {"name": rule_id}]})
+        rule = db["strategy_indicators"].find_one({"strategyId": strategy_id})
         if not rule:
-            typer.secho(f"❌ Strategy rule {rule_id} not found!", fg=typer.colors.RED)
+            typer.secho(f"❌ Strategy {strategy_id} not found!", fg=typer.colors.RED)
             return
+
+        if not python_strategy_path:
+            python_strategy_path = rule.get("pythonStrategyPath")
+            
+        if not python_strategy_path:
+             typer.secho(f"❌ No strategy path found for {strategy_id} and no path provided.", fg=typer.colors.RED)
+             return
 
         pos_cfg = {
             "budget": budget,
@@ -532,13 +452,11 @@ def live_trade(
             "target_points": target_points,
             "trailing_sl_points": trailing_sl_points,
             "strike_selection": strike_selection.upper(),
-            "instrument_type": "OPTIONS", # Default for live trading in this context
+            "instrument_type": "OPTIONS",
             "use_break_even": use_break_even,
             "record_papertrade_db": record_papertrade,
             "symbol": "NIFTY",
-            "strategy_mode": strategy_mode,
             "python_strategy_path": python_strategy_path,
-            "ml_model_path": ml_model_path
         }
 
         engine = LiveTradeEngine(
@@ -575,8 +493,7 @@ def interactive_menu():
                 "Tests",
                 "Configuration",
                 "Refresh Active Contracts",
-                "Seed Strategy Rules",
-                "Train ML Model",
+                "Seed Strategy Indicators",
                 "EMA Crossover Analysis",
                 "Ensure DB Indexes",
                 "Exit"
@@ -601,40 +518,34 @@ def interactive_menu():
              backtest()
         elif choice == "Live Trading":
              db = MongoRepository.get_db()
-             rules = list(db["strategy_rules"].find({}, {"ruleId": 1, "name": 1}))
-             if not rules:
-                 typer.secho("❌ No strategy rules found!", fg=typer.colors.RED)
+             strategies = list(db["strategy_indicators"].find({"enabled": True}, {"strategyId": 1, "name": 1}))
+             if not strategies:
+                 typer.secho("❌ No enabled strategies found!", fg=typer.colors.RED)
                  continue
                  
-             rule_choices = [
-                 questionary.Choice(title=f"{r.get('name')} ({r['ruleId']})", value=r['ruleId'])
-                 for r in rules
+             strat_choices = [
+                 questionary.Choice(title=f"{s.get('name')} ({s['strategyId']})", value=s['strategyId'])
+                 for s in strategies
              ]
-             rid = questionary.select("Select Strategy Rule:", choices=rule_choices).ask()
-             
-             if rid:
-                 strategy_mode = questionary.select("Strategy Mode:", choices=["rule", "ml"]).ask()
-                 ml_path = None
-                 if strategy_mode == "ml":
-                     ml_path = questionary.text("ML Model Path:", default="models/model.joblib").ask()
+             sid = questionary.select("Select Strategy:", choices=strat_choices).ask()
 
+             if sid:
                  budget = float(questionary.text("Budget:", default="200000").ask())
-                 sl = float(questionary.text("Stop Loss Points:", default="20").ask())
-                 target = questionary.text("Target Points:", default="5,10,15").ask()
+                 stop_loss_points = float(questionary.text("Stop Loss Points:", default="20").ask())
+                 target_points = questionary.text("Target Points:", default="5,10,15").ask()
                  live_trade(
-                     rule_id=rid, budget=budget, sl=sl, target=target, 
-                     strategy_mode=strategy_mode, 
-                     ml_model_path=ml_path
+                     strategy_id=sid,
+                     budget=budget,
+                     stop_loss_points=stop_loss_points,
+                     target_points=target_points,
                  )
         elif choice == "Tests": tests_menu()
         elif choice == "Configuration": configuration_menu()
         elif choice == "Refresh Active Contracts":
              dr = questionary.text("Date Range (today, yesterday, or YYYY-MM-DD):", default="today").ask()
              if dr: refresh_contracts(date_range=dr)
-        elif choice == "Seed Strategy Rules":
-             seed_rules()
-        elif choice == "Train ML Model":
-              train_model()
+        elif choice == "Seed Strategy Indicators":
+             seed_strategies()
         elif choice == "EMA Crossover Analysis":
             inst = questionary.text("Enter instrument (e.g. NIFTY2630225400CE):").ask()
             if inst:

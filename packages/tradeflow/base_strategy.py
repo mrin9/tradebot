@@ -6,7 +6,7 @@ from packages.tradeflow.types import SignalType
 class BaseStrategy(Protocol):
     """
     Protocol defining the contract for all Strategy implementations.
-    Both RuleStrategy and MLModelStrategy must implement this interface.
+    Python-based strategies (loaded via PythonStrategy) must implement this interface.
     """
     def evaluate(self, indicators: Dict[str, float]) -> tuple[SignalType, str, float]:
         """

@@ -27,7 +27,7 @@ def test_xts_epoch_baselines():
     # XTS IST-shifted epoch usually also includes 19800s (5.5h) which xts_epoch_to_utc handles.
     
     # Let's test the raw adjustment logic in DateUtils
-    normalized_utc = DateUtils.xts_epoch_to_utc(xts_socket_2016)
+    normalized_utc = DateUtils.socket_timestamp_to_utc(xts_socket_2016)
     
     # Interpretation:
     # xts_socket_2016 + 315532800 (Epoch shift) - 19800 (IST to UTC shift)

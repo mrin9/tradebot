@@ -15,15 +15,12 @@ trade-bot-v2/
 │   └── ui/                 # Frontend Dashboard (HTML/JS/Vue)
 │       └── ...
 ├── packages/               # Core Logic & Shared Libraries
-│   ├── backtest/           # Backtest Engine (Runner, DB Mode, Socket Mode)
 │   ├── config.py           # Configuration Settings
 │   ├── tradeflow/          # Trading Engine Core
 │   │   ├── candle_resampler.py # Candle Aggregation logic
 │   │   ├── indicator_calculator.py # Indicators
-│   │   ├── strategy.py     # Strategy Logic
 │   │   ├── order_manager.py # Order Management
 │   │   ├── position_manager.py # Position Management
-│   │   ├── tick_to_candle.py # Tick aggregation
 │   │   └── fund_manager.py # Main Orchestrator
 │   ├── data/               # Data Layer
 │   │   ├── connectors/     # XTS API & Socket Wrappers

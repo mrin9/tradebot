@@ -1,0 +1,46 @@
+[project]
+name = "trade-bot-v2"
+version = "0.1.0"
+description = "Algorithmic trading bot for Indian Markets using XTS API"
+requires-python = ">=3.10"
+dependencies = [
+    "polars",
+    "pytz",
+    "requests",
+    "python-socketio[client]",
+    "pydantic-settings",
+    "pydantic",
+    "pymongo",
+    "typer",
+    "questionary",
+    "aiohttp",
+    "fastapi",
+    "uvicorn",
+    "scikit-learn",
+    "xgboost",
+    "joblib",
+    "numpy",
+    "httpx",
+    "python-dotenv"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "mypy",
+    "ruff"
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+
+[tool.ruff]
+line-length = 120

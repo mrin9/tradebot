@@ -92,7 +92,15 @@ class MarketUtils:
                         else:
                             doc[header] = int(val)
                     except ValueError:
-                        doc[header] = val
+                        # Special Case: Localize contractExpiration to Asia/Kolkata ISO
+                        if header == "contractExpiration":
+                            try:
+                                dt = DateUtils.parse_iso(val)
+                                doc[header] = DateUtils.to_iso(dt)
+                            except Exception:
+                                doc[header] = val
+                        else:
+                            doc[header] = val
             else:
                 doc[header] = None
                 
@@ -151,16 +159,21 @@ class MarketUtils:
     # --- Socket Event Normalizers ---
 
     @staticmethod
-    def normalize_xts_event(event_type: str, rawSocketData: str | None) -> Dict | None:
+    def normalize_xts_event(event_type: str | None, rawSocketData: str | None) -> Dict | None:
         """
         Main dispatcher to normalize different XTS socket events.
+        Default is 1501 (Touchline JSON/LTP).
         """
         # 0. Ensure data is a Dict
         norm_data = MarketUtils.normalize_raw_socket_data(rawSocketData)
         if not norm_data:
             return None
 
-        # Route based on event type
+        # 1. Handle missing/null event type for backwards compatibility
+        if not event_type:
+            return MarketUtils.normalize_1501_tick_event(norm_data)
+
+        # 2. Route based on event type
         if any(x in event_type for x in ['1501', '1512', '1502']):
             return MarketUtils.normalize_1501_tick_event(norm_data)
         elif '1505' in event_type:
@@ -168,7 +181,9 @@ class MarketUtils:
         elif '1105' in event_type:
             # Property Changes (Bands, etc.) - ignore for pricing
             return None
-        return None
+        
+        # Default fallback
+        return MarketUtils.normalize_1501_tick_event(norm_data)
 
     @staticmethod
     def _get_val(data: Dict, long_key: str, short_key: str, default=None):
@@ -206,7 +221,7 @@ class MarketUtils:
         if raw_ts is None:
             raw_ts = MarketUtils._get_val(data, 'LastUpdateTime', 'lut')
             
-        utc_ts = DateUtils.xts_epoch_to_utc(raw_ts)
+        utc_ts = DateUtils.socket_timestamp_to_utc(raw_ts)
         
         # Bid/Ask
         bid_info = data.get('BidInfo')
@@ -246,7 +261,7 @@ class MarketUtils:
         """
         inst_id = MarketUtils._get_val(data, 'ExchangeInstrumentID', 'i')
         raw_ts = MarketUtils._get_val(data, 'Timestamp', 't')
-        utc_ts = DateUtils.xts_epoch_to_utc(raw_ts)
+        utc_ts = DateUtils.socket_timestamp_to_utc(raw_ts)
 
         return {
             "i": int(inst_id) if inst_id else 0,
@@ -333,7 +348,7 @@ class MarketUtils:
         strikes = [atm_strike + (i * strike_step) for i in range(-strike_count, strike_count + 1)]
 
         # 3. Find Nearest Weekly Expiry
-        dt_iso = current_dt.strftime("%Y-%m-%dT00:00:00")
+        dt_iso = DateUtils.to_iso(current_dt.replace(hour=0, minute=0, second=0))
         opt_ref = master_col.find_one({
             "exchangeSegment": "NSEFO", 
             "name": "NIFTY", 

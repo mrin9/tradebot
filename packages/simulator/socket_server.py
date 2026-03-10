@@ -57,15 +57,13 @@ class SocketDataService:
                 start_dt = datetime.fromisoformat(data['start'])
                 end_dt = datetime.fromisoformat(data['end'])
                 delay = data.get('delay', 0.01)
-                mode = data.get('mode', 'tick')
                 
                 # Use the provider to start the stream
                 await self.data_provider.start_simulation(
                     instrument_id=instrument_id,
                     start_dt=start_dt,
                     end_dt=end_dt,
-                    delay=delay,
-                    mode=mode
+                    delay=delay
                 )
             except Exception as e:
                 logger.error(f"Failed to start simulation: {e}")

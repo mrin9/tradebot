@@ -10,28 +10,21 @@ The engine has shifted from a linear "Single Candle -> Strategy" pipeline to a c
 
 ```mermaid
 graph TD
-    DB[(MongoDB: strategy_rules)] -->|Loads Config| FundMgr[FundManager]
+    DB[(MongoDB: strategy_indicators)] -->|Loads Config| FundMgr[FundManager]
     
     Stream[Base Data Stream <br> Tick or 1-Min] --> FundMgr
     Stream -->|Update real-time Price| PosMgr[Position Manager]
     
-    subgraph "Timeframe Resampling (FundManager Routing)"
-    FundMgr -->|Route to| TF300[Resampler: 5-Min]
-    FundMgr -->|Route to| TF900[Resampler: 15-Min]
+    subgraph "Indicator Calculation (FundManager Routing)"
+    FundMgr -->|Route to| IndCalc[IndicatorCalculator]
+    IndCalc -->|Shorthand Parser| Polars[Polars Vectorized Calcs]
+    Polars -->|Updated State| State((Global Indicator State Cache))
     end
     
-    subgraph "Indicator Calculator (Multi-Window Deques)"
-    TF300 -->|Finalized 5m Candle| Ind300[Indicators: TF 300]
-    TF900 -->|Finalized 15m Candle| Ind900[Indicators: TF 900]
-    
-    Ind300 -->|Merge| State((Global Indicator State Cache))
-    Ind900 -->|Merge| State
-    end
-    
-    subgraph "Dynamic Strategy Evaluator"
-    State -->|All Indicators Context| Strat[Strategy.evaluate]
-    DB -->|Rules DSL Entry/Exit| Strat
-    Strat -->|BUY/SELL/HOLD| PosMgr
+    subgraph "Python Strategy Evaluator"
+    State -->|All Indicators Context| Strat[PythonStrategy.on_resampled_candle_closed]
+    DB -->|Python Script Path| Strat
+    Strat -->|Signal: LONG/SHORT/EXIT| PosMgr
     end
     
     subgraph Execution Engine
@@ -62,7 +55,7 @@ graph TD
     end
     
     MergeState[fa:fa-database Merge to Global<br>Indicator State Cache]
-    EvalStrategy[fa:fa-balance-scale Evaluate JSON-DSL<br>Strategy]
+    EvalStrategy[fa:fa-code Evaluate Python<br>Strategy Script]
     SignalGateway{Signal<br>Generated?}
     
     CheckPos[Check Position Status]
@@ -117,14 +110,15 @@ graph TD
 - Aggregates raw ticks or base 1-minute candles into higher timeframes (e.g., 5-minute candles).
 - Emits a "Finalized Candle" event specifically tagged with its timeframe when a candle closes.
 
-### 2.4. Strategy Engine (`packages/tradeflow/strategy.py` & `indicator_calculator.py`)
+### 2.4. Strategy Engine (`packages/tradeflow/python_strategy_loader.py` & `indicator_calculator.py`)
 - **Indicator Calculator**: 
-  - Maintains separate memory `deques` for each timeframe.
-  - Dynamically calculates specific technical indicators (RSI, EMA, etc.) using `Polars` based entirely on the `indicators` array in the `strategy_rules`.
-- **Strategy Logic (`strategy.py`)**: 
-  - A stateless engine.
-  - Recursively parses the JSON-DSL condition trees (e.g., `operator: "AND"`, `type: "crossover"`) defined in the database.
-  - Evaluates the global indicator state to generate `BUY`, `SELL`, or `HOLD` signals.
+  - Maintains separate memory `deques` for each instrument category and ID.
+  - Dynamically calculates specific technical indicators (RSI, EMA, etc.) using `Polars` based on shorthand strings (e.g. `ema-9`, `rsi-14`) in the `strategy_indicators` collection.
+  - Fully vectorized Polars expressions ensure high performance.
+- **Python Strategy Logic (`python_strategy_loader.py`)**: 
+  - A dynamic loader for pure Python strategy files.
+  - Evaluates the global indicator state within the strategy's `on_resampled_candle_closed` method to generate `LONG`, `SHORT`, or `EXIT` signals.
+  - This replaces the old JSON-DSL engine, allowing for unlimited logic complexity.
 
 ### 2.5. Execution Engine (`packages/tradeflow/position_manager.py` & `order_manager.py`)
 - **Position Manager**: 
@@ -140,8 +134,7 @@ graph TD
 
 ## 3. Testing Process
 
-Due to the complex routing of the MTFA engine, rigorous testing is mandated before touching the UI or Backtesting CLIs.
+Due to the complex routing of the engine, rigorous testing is mandated.
 
-- **Unit Tests (`tests/test_indicator_calculator.py`)**: Validates that independent timeframes maintain independent memory windows and calculate indicators correctly.
-- **Unit Tests (`tests/test_strategy.py`)**: Validates the JSON-DSL parser handles complex nested AND/OR and inverted primitive conditions cleanly.
-- **Integration Tests (`tests/test_strategy_integration.py`)**: Spans the entire pipeline. A mock MTFA rule is fed into `FundManager`, which reads 1-minute historical data streams natively or via local `SocketDataService`, resamples to 5-min internally, cross-verifies logic, and guarantees generated signals are identical regardless of the ingestion method.
+- **Unit Tests (`tests/no_db/test_indicator_calculator.py`)**: Validates shorthand parsing and Polars-based indicator accuracy.
+- **Integration Tests (`tests/frozen_db/test_e2e_strategies.py`)**: Spans the entire pipeline. A strategy from `strategy_indicators` is fed into `FundManager` or the backtest runner, verifying signals and trade execution across historical data.

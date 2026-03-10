@@ -88,11 +88,33 @@ def strategy_config():
 def run_db_baseline(db, config, instrument_id, start_dt, end_dt) -> List[Dict]:
     """Run Strategy on DB Data directly (nifty_candle)"""
     logger.info("--- Running DB Baseline ---")
-    fm = FundManager(strategy_config=config, is_backtest=True)
+    # Create a dummy strategy here
+    import tempfile
+    import os
+    strategy_code = """
+from typing import Dict, Any, Tuple, Optional
+from packages.tradeflow.types import CandleType, SignalType, MarketIntentType
+
+class TestIntegrationStrategy:
+    def on_resampled_candle_closed(self, candle: CandleType, indicators: Dict[str, Any], current_position_intent: Optional[MarketIntentType] = None) -> Tuple[SignalType, str, float]:
+        if current_position_intent is None:
+            return SignalType.LONG, "LONG", 1.0
+        return SignalType.NEUTRAL, "", 0.0
+"""
+    fd, path = tempfile.mkstemp(suffix=".py")
+    with os.fdopen(fd, 'w') as f:
+        f.write(strategy_code)
+        
+    pos_config = {"python_strategy_path": f"{path}:TestIntegrationStrategy"}
+    fm = FundManager(strategy_config=config, position_config=pos_config, is_backtest=True)
     
     signals = []
     original_on_signal = fm.position_manager.on_signal
-    fm.position_manager.on_signal = lambda data: signals.append(data) or original_on_signal(data)
+    def track_signal(data):
+        signals.append(data)
+        original_on_signal(data)
+        
+    fm.position_manager.on_signal = track_signal
     
     coll = db[settings.NIFTY_CANDLE_COLLECTION]
     cursor = coll.find({
@@ -106,6 +128,7 @@ def run_db_baseline(db, config, instrument_id, start_dt, end_dt) -> List[Dict]:
         count += 1
         
     logger.info(f"DB Processed {count} source documents.")
+    os.remove(path)
     return signals
 
 def run_socket_stream(config, instrument_id, start_dt, end_dt) -> List[Dict]:
@@ -117,11 +140,34 @@ def run_socket_stream(config, instrument_id, start_dt, end_dt) -> List[Dict]:
     server_thread.start()
     time.sleep(3) 
     
+    # Dummy strat
+    import tempfile
+    import os
+    strategy_code = """
+from typing import Dict, Any, Tuple, Optional
+from packages.tradeflow.types import CandleType, SignalType, MarketIntentType
+
+class TestIntegrationStrategy:
+    def on_resampled_candle_closed(self, candle: CandleType, indicators: Dict[str, Any], current_position_intent: Optional[MarketIntentType] = None) -> Tuple[SignalType, str, float]:
+        if current_position_intent is None:
+            return SignalType.LONG, "LONG", 1.0
+        return SignalType.NEUTRAL, "", 0.0
+"""
+    fd, path = tempfile.mkstemp(suffix=".py")
+    with os.fdopen(fd, 'w') as f:
+        f.write(strategy_code)
+        
     signals = []
-    fm = FundManager(strategy_config=config, is_backtest=True)
+    pos_config = {"python_strategy_path": f"{path}:TestIntegrationStrategy"}
+    fm = FundManager(strategy_config=config, position_config=pos_config, is_backtest=True)
     original_on_signal = fm.position_manager.on_signal
-    fm.position_manager.on_signal = lambda data: signals.append(data) or original_on_signal(data)
     
+    def track_signal(data):
+        signals.append(data)
+        original_on_signal(data)
+        
+    fm.position_manager.on_signal = track_signal
+
     import socketio
     sio = socketio.Client(logger=True, engineio_logger=True)
     complete_event = threading.Event()
@@ -136,25 +182,20 @@ def run_socket_stream(config, instrument_id, start_dt, end_dt) -> List[Dict]:
                 "instrument_id": instrument_id,
                 "start": start_dt.isoformat(),
                 "end": end_dt.isoformat(),
-                "delay": 0.01,
-                "mode": "candle"
+                "delay": 0.01
             })
         threading.Thread(target=trigger).start()
         
-    @sio.on('1505-json-full')
-    def on_1505(data):
-        bar = data.get('BarData', {})
-        candle = {
-            'o': bar.get('Open'),
-            'h': bar.get('High'),
-            'l': bar.get('Low'),
-            'c': bar.get('Close'),
-            'v': bar.get('Volume'),
-            't': DateUtils.xts_epoch_to_utc(bar.get('Timestamp')),
+    @sio.on('1501-json-full')
+    def on_1501(data):
+        tick = {
+            'p': data.get('LastTradedPrice'),
+            'v': data.get('LastTradedQunatity', data.get('LastTradedQuantity', 0)),
+            't': int(data.get('ExchangeTimeStamp')),
             'i': int(data.get('ExchangeInstrumentID')) 
         }
-        if candle['c']:
-            fm.on_tick_or_base_candle(candle)
+        if tick['p']:
+            fm.on_tick_or_base_candle(tick)
 
     @sio.on('simulation_complete')
     def on_complete(data):
@@ -170,6 +211,7 @@ def run_socket_stream(config, instrument_id, start_dt, end_dt) -> List[Dict]:
     except Exception as e:
         logger.error(f"Raw Socket Error: {e}")
         
+    os.remove(path)
     return signals
 
 def test_compare_db_vs_socket(db_conn, strategy_config):

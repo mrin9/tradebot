@@ -25,10 +25,10 @@ You can start live trading via the CLI using either the interactive menu or a di
 You can run the live trader directly, bypassing the interactive menu, by specifying parameters. Here is the recommended command sequence for a custom Python strategy:
 
 ```bash
+# Example 1: Standard Python Strategy with Fixed Trailing SL
 python3 apps/cli/main.py live-trade \
-  --strategy-mode python_code \
   --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
-  --rule-id triple-lock-momentum \
+  --strategy-id triple-confirmation \
   --strike-selection ATM \
   --budget 200000 \
   --stop-loss-points 15 \
@@ -36,6 +36,12 @@ python3 apps/cli/main.py live-trade \
   --trailing-sl-points 15 \
   --use-break-even \
   --record-papertrade
+
+# Example 2: Using Indicator-based Trailing SL (EMA-5)
+python3 apps/cli/main.py live-trade \
+  --strategy-id triple-confirmation \
+  --tsl-indicator-id active-ema-5 \
+  --budget 200000
 ```
 
 ### Configuration Parameters
@@ -44,17 +50,16 @@ Values that denote points (like Stop Loss) correspond to absolute price changes 
 
 | Parameter | Short | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `--strategy-mode` | n/a | `python_code`| Logic engine: `rule`, `ml`, or `python_code`. |
 | `--python-strategy-path`| n/a | `TripleLockStrategy`| Path to custom Python script (e.g. `path/to/script.py:ClassName`). |
-| `--rule-id` | `-r` | `triple-lock-momentum`| Strategy Rule ID from database. Required for indicators. |
+| `--strategy-id` | `-s` | `triple-confirmation`| Strategy ID from database. Required for indicators. |
 | `--strike-selection`| `-S` | `ATM` | Strike selection: `ATM`, `ITM`, or `OTM`. |
 | `--budget` | `-b` | `200000.0` | Initial capital for the session. |
-| `--stop-loss-points`| `-s` | `15.0` | Absolute stop loss points off premium. |
+| `--stop-loss-points`| `-l` | `15.0` | Absolute stop loss points off premium. |
 | `--target-points` | `-t` | `15,25,45` | Comma-separated profit booking levels. |
 | `--trailing-sl-points`| `-L` | `15.0` | Trailing SL increment. |
 | `--use-break-even` | `-e` | `True` | Move SL to entry after Target 1. |
-| `--record-papertrade`| n/a | `True` | Record high-fidelity events in `papertrade` collection. |
-| `--ml-model-path` | n/a | `None` | Path to ML model for `ml` mode. |
+| `--record-papertrade`| n/a | `True` | Record high-fidelity events in `paper_trades` collection. |
+| `--tsl-indicator-id`| n/a | `None` | Indicator ID for Trailing SL (e.g. `active-ema-5`). |
 | `--debug` | n/a | `False` | Enable raw socket debug logs. |
 
 ### Interactive Menu

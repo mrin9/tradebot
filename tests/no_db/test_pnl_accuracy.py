@@ -18,7 +18,7 @@ def test_pnl_currency_accuracy():
     )
     
     # 1. Entry at 100 (LONG/CE)
-    pm.on_signal({'signal': MarketIntent.LONG, 'price': 100.0, 'timestamp': datetime.now()})
+    pm.on_signal({'signal': MarketIntent.LONG, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 100.0, 'timestamp': datetime.now()})
     
     # 2. Update price to 110 (+10 points)
     # Expected PnL: 10 points * 10 lots * 65 = 6500
@@ -53,13 +53,13 @@ def test_pnl_session_carryover():
     )
     
     # Trade 1: Profit 1000
-    pm.on_signal({'signal': MarketIntent.LONG, 'price': 100.0, 'timestamp': datetime.now()})
+    pm.on_signal({'signal': MarketIntent.LONG, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 100.0, 'timestamp': datetime.now()})
     # (101.53846 - 100) * 10 * 65 = 1000
     pm._close_position(101.53846, datetime.now(), "TAKE_PROFIT")
     assert pm.session_realized_pnl == pytest.approx(1000.0, abs=0.1)
     
     # Trade 2: Loss 500
-    pm.on_signal({'signal': MarketIntent.SHORT, 'price': 100.0, 'timestamp': datetime.now()})
+    pm.on_signal({'signal': MarketIntent.SHORT, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 100.0, 'timestamp': datetime.now()})
     # (99.23077 - 100) * 10 * 65 = -500
     pm._close_position(99.23077, datetime.now(), "STOP_LOSS")
     
@@ -74,7 +74,7 @@ def test_short_pnl_accuracy():
     )
     
     # LONG Option position (expect price to rise for Put contract)
-    pm.on_signal({'signal': MarketIntent.SHORT, 'price': 100.0, 'timestamp': datetime.now()})
+    pm.on_signal({'signal': MarketIntent.SHORT, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 100.0, 'timestamp': datetime.now()})
     
     # Price rises to 110 (+10 pts profit)
     pm.update_tick({'ltp': 110.0, 'timestamp': datetime.now().timestamp()})
@@ -94,7 +94,7 @@ def test_intra_candle_sl_hit():
     )
     
     # Entry at 100. SL is 85.
-    pm.on_signal({'signal': MarketIntent.LONG, 'price': 100.0, 'timestamp': datetime.now()})
+    pm.on_signal({'signal': MarketIntent.LONG, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 100.0, 'timestamp': datetime.now()})
     
     # Simulate a 1-minute candle:
     # Open: 100, High: 105, Low: 80 (Hits SL!), Close: 95 (Safe)

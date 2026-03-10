@@ -8,7 +8,14 @@ def test_live_trader_warmup_normalization():
     Verifies that LiveTradeEngine._fetch_ohlc_api correctly subtracts the IST offset (19800s).
     """
     strategy_config = {"name": "Test", "ruleId": "TEST_001"}
-    position_config = {"budget": 10000}
+    position_config = {
+        "budget": 10000,
+        "symbol": "NIFTY",
+        "quantity": 50,
+        "python_strategy_path": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
+        "stop_loss_points": 10,
+        "target_points": 20
+    }
     
     # Mock dependencies to avoid real connections
     with patch('packages.data.connectors.xts_wrapper.XTSManager.get_market_client'), \

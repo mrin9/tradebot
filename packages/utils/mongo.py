@@ -21,10 +21,6 @@ class MongoRepository:
                 # Trigger checking connection
                 cls._client.admin.command('ping')
                 logger.info("MongoDB Connection Established and Pinged.")
-                
-                # Ensure indexes on first connection
-                from packages.utils.db_manager import DatabaseManager
-                DatabaseManager.ensure_all_indexes()
             except Exception as e:
                 logger.error(f"MongoDB Connection Failed: {e}")
                 raise e

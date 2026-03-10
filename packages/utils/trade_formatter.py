@@ -41,9 +41,9 @@ class TradeFormatter:
     @staticmethod
     def format_exit(timestamp: datetime, reason: str, symbol: str, quantity: int, price: float, total: float, lot_size: int, action_pnl: float, cycle_pnl: float, session_pnl: float) -> str:
         fmt_time = timestamp.strftime("%d-%b-%y %H:%M").upper()
-        if action_pnl > 0:
+        if cycle_pnl > 0:
             emoji = TradeFormatter.EMOJI_EXIT_PROFIT
-        elif action_pnl < 0:
+        elif cycle_pnl < 0:
             emoji = TradeFormatter.EMOJI_EXIT_LOSS
         else:
             emoji = TradeFormatter.EMOJI_EXIT_NEUTRAL

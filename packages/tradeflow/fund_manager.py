@@ -4,8 +4,6 @@ from datetime import datetime
 from packages.utils.trade_formatter import TradeFormatter
 import logging
 from packages.tradeflow.indicator_calculator import IndicatorCalculator
-from packages.tradeflow.rule_strategy import RuleStrategy
-from packages.tradeflow.ml_strategy import MLStrategy
 from packages.tradeflow.python_strategy_loader import PythonStrategy
 from packages.utils.log_utils import setup_logger
 from packages.tradeflow.types import SignalType, MarketIntentType, InstrumentKindType, InstrumentCategoryType
@@ -35,7 +33,7 @@ class FundManager:
             fetch_quote_fn (Callable, optional): API callback to fetch latest Quote (for live fallbacks).
         """
         self.config = strategy_config
-        self.indicators_config = self.config.get('indicators', [])
+        self.indicators_config = self.config.get('Indicators', self.config.get('indicators', []))
         self.log_heartbeat = log_heartbeat
         self.is_backtest = is_backtest
         self.pos_config = position_config or {}
@@ -43,21 +41,15 @@ class FundManager:
         # 1. Initialize Indicator Calculator (managing multiple timeframes)
         self.indicator_calculator = IndicatorCalculator(indicators_config=self.indicators_config)
         
-        # 2. Initialize Strategy Logic (Hybrid: Rule or ML)
-        self.strategy_mode = self.pos_config.get("strategy_mode", "rule")
+        # 2. Initialize Strategy Logic (Python script only)
+        # Priority: pos_config (CLI override) > strategy_config (DB)
+        python_path = self.pos_config.get("python_strategy_path") or self.config.get("pythonStrategyPath")
         
-        if self.strategy_mode == "ml":
-            self.strategy = MLStrategy(
-                model_path=self.pos_config.get("ml_model_path"),
-                confidence_threshold=self.pos_config.get("ml_confidence", 0.65)
-            )
-            logger.info(f"🤖 Strategy Mode: ML (self-contained features)")
-        elif self.strategy_mode == "python_code":
-            self.strategy = PythonStrategy(script_path=self.pos_config.get("python_strategy_path"))
-            logger.info(f"🐍 Strategy Mode: Python Code ({self.pos_config.get('python_strategy_path')})")
-        else:
-            self.strategy = RuleStrategy(strategy_config=self.config)
-            logger.info(f"📏 Strategy Mode: Rule (RuleStrategy)")
+        if not python_path:
+            raise ValueError("No 'python_strategy_path' found in position_config or strategy_config.")
+            
+        self.strategy = PythonStrategy(script_path=python_path)
+        logger.info(f"🐍 Strategy: Python Code ({python_path})")
         
         # 3. Core Parameters (using centralized defaults)
         self.initial_budget = self.pos_config.get("budget", 200000.0)
@@ -71,6 +63,7 @@ class FundManager:
             self.target_points = target_pts
             
         self.trailing_sl_points = self.pos_config.get('trailing_sl_points', 0.0)
+        self.tsl_indicator_id = self.pos_config.get('tsl_indicator_id', self.config.get('tslIndicatorId'))
         self.use_break_even = self.pos_config.get('use_break_even', True)
         self.record_papertrade_db = self.pos_config.get('record_papertrade_db', True)
         
@@ -104,7 +97,8 @@ class FundManager:
             use_break_even=self.use_break_even,
             pyramid_steps=pyramid_steps,
             pyramid_confirm_pts=self.pos_config.get("pyramid_confirm_pts", 10.0),
-            price_source=self.pos_config.get("price_source", settings.BACKTEST_PRICE_SOURCE)
+            price_source=self.pos_config.get("price_source", settings.BACKTEST_PRICE_SOURCE),
+            tsl_indicator_id = self.tsl_indicator_id
         )
         self.order_manager = PaperTradingOrderManager()
         self.position_manager.set_order_manager(self.order_manager)
@@ -118,21 +112,15 @@ class FundManager:
         self.fetch_quote_fn = fetch_quote_fn
         
         # 4. Global Timeframe and Multi-Instrument Streams
-        self.global_timeframe = self.config.get('timeframe', settings.DEFAULT_TIMEFRAME)
+        self.global_timeframe = self.config.get('timeframe_seconds', self.config.get('timeframe', settings.DEFAULT_TIMEFRAME))
         
         # Track active instruments being monitored {category: instrument_id}
         self.active_instruments: Dict[str, int] = {"SPOT": 26000}
         self.selection_spot_price: float | None = None
         
-        # Initialize Resamplers per category
-        self.resamplers: Dict[str, CandleResampler] = {}
-        for category in [InstrumentCategoryType.SPOT, InstrumentCategoryType.CE, InstrumentCategoryType.PE]:
-            cat_val = category.value
-            self.resamplers[cat_val] = CandleResampler(
-                instrument_id=0, # Will be set dynamically during data ingestion
-                interval_seconds=self.global_timeframe,
-                on_candle_closed=lambda c, cat=category: self._on_resampled_candle_closed(c, cat)
-            )
+        # Initialize Resamplers per instrument_id
+        self.resamplers: Dict[int, CandleResampler] = {}
+        self._ensure_resampler(26000, InstrumentCategoryType.SPOT)
             
         # 5. Global cache 
         self.latest_indicators_state: Dict[str, float] = {}
@@ -144,6 +132,16 @@ class FundManager:
 
         # Track the last processed day to force instrument re-selection on day change
         self.last_day_str: str | None = None
+
+    def _ensure_resampler(self, instrument_id: int, category: InstrumentCategoryType):
+        """Ensures a resampler exists for the given instrument ID."""
+        if instrument_id not in self.resamplers:
+            self.resamplers[instrument_id] = CandleResampler(
+                instrument_id=instrument_id,
+                interval_seconds=self.global_timeframe,
+                on_candle_closed=lambda c, cat=category: self._on_resampled_candle_closed(c, cat)
+            )
+            logger.debug(f"🛠️ Created dynamic resampler for {category.value} ({instrument_id})")
         
     def _resolve_option_contract(self, strike: float, is_ce: bool, current_ts: float) -> tuple[int | None, str | None]:
         """Resolves the nearest expiry option contract ID and description for NIFTY from DB given a strike."""
@@ -172,6 +170,7 @@ class FundManager:
         """Continuously manages the CE and PE instruments being monitored. Handles drift re-selection."""
         if self.is_warming_up:
             return  # Defer option resolution until warmup completes to avoid API burst
+            
         atm_strike = round(current_spot / 50) * 50
         
         # 0. Check for Day Change
@@ -199,9 +198,10 @@ class FundManager:
                 if self.active_instruments.get("CE") != new_ce_id:
                     self.active_instruments["CE"] = new_ce_id
                     self.active_instruments["CE_DESC"] = ce_desc
-                    # 1. Reset Resampler for clean start
-                    self.resamplers["CE"].current_candle = None 
-                    self.resamplers["CE"].last_period_start = None
+                    # 1. Ensure Resampler and Reset it for clean start
+                    self._ensure_resampler(new_ce_id, InstrumentCategoryType.CE)
+                    self.resamplers[new_ce_id].current_candle = None 
+                    self.resamplers[new_ce_id].last_period_start = None
                     # 2. Extract cached indicators immediately to avoid stale data
                     cached_indicators = self.indicator_calculator.extract_indicators(new_ce_id, InstrumentCategoryType.CE)
                     if cached_indicators:
@@ -216,9 +216,10 @@ class FundManager:
                 if self.active_instruments.get("PE") != new_pe_id:
                     self.active_instruments["PE"] = new_pe_id
                     self.active_instruments["PE_DESC"] = pe_desc
-                    # 1. Reset Resampler
-                    self.resamplers["PE"].current_candle = None
-                    self.resamplers["PE"].last_period_start = None
+                    # 1. Ensure Resampler and Reset
+                    self._ensure_resampler(new_pe_id, InstrumentCategoryType.PE)
+                    self.resamplers[new_pe_id].current_candle = None
+                    self.resamplers[new_pe_id].last_period_start = None
                     # 2. Extract cached indicators immediately
                     cached_indicators = self.indicator_calculator.extract_indicators(new_pe_id, InstrumentCategoryType.PE)
                     if cached_indicators:
@@ -295,7 +296,8 @@ class FundManager:
                 logger.warning(f"⚠️ No history found for {category} ({instrument_id}) warmup. Range: {start_dt_str} → {end_dt_str}")
                 return
             
-            resampler = self.resamplers.get(category)
+            self._ensure_resampler(instrument_id, InstrumentCategoryType(category))
+            resampler = self.resamplers.get(instrument_id)
             if resampler:
                 # Suppress heartbeats during warmup replay
                 saved_heartbeat = self.log_heartbeat
@@ -309,7 +311,10 @@ class FundManager:
                 
                 # 4. Update sync state
                 self.instrument_last_sync[instrument_id] = current_ts
-                logger.info(f"Warmup complete for {category} ({instrument_id}): {len(history)} candles ({mode_desc} sync {start_dt_str} → {end_dt_str}).")
+                
+                # Retrieve description if available
+                desc = self.active_instruments.get(f"{category}_DESC", f"{instrument_id}")
+                logger.info(f"Warmup complete for {category} ({instrument_id} - {desc}): {len(history)} candles ({mode_desc} sync {start_dt_str} → {end_dt_str}).")
         finally:
             self.is_warming_up = saved_warming_up
 
@@ -420,6 +425,7 @@ class FundManager:
             if str(inst_id) == self.position_manager.current_position.symbol:
                 nifty_price = self.latest_tick_prices.get(26000)
                 
+                mapped = self._get_mapped_indicators()
                 # In Backtest Mode, if we receive a 1-minute Candle, we explode it into 
                 # 4 virtual ticks (O, H, L, C) to match Socket/Live granularity.
                 if self.is_backtest and is_candle:
@@ -437,23 +443,36 @@ class FundManager:
                         if not self.position_manager.current_position:
                             break
                         v_tick = {'i': inst_id, 'p': p_val, 't': t_val}
-                        self.position_manager.update_tick(v_tick, nifty_price=nifty_price)
+                        self.position_manager.update_tick(v_tick, nifty_price=nifty_price, indicators=mapped)
                 else:
-                    self.position_manager.update_tick(market_data, nifty_price=nifty_price)
+                    self.position_manager.update_tick(market_data, nifty_price=nifty_price, indicators=mapped)
 
         # 3. Route to Resamplers based on Category
         category = None
+        # Check if it's one of the primary monitored instruments (Spot, current ATM CE/PE)
         for cat, active_id in self.active_instruments.items():
             if active_id == int(inst_id):
                 category = cat
                 break
-                
+        
+        # If not primary but currently being traded, it's still CE or PE
+        if not category and self.position_manager.current_position:
+            if str(inst_id) == self.position_manager.current_position.symbol:
+                # It's a traded instrument that drifted. We still need to resample it!
+                # We can heuristic the category based on intent (LONG=CE, SHORT=PE for options)
+                if self.trade_instrument_type == "OPTIONS":
+                    category = "CE" if self.position_manager.current_position.intent == MarketIntentType.LONG else "PE"
+                else:
+                    category = "SPOT" # Fallback for futures/cash
+
         if not category:
             return # Data for instrument not actively monitored
+            
+        # Ensure resampler exists (especially for drifted/traded instruments)
+        self._ensure_resampler(int(inst_id), InstrumentCategoryType(category))
 
-        resampler = self.resamplers.get(category)
+        resampler = self.resamplers.get(int(inst_id))
         if resampler:
-            resampler.instrument_id = int(inst_id)
             resampler.add_candle(market_data)
 
     def _on_resampled_candle_closed(self, candle: Dict, category: InstrumentCategoryType):
@@ -463,18 +482,19 @@ class FundManager:
         """
         ts = candle.get('t', candle.get('timestamp'))
 
-        # Both MLStrategy and RuleStrategy now implement on_resampled_candle_closed
-        # Update indicators for all strategy modes
+        # Update indicators (Python strategy receives them in on_resampled_candle_closed)
         inst_id = candle.get('instrument_id', candle.get('i'))
-        new_indicators = self.indicator_calculator.add_candle(candle, instrument_category=category, instrument_id=inst_id)
-        if new_indicators:
-            self.latest_indicators_state.update(new_indicators)
+        self.indicator_calculator.add_candle(candle, instrument_category=category, instrument_id=inst_id)
         
-        # 0. Synchronize other resamplers (CE/PE) to current SPOT timestamp
+        # Refresh the flat state for logging and heartbeats
+        # We pull the fully mapped (active/inverse) indicators so logs match strategy view
+        self.latest_indicators_state = self._get_mapped_indicators()
+        
+        # 0. Synchronize other resamplers (CE/PE/Traded) to current SPOT timestamp
         # This ensures that if Option ticks arrived slightly late, they are still 
         # processed into the current or previous candle before we run indicators.
-        for cat_val, r in self.resamplers.items():
-            if cat_val != InstrumentCategoryType.SPOT.value:
+        for r_id, r in self.resamplers.items():
+            if r_id != 26000: # Not Spot
                 # If resampler is lagging behind current SPOT timestamp, flush it
                 if r.last_period_start is not None and r.last_period_start < ts:
                     r.add_candle({'t': ts, 'is_flush': True}) # Dummy tick to force close if needed
@@ -503,32 +523,11 @@ class FundManager:
             current_intent_str = "LONG" if self.position_manager.current_position.intent == MarketIntentType.LONG else "SHORT"
             intent_enum = self.position_manager.current_position.intent
 
-        # Execute Strategy
-        if self.strategy_mode == "ml":
-            signal, reason, confidence = self.strategy.on_resampled_candle_closed(
-                candle, self.latest_indicators_state, current_position_intent=intent_enum
-            )
-        elif self.strategy_mode == "python_code":
-            mapped_indicators = self.latest_indicators_state.copy()
-            # Default ACTIVE/INVERSE mapping based on current position
-            # This is a helper for strategies that want to be instrument-agnostic
-            effective_intent_str = current_intent_str or "LONG" 
-            if effective_intent_str == "LONG":
-                for k, v in self.latest_indicators_state.items():
-                    if k.startswith("CE_"): mapped_indicators[k.replace("CE_", "ACTIVE_", 1)] = v
-                    if k.startswith("PE_"): mapped_indicators[k.replace("PE_", "INVERSE_", 1)] = v
-            elif effective_intent_str == "SHORT":
-                for k, v in self.latest_indicators_state.items():
-                    if k.startswith("PE_"): mapped_indicators[k.replace("PE_", "ACTIVE_", 1)] = v
-                    if k.startswith("CE_"): mapped_indicators[k.replace("CE_", "INVERSE_", 1)] = v
-                    
-            signal, reason, confidence = self.strategy.on_resampled_candle_closed(
-                candle, mapped_indicators, current_position_intent=intent_enum
-            )
-        else:
-            signal, reason, confidence = self.strategy.on_resampled_candle_closed(
-                candle, self.latest_indicators_state, current_position_intent=intent_enum
-            )
+        # Execute Strategy (Python script)
+        mapped_indicators = self._get_mapped_indicators()
+        signal, reason, confidence = self.strategy.on_resampled_candle_closed(
+            candle, mapped_indicators, current_position_intent=intent_enum
+        )
         
         if signal != SignalType.NEUTRAL:
             if self.is_warming_up:
@@ -699,3 +698,58 @@ class FundManager:
         logger.info(TradeFormatter.format_eod(pos.symbol, eod_price))
         desc = f"End of Day Settlement at {eod_price:.2f}"
         self.position_manager._close_position(eod_price, eod_time, "EOD", reason_desc=desc, nifty_price=nifty_price)
+
+    def _get_mapped_indicators(self) -> Dict[str, float]:
+        """
+        Builds a unified indicator dictionary for the strategy.
+        Explicitly pulls indicators for the current primary instruments (Spot, ATM CE, ATM PE)
+        and the currently traded instrument to avoid collision and ensure correctness.
+        """
+        mapped = {}
+        
+        # 1. Pull Spot Indicators (Always present)
+        mapped.update(self.indicator_calculator.extract_indicators(26000, InstrumentCategoryType.SPOT))
+        
+        # 2. Pull Current Monitored Contract Indicators
+        ce_id = self.active_instruments.get("CE")
+        pe_id = self.active_instruments.get("PE")
+        
+        ce_inds = self.indicator_calculator.extract_indicators(ce_id, InstrumentCategoryType.CE) if ce_id else {}
+        pe_inds = self.indicator_calculator.extract_indicators(pe_id, InstrumentCategoryType.PE) if pe_id else {}
+        
+        mapped.update(ce_inds)
+        mapped.update(pe_inds)
+            
+        # 3. Handle Active/Inverse Mapping
+        # If in a position, map CE/PE to Active/Inverse based on ACTUAL trade direction
+        # If NOT in a position, map CE -> Active and PE -> Inverse as a default for entry checks
+        pos = self.position_manager.current_position
+        if pos:
+            is_long = pos.intent == MarketIntentType.LONG
+            # For logging/strategy context, use indicators from the TRADED instrument for 'active-'
+            traded_id = int(pos.symbol)
+            t_cat = InstrumentCategoryType.CE if is_long else InstrumentCategoryType.PE
+            traded_inds = self.indicator_calculator.extract_indicators(traded_id, t_cat)
+            
+            # Use ATM for 'inverse-' side
+            inv_inds = pe_inds if is_long else ce_inds
+            
+            self._apply_active_inverse_mapping(mapped, traded_inds, inv_inds, is_long)
+        else:
+            # Entry Mode: Map ATM CE -> Active, ATM PE -> Inverse
+            self._apply_active_inverse_mapping(mapped, ce_inds, pe_inds, True)
+        
+        return mapped
+
+    def _apply_active_inverse_mapping(self, target: Dict, active_source: Dict, inverse_source: Dict, is_long: bool):
+        """Helper to apply active/inverse prefixes to the target dict."""
+        active_prefix = "ce-" if is_long else "pe-"
+        inverse_prefix = "pe-" if is_long else "ce-"
+        
+        for k, v in active_source.items():
+            if k.startswith(active_prefix):
+                target[k.replace(active_prefix, "active-", 1)] = v
+        
+        for k, v in inverse_source.items():
+            if k.startswith(inverse_prefix):
+                target[k.replace(inverse_prefix, "inverse-", 1)] = v

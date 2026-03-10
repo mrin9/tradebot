@@ -52,7 +52,6 @@ class Settings(BaseSettings):
 
     # 7. Sensitive API Credentials (Stored in .env)
     MARKET_API_KEY: str | None = None
-    MARKET_API_KEY: str | None = None
     MARKET_API_SECRET: str | None = None
     INTERACTIVE_API_KEY: str | None = None
     INTERACTIVE_API_SECRET: str | None = None

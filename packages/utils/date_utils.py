@@ -58,42 +58,45 @@ class DateUtils:
     # XTS Epoch Offset: 10 years (1970 to 1980) including leap years 1972, 1976
     # 3652 days * 86400 seconds = 315532800
     XTS_EPOCH_OFFSET = 315532800
-
+    
     @staticmethod
-    def xts_epoch_to_utc(ts: Union[int, float]) -> Union[int, float]:
-        """
-        XTS sockets send timestamps as IST-shifted seconds since Jan 1, 1980.
-        This converts it back to a standard Unix UTC epoch (since Jan 1, 1970).
-        """
-        if ts and isinstance(ts, (int, float)) and ts > 1000000:
-            # 1. Add 10 year offset to move from 1980-base to 1970-base
-            # 2. Subtract 19800 seconds to move from IST to UTC
-            return ts + DateUtils.XTS_EPOCH_OFFSET - 19800
+    def _check_bounds(ts: float, source: str) -> float:
+        """Sanity check: Warns if the timestamp is > 1 day in the future."""
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc).timestamp()
+        if ts > (now + 86400):
+            import logging
+            logging.getLogger(__name__).warning(f"Anomalous timestamp from {source}: {ts} (>{now + 86400})")
         return ts
 
     @staticmethod
-    def standardize_timestamp(ts: Union[int, float]) -> float:
+    def rest_timestamp_to_utc(ts: Union[int, float]) -> float:
         """
-        Detects if a timestamp is XTS (1980-base, IST-shifted) or standard UTC (1970-base)
-        and returns a standard UTC epoch.
+        XTS REST API (Historical OHLC): 1970-base, IST-shifted.
+        Subtracts 19800 to convert to true UTC Epoch (seconds).
         """
+        from packages.config import settings
         if not ts: return 0.0
-        
-        # XTS timestamps for 2020+ are typically < 1.5B 
-        # UTC timestamps for 2020+ are typically > 1.5B
-        # If it's less than 1.5B, we assume it's XTS.
-        if ts < 1500000000:
-            return DateUtils.xts_epoch_to_utc(ts)
-        return float(ts)
+        utc_ts = float(ts) - settings.XTS_TIME_OFFSET
+        return DateUtils._check_bounds(utc_ts, "REST")
+
+    @staticmethod
+    def socket_timestamp_to_utc(ts: Union[int, float]) -> float:
+        """
+        XTS Socket (Real-time 1501/1505): 1980-base, IST-shifted.
+        Adds 10 years (315532800) and subtracts 19800 to get true UTC Epoch (seconds).
+        """
+        from packages.config import settings
+        if not ts: return 0.0
+        utc_ts = float(ts) + DateUtils.XTS_EPOCH_OFFSET - settings.XTS_TIME_OFFSET
+        return DateUtils._check_bounds(utc_ts, "SOCKET")
 
     @staticmethod
     def market_timestamp_to_iso(ts: Union[int, float]) -> str:
         """Converts a market/feed UTC epoch timestamp to Asia/Kolkata ISO string with offset."""
         if ts is None or ts == 0:
             return ""
-        # Ensure it's not an XTS timestamp before converting to ISO
-        utc_ts = DateUtils.standardize_timestamp(ts)
-        dt = datetime.datetime.fromtimestamp(utc_ts, tz=datetime.timezone.utc)
+        dt = datetime.datetime.fromtimestamp(float(ts), tz=datetime.timezone.utc)
         dt_kolkata = dt.astimezone(MARKET_TZ)
         return dt_kolkata.isoformat(timespec='seconds')
 

@@ -363,7 +363,6 @@ class LiveTradeEngine:
             "config": {
                 "strategy_name": self.strategy_config.get("name"),
                 "rule_id": self.strategy_config.get("ruleId"),
-                "strategy_mode": self.position_config.get("strategy_mode", "rule"),
                 "python_strategy_path": self.position_config.get("python_strategy_path"),
                 "timeframe": self.fund_manager.global_timeframe,
                 "indicators": [
@@ -450,7 +449,7 @@ class LiveTradeEngine:
 
     def _resolve_strike_ids(self, atm_strike) -> set:
         """Helper to get a set of IDs for ATM +/- 3 strikes."""
-        now_iso = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        now_iso = DateUtils.to_iso(datetime.now())
         target_strikes = [atm_strike + (i * 50) for i in range(-3, 4)]
         
         opt_ref = self.db['instrument_master'].find_one({
@@ -511,7 +510,7 @@ class LiveTradeEngine:
                     if len(parts) >= 6:
                         # Extract and normalize
                         try:
-                            ts = int(parts[0]) - settings.XTS_TIME_OFFSET
+                            ts = DateUtils.rest_timestamp_to_utc(parts[0])
                         except:
                             continue
                             

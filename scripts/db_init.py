@@ -1,13 +1,19 @@
+from pymongo import ASCENDING, DESCENDING
+import sys
+import os
+
+# Add project root to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from packages.utils.mongo import MongoRepository
 from packages.config import settings
 from packages.utils.log_utils import setup_logger
-from pymongo import ASCENDING, DESCENDING
 
 logger = setup_logger(__name__)
 
 class DatabaseManager:
     """
-    Manages database schema, specifically ensuring indexes exist.
+    Manages database schema, specifically ensuring collections and indexes exist.
     """
 
     @classmethod
@@ -27,11 +33,8 @@ class DatabaseManager:
 
             # 2. NIFTY Candles
             nifty_coll = db[settings.NIFTY_CANDLE_COLLECTION]
-            # Primary lookup: Instrument + Timestamp
             nifty_coll.create_index([("i", ASCENDING), ("t", ASCENDING)], unique=True)
-            # Time-based sorting for range queries
             nifty_coll.create_index([("t", DESCENDING)])
-            # ISO Date for human-readable queries
             nifty_coll.create_index([("isoDt", DESCENDING)])
 
             # 3. Options Candles
@@ -54,13 +57,19 @@ class DatabaseManager:
             live_coll = db.get_collection("live_trades")
             live_coll.create_index([("sessionId", ASCENDING)], unique=True)
             live_coll.create_index([("timestamp", DESCENDING)])
+            
+            # 7. Paper Trades
+            paper_coll = db.get_collection("paper_trades")
+            paper_coll.create_index([("sessionId", ASCENDING)], unique=True)
+            paper_coll.create_index([("timestamp", DESCENDING)])
+            
+            # 8. Strategy Indicators
+            strategy_coll = db.get_collection("strategy_indicators")
+            strategy_coll.create_index([("strategyId", ASCENDING)], unique=True)
 
             logger.info("✅ Database indexes synchronized successfully.")
         except Exception as e:
             logger.error(f"❌ Failed to synchronize indexes: {e}")
-            # We don't raise here to prevent startup failure if index creation fails 
-            # (e.g. background indexing already in progress), but it will be logged.
 
 if __name__ == "__main__":
-    # Allow running as a standalone script
     DatabaseManager.ensure_all_indexes()

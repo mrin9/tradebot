@@ -24,26 +24,25 @@ class TripleLockStrategy:
                 - str: A human-readable reason or log message for the signal.
                 - float: Confidence score (usually 1.0 for crossover strategies).
         """
-        spot_fast = indicators.get("NIFTY_fast_ema")
-        spot_slow = indicators.get("NIFTY_slow_ema")
+        spot_fast = indicators.get("nifty-ema-5")
+        spot_slow = indicators.get("nifty-ema-21")
 
-        # FundManager pre-populates ACTIVE and INVERSE keys for you based on current_position_intent!
-        active_fast = indicators.get("ACTIVE_fast_ema")
-        active_slow = indicators.get("ACTIVE_slow_ema")
-        inverse_fast = indicators.get("INVERSE_fast_ema")
-        inverse_slow = indicators.get("INVERSE_slow_ema")
+        # active/inverse mapping provided by FundManager
+        active_fast = indicators.get("active-ema-5")
+        active_slow = indicators.get("active-ema-21")
+        inverse_fast = indicators.get("inverse-ema-5")
+        inverse_slow = indicators.get("inverse-ema-21")
 
-        # Wait for warmup
         # 1. Gather Required Data
-        ce_fast = indicators.get("CE_fast_ema")
-        ce_slow = indicators.get("CE_slow_ema")
-        ce_f_prev = indicators.get("CE_fast_ema_prev")
-        ce_s_prev = indicators.get("CE_slow_ema_prev")
+        ce_fast = indicators.get("ce-ema-5")
+        ce_slow = indicators.get("ce-ema-21")
+        ce_f_prev = indicators.get("ce-ema-5-prev")
+        ce_s_prev = indicators.get("ce-ema-21-prev")
 
-        pe_fast = indicators.get("PE_fast_ema")
-        pe_slow = indicators.get("PE_slow_ema")
-        pe_f_prev = indicators.get("PE_fast_ema_prev")
-        pe_s_prev = indicators.get("PE_slow_ema_prev")
+        pe_fast = indicators.get("pe-ema-5")
+        pe_slow = indicators.get("pe-ema-21")
+        pe_f_prev = indicators.get("pe-ema-5-prev")
+        pe_s_prev = indicators.get("pe-ema-21-prev")
 
         # Wait for history and ensure all indicators are non-None
         required_indicators = [
@@ -53,6 +52,9 @@ class TripleLockStrategy:
         ]
         if any(v is None for v in required_indicators):
             return SignalType.NEUTRAL, "PYTHON: WAITING FOR INDICATOR WARMUP", 0.0
+
+        if "nifty-ema-5" in indicators: # Just a heartbeat to know we reached logic
+             pass # print(f"--- TRIPLE LOCK EVAL --- CE: {ce_fast:.2f}/{ce_slow:.2f} PE: {pe_fast:.2f}/{pe_slow:.2f} SPOT: {spot_fast:.2f}/{spot_slow:.2f}")
 
         # 2. Entry Logic (Bidirectional)
         if current_position_intent is None:
@@ -101,9 +103,9 @@ class SimpleMACDStrategy:
         Returns:
             Tuple[SignalType, str, float]: (SignalType, Reason, Confidence)
         """
-        # Use explicit CE and PE prefixes
-        ce_hist = indicators.get("CE_macd_hist")
-        pe_hist = indicators.get("PE_macd_hist")
+        # Use explicit ce and pe prefixes
+        ce_hist = indicators.get("ce-macd-hist")
+        pe_hist = indicators.get("pe-macd-hist")
 
         # Wait for warmup
         if ce_hist is None or pe_hist is None:
@@ -132,3 +134,54 @@ class SimpleMACDStrategy:
         self.pe_prev_hist = pe_hist
 
         return signal, reason, 1.0 if signal in [SignalType.LONG, SignalType.SHORT] else 0.0
+
+class EmaCrossStrategy:
+    """
+    Example Strategy utilizing the new Indicator-Based TSL.
+    Entry: EMA-3 crossing EMA-21
+    Exit: Delegated to PositionManager (EMA-5 TSL)
+    """
+    def on_resampled_candle_closed(
+        self, 
+        candle: CandleType, 
+        indicators: Dict[str, Any], 
+        current_position_intent: Optional[MarketIntentType] = None
+    ) -> Tuple[SignalType, str, float]:
+        
+        # active/inverse mapping provided by FundManager
+        active_f = indicators.get("active-ema-3")
+        active_s = indicators.get("active-ema-21")
+        active_f_prev = indicators.get("active-ema-3-prev")
+        active_s_prev = indicators.get("active-ema-21-prev")
+
+        # ce/pe specific indicators for initial entry
+        ce_f = indicators.get("ce-ema-3")
+        ce_s = indicators.get("ce-ema-21")
+        ce_f_prev = indicators.get("ce-ema-3-prev")
+        ce_s_prev = indicators.get("ce-ema-21-prev")
+
+        pe_f = indicators.get("pe-ema-3")
+        pe_s = indicators.get("pe-ema-21")
+        pe_f_prev = indicators.get("pe-ema-3-prev")
+        pe_s_prev = indicators.get("pe-ema-21-prev")
+
+        # 1. Warmup Check
+        if any(v is None for v in [ce_f, ce_s, ce_f_prev, ce_s_prev, pe_f, pe_s, pe_f_prev, pe_s_prev]):
+            return SignalType.NEUTRAL, "PYTHON: WARMING UP", 0.0
+
+        # 2. Entry Logic
+        if current_position_intent is None:
+            # Check CE Crossover
+            if ce_f_prev <= ce_s_prev and ce_f > ce_s:
+                return SignalType.LONG, "EMA-3 Crosses EMA-21 (CE)", 1.0
+            
+            # Check PE Crossover
+            if pe_f_prev <= pe_s_prev and pe_f > pe_s:
+                return SignalType.SHORT, "EMA-3 Crosses EMA-21 (PE)", 1.0
+
+        # 3. Exit Logic
+        # NOTE: We do NOT implement EMA-5 crossunder exit here. 
+        # By providing active-ema-5 as 'tsl_indicator_id' in your strategy config,
+        # the PositionManager handles that automatically on every tick!
+        
+        return SignalType.NEUTRAL, "No entry signal", 0.0

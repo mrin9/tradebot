@@ -27,7 +27,7 @@ class MasterDataCollector:
         
         response = xts.get_master(exchangeSegmentList=segments)
         
-        if not response or response.get('type') != 'success' or 'result' not in response:
+        if not isinstance(response, dict) or response.get('type') != 'success' or 'result' not in response:
             logger.error(f"Failed to fetch master data: {response}")
             return False
 

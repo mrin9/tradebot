@@ -63,8 +63,7 @@ class SocketFeeder(BacktestDataFeeder):
     """
     Feeds data from the Socket Simulator into the FundManager synchronously.
     """
-    def __init__(self, socket_event="1505-json-full"):
-        self.socket_event = socket_event
+    def __init__(self):
         self.sio = socketio.Client(logger=False, engineio_logger=False)
         
         url = urlparse(settings.SOCKET_SIMULATOR_URL)
@@ -111,7 +110,7 @@ class SocketFeeder(BacktestDataFeeder):
         iso_start, iso_end, db = self.setup_backtest(bot, fund_manager)
 
         bot._log_config()
-        logger.info(f"🧪 Socket Mode Backtest Started listening on '{self.socket_event}'")
+        logger.info(f"🧪 Socket Mode Backtest Started listening on '1501-json-full'")
 
         # Start worker thread for sequential processing
         self.worker_thread = threading.Thread(target=self._worker_loop, args=(fund_manager,), daemon=True)
@@ -130,17 +129,16 @@ class SocketFeeder(BacktestDataFeeder):
                 "instrument_id": req_instrument,
                 "start": DateUtils._parse_keyword(start_date, is_end=False).replace(hour=9, minute=15).isoformat(),
                 "end": DateUtils._parse_keyword(end_date, is_end=True).replace(hour=15, minute=30).isoformat(),
-                "delay": 0.001, # Extremely fast
-                "mode": "candle" if "1505" in self.socket_event else "tick"
+                "delay": 0.001 # Extremely fast
             }
             logger.info(f"Triggering Start with {payload}")
             self.sio.emit('start_simulation', payload)
 
-        @self.sio.on(self.socket_event)
+        @self.sio.on("1501-json-full")
         def on_market_event(data):
             # Parse based on event type
             try:
-                tick = MarketUtils.normalize_xts_event(self.socket_event, data)
+                tick = MarketUtils.normalize_xts_event("1501-json-full", data)
                 if not tick:
                     return
 

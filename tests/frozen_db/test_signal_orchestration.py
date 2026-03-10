@@ -59,7 +59,27 @@ def test_orchestration():
         }
     }
     
-    fm = FundManager(strategy_config=strategy_config, is_backtest=True)
+    # Mocking the Python strategy so we don't depend on TripleLock's strict EMA requirements
+    import tempfile
+    import os
+    
+    dummy_strategy_code = """
+from typing import Dict, Any, Tuple, Optional
+from packages.tradeflow.types import CandleType, SignalType, MarketIntentType
+
+class DummyRSIStrategy:
+    def on_resampled_candle_closed(self, candle: CandleType, indicators: Dict[str, Any], current_position_intent: Optional[MarketIntentType] = None) -> Tuple[SignalType, str, float]:
+        rsi = indicators.get("NIFTY_rsi_14")
+        if rsi is not None and rsi > 70:
+            return SignalType.LONG, "RSI > 70", 1.0
+        return SignalType.NEUTRAL, "Pass-through", 0.0
+"""
+    fd, path = tempfile.mkstemp(suffix=".py")
+    with os.fdopen(fd, 'w') as f:
+        f.write(dummy_strategy_code)
+        
+    position_config = {"python_strategy_path": f"{path}:DummyRSIStrategy"}
+    fm = FundManager(strategy_config=strategy_config, position_config=position_config, is_backtest=True)
     
     signals_received = []
     original_on_signal = fm.position_manager.on_signal
@@ -87,4 +107,6 @@ def test_orchestration():
     assert sig_data['signal'] == MarketIntent.LONG
     assert sig_data['symbol'] == "26000"
     
+    # Clean up the dummy file
+    os.remove(path)
     print("FundManager Test Verified: Signal Received.")

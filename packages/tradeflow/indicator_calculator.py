@@ -21,8 +21,8 @@ class IndicatorCalculator:
     def __init__(self, indicators_config: List[Dict[str, Any]], max_window_size: int = settings.GLOBAL_WARMUP_CANDLES):
         """
         Args:
-            indicators_config (List[Dict]): The 'indicators' array from strategy_rules DB.
-                Example: [{'indicatorId': 'fast_ema', 'type': 'EMA', 'params': {'period': 5}, 'instrumentData': 'SPOT'}, ...]
+            indicators_config (List[Dict]): The 'indicators' array from strategy_indicators DB.
+                Example: [{'indicatorId': 'fast_ema', 'indicator': 'ema-5', 'InstrumentType': 'SPOT'}]
             max_window_size (int): Max candles to keep per category.
         """
         self.config = indicators_config
@@ -76,7 +76,6 @@ class IndicatorCalculator:
         # 2. Initialize deque if new instrument seen
         if instrument_id not in self.instrument_candles:
             self.instrument_candles[instrument_id] = deque(maxlen=self.max_window_size)
-            # logger.info(f"🆕 Initialized cache for Instrument ID: {instrument_id}")
             
         target_deque = self.instrument_candles[instrument_id]
         if target_deque and target_deque[-1]['timestamp'] == ts:
@@ -122,7 +121,8 @@ class IndicatorCalculator:
         
         try:
             for ind in indicators_to_calc:
-                df = self.calculate_indicator(df, ind['type'], ind['params'], ind['indicatorId'])
+                key = ind.get('indicatorId') or ind['indicator']
+                df = self.calculate_indicator(df, ind['indicator'], key)
 
             return self._extract_results_from_df(df, instrument_category, indicators_to_calc)
         except Exception as e:
@@ -163,7 +163,8 @@ class IndicatorCalculator:
                     indicators_to_calc.append(ind)
             
             for ind in indicators_to_calc:
-                df = self.calculate_indicator(df, ind['type'], ind['params'], ind['indicatorId'])
+                key = ind.get('indicatorId') or ind['indicator']
+                df = self.calculate_indicator(df, ind['indicator'], key)
                 
             return self._extract_results_from_df(df, instrument_category, indicators_to_calc)
         except Exception as e:
@@ -179,56 +180,61 @@ class IndicatorCalculator:
         last_row = df.row(-1, named=True)
         prev_row = df.row(-2, named=True) if df.height >= 2 else None
         
-        cat_val = category.value if hasattr(category, "value") else str(category)
-        prefix = "NIFTY_" if category == InstrumentCategoryType.SPOT else f"{cat_val}_"
+        cat_val = category.value.lower() if hasattr(category, "value") else str(category).lower()
+        prefix = "nifty-" if category == InstrumentCategoryType.SPOT else f"{cat_val}-"
         
         for ind in indicators:
-            orig_key = ind['indicatorId']
-            ind_type = ind.get('type')
+            orig_key = ind.get('indicatorId') or ind['indicator']
+            ind_str = ind['indicator'].lower()
             
             keys_to_extract = [orig_key]
-            if ind_type == 'SUPERTREND':
-                keys_to_extract.append(f"{orig_key}_dir")
-            elif ind_type == 'MACD':
-                keys_to_extract.extend([f"{orig_key}_signal", f"{orig_key}_hist"])
+            if ind_str.startswith('supertrend'):
+                keys_to_extract.append(f"{orig_key}-dir")
+            elif ind_str.startswith('macd'):
+                keys_to_extract.extend([f"{orig_key}-signal", f"{orig_key}-hist"])
+            elif ind_str.startswith('bbands'):
+                keys_to_extract = [f"{orig_key}-upper", f"{orig_key}-middle", f"{orig_key}-lower"]
                 
             for k in keys_to_extract:
                 prefixed_key = f"{prefix}{k}"
                 if k in last_row:
                     result[prefixed_key] = last_row[k]
                 if prev_row and k in prev_row:
-                    result[f"{prefixed_key}_prev"] = prev_row[k]
+                    result[f"{prefixed_key}-prev"] = prev_row[k]
         
         return result
 
     @staticmethod
-    def calculate_indicator(df: pl.DataFrame, ind_type: str, params: Dict[str, Any], result_key: str) -> pl.DataFrame:
+    def calculate_indicator(df: pl.DataFrame, indicator_str: str, result_key: str) -> pl.DataFrame:
         """
-        Centralized logic for indicator calculations on a Polars DataFrame.
+        Calculates indicators using shorthand string notation (e.g. 'ema-9', 'bbands-20-2').
+        Uses purely vectorized Polars expressions.
         """
-        if ind_type == 'EMA':
-            period = params.get('period', 14)
-            return df.with_columns(
-                pl.col("close").ewm_mean(span=period, adjust=False).alias(result_key)
-            )
+        parts = indicator_str.lower().split("-")
+        ind_type = parts[0]
+        
+        if ind_type == "ema":
+            period = int(parts[1]) if len(parts) > 1 else 14
+            return df.with_columns(pl.col("close").ewm_mean(span=period, adjust=False).alias(result_key))
             
-        elif ind_type == 'RSI':
-            period = params.get('period', 14)
-            delta = df.select(pl.col("close").diff()).to_series()
+        elif ind_type == "sma":
+            period = int(parts[1]) if len(parts) > 1 else 14
+            return df.with_columns(pl.col("close").rolling_mean(window_size=period).alias(result_key))
+            
+        elif ind_type == "rsi":
+            period = int(parts[1]) if len(parts) > 1 else 14
+            delta = pl.col("close").diff()
             gain = delta.clip(lower_bound=0)
             loss = delta.clip(upper_bound=0).abs()
-            
             avg_gain = gain.ewm_mean(alpha=1/period, adjust=False, min_samples=period)
             avg_loss = loss.ewm_mean(alpha=1/period, adjust=False, min_samples=period)
-            
             rs = avg_gain / avg_loss
             rsi = 100 - (100 / (1 + rs))
-            return df.with_columns(pl.Series(name=result_key, values=rsi))
+            return df.with_columns(rsi.alias(result_key))
 
-        elif ind_type == 'ATR':
-            period = params.get('period', 14)
-            # tr = max(h-l, abs(h-c_prev), abs(l-c_prev))
-            prev_close = df.select(pl.col("close").shift(1)).to_series()
+        elif ind_type == "atr":
+            period = int(parts[1]) if len(parts) > 1 else 14
+            prev_close = pl.col("close").shift(1)
             tr = pl.max_horizontal([
                 pl.col("high") - pl.col("low"),
                 (pl.col("high") - prev_close).abs(),
@@ -237,30 +243,55 @@ class IndicatorCalculator:
             atr = tr.ewm_mean(span=period, adjust=False)
             return df.with_columns(atr.alias(result_key))
 
-        elif ind_type == 'SUPERTREND':
-            period = params.get('period', 10)
-            multiplier = params.get('multiplier', 3.0)
+        elif ind_type == "supertrend":
+            period = int(parts[1]) if len(parts) > 1 else 10
+            multiplier = float(parts[2]) if len(parts) > 2 else 3.0
             return IndicatorCalculator._calc_supertrend(df, period, multiplier, result_key)
             
-        elif ind_type == 'MACD':
-            fast = params.get('fastPeriod', 12)
-            slow = params.get('slowPeriod', 26)
-            signal = params.get('signalPeriod', 9)
-            
-            ema_fast = df.select(pl.col("close").ewm_mean(span=fast, adjust=False)).to_series()
-            ema_slow = df.select(pl.col("close").ewm_mean(span=slow, adjust=False)).to_series()
+        elif ind_type == "macd":
+            fast = int(parts[1]) if len(parts) > 1 else 12
+            slow = int(parts[2]) if len(parts) > 2 else 26
+            signal = int(parts[3]) if len(parts) > 3 else 9
+            ema_fast = pl.col("close").ewm_mean(span=fast, adjust=False)
+            ema_slow = pl.col("close").ewm_mean(span=slow, adjust=False)
             macd_line = ema_fast - ema_slow
             macd_signal = macd_line.ewm_mean(span=signal, adjust=False)
             macd_hist = macd_line - macd_signal
-            
             return df.with_columns([
                 macd_line.alias(f"{result_key}"),
                 macd_signal.alias(f"{result_key}_signal"),
                 macd_hist.alias(f"{result_key}_hist")
             ])
+            
+        elif ind_type == "bbands":
+            period = int(parts[1]) if len(parts) > 1 else 20
+            std_dev_mult = float(parts[2]) if len(parts) > 2 else 2.0
+            middle_band = pl.col("close").rolling_mean(window_size=period)
+            std_dev = pl.col("close").rolling_std(window_size=period)
+            upper_band = middle_band + (std_dev * std_dev_mult)
+            lower_band = middle_band - (std_dev * std_dev_mult)
+            return df.with_columns([
+                upper_band.alias(f"{result_key}_upper"),
+                middle_band.alias(f"{result_key}_middle"),
+                lower_band.alias(f"{result_key}_lower")
+            ])
+            
+        elif ind_type == "vwap":
+            cum_pv = (pl.col("close") * pl.col("volume")).cum_sum()
+            cum_v = pl.col("volume").cum_sum()
+            vwap = cum_pv / (cum_v + 1e-10)
+            return df.with_columns(vwap.alias(result_key))
+            
+        elif ind_type == "obv":
+            price_change_sign = pl.col("close").diff().sign().fill_null(0)
+            obv = (price_change_sign * pl.col("volume")).cum_sum()
+            return df.with_columns(obv.alias(result_key))
+            
+        elif ind_type == "price":
+            return df.with_columns(pl.col("close").alias(result_key))
 
         else:
-            logger.warning(f"Unknown indicator type: {ind_type}")
+            logger.warning(f"Unknown indicator format: {indicator_str}")
             return df
 
     @staticmethod

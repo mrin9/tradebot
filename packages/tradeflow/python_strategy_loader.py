@@ -55,7 +55,7 @@ class PythonStrategy:
         Delegates the standard strategy interface call to the loaded custom python class.
         """
         if not self.custom_strategy:
-            return Signal.NEUTRAL, "PYTHON WRAPPER ERROR: Strategy not loaded", 0.0
+            return SignalType.NEUTRAL, "PYTHON WRAPPER ERROR: Strategy not loaded", 0.0
             
         try:
             return self.custom_strategy.on_resampled_candle_closed(

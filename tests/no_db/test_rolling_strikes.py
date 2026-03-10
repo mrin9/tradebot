@@ -17,6 +17,9 @@ def test_update_rolling_strikes_access():
     }
     pos_cfg = {
         "budget": 100000,
+        "symbol": "NIFTY",
+        "quantity": 50,
+        "python_strategy_path": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
         "stop_loss_points": 10,
         "target_points": 20
     }
@@ -45,7 +48,7 @@ def test_atm_hysteresis_logic():
     print("Testing ATM Hysteresis logic...")
     
     mock_strategy = {"ruleId": "T1", "name": "T", "indicators": []}
-    pos_cfg = {"budget": 100000, "stop_loss_points": 10, "target_points": 20}
+    pos_cfg = {"budget": 100000, "symbol": "NIFTY", "quantity": 50, "stop_loss_points": 10, "target_points": 20, "python_strategy_path": "packages/tradeflow/python_strategies.py:TripleLockStrategy"}
     
     with patch('packages.data.connectors.xts_wrapper.XTSManager.get_market_client'), \
          patch('packages.data.connectors.xts_wrapper.XTSManager.get_market_data_socket'), \

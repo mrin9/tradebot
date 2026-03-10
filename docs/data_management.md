@@ -25,7 +25,7 @@ The system relies on three main collections in MongoDB to power its backtesting 
 
 ## Update Procedures
 
-All data updates are managed via the centralized CLI application (`apps/cli/main.py`). You can execute these commands directly or use the interactive menu by running `python3 apps/cli/main.py interactive`.
+All data updates are managed via the centralized CLI application (`apps/cli/main.py`). You can execute these commands directly or use the interactive menu by running `python3 apps/cli/main.py menu`.
 
 ### 1. How to update `nifty_candle` and `options_candle`
 
@@ -35,7 +35,7 @@ Historical candle data sync relies on fetching the data from the XTS API chunk b
 You can synchronize historical NIFTY data by running the `sync-history` command with the NIFTY instrument ID (`26000`).
 
 ```bash
-python3 apps/cli/main.py sync-history 26000 --start "2dago" --end "now"
+python3 apps/cli/main.py sync-history --date-range "2dago|now"
 ```
 
 *(The `--start` and `--end` flags accept date keywords like "2dago", "today", "now", or standard ISO dates).*
@@ -45,7 +45,7 @@ Updating options data requires a two-step approach:
 
 1. **Refresh Active Contracts**: First, identify which option contracts (ITM/ATM/OTM) were active during the desired timeframe based on the historical movement of the NIFTY spot price.
    ```bash
-   python3 apps/cli/main.py update-contracts --date-range "today"
+   python3 apps/cli/main.py refresh-contracts --date-range "today"
    ```
 
 2. **Sync History for Contracts**: Once the active contracts are identified, you must sync the historical data for those specific option contract IDs using the `sync-history` command.
@@ -53,7 +53,7 @@ Updating options data requires a two-step approach:
    python3 apps/cli/main.py sync-history <OPTIONS_INSTRUMENT_ID> --start "2dago" --end "now"
    ```
 
-*(Note: The `interactive` menu contains an option to "Sync All Active Contracts (History)", which can be used to coordinate the bulk download if fully implemented in your environment).*
+*(Note: The `menu` contains an option to "Sync History (Nifty and Options)", which can be used to coordinate the bulk download).*
 
 ### 2. How to Update `instrument_master`
 

@@ -33,7 +33,7 @@ def test_options_long_intent_cycle(pm_setup):
     
     # 1. Entry
     now = datetime(2026, 2, 11, 9, 15)
-    pm.on_signal({'signal': MarketIntent.LONG, 'price': 100.0, 'timestamp': now})
+    pm.on_signal({'signal': MarketIntent.LONG, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 100.0, 'timestamp': now})
     
     assert pm.current_position is not None
     assert pm.current_position.intent == MarketIntent.LONG
@@ -50,7 +50,7 @@ def test_options_long_intent_cycle(pm_setup):
     # 3. Exit via Signal Flip
     from datetime import timedelta
     exit_time = now + timedelta(minutes=15)
-    pm.on_signal({'signal': MarketIntent.SHORT, 'price': 120.0, 'timestamp': exit_time})
+    pm.on_signal({'signal': MarketIntent.SHORT, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 120.0, 'timestamp': exit_time})
     
     assert pm.current_position is None
     assert len(pm.trades_history) == 2
@@ -60,7 +60,7 @@ def test_options_long_intent_cycle(pm_setup):
 def test_options_short_intent_entry(pm_setup):
     """Tests SHORT intent (Buy Put) for Options."""
     pm, om = pm_setup
-    pm.on_signal({'signal': MarketIntent.SHORT, 'price': 100.0, 'timestamp': datetime.now()})
+    pm.on_signal({'signal': MarketIntent.SHORT, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 100.0, 'timestamp': datetime.now()})
     assert om.orders[0]['side'] == 'BUY' # Long the Put contract
     assert pm.current_position.intent == MarketIntent.SHORT
 
@@ -68,7 +68,7 @@ def test_cash_long_cycle(pm_setup):
     """Tests LONG cycle for Cash."""
     pm, om = pm_setup
     pm.instrument_type = InstrumentType.CASH
-    pm.on_signal({'signal': MarketIntent.LONG, 'price': 1000.0, 'timestamp': datetime.now()})
+    pm.on_signal({'signal': MarketIntent.LONG, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 1000.0, 'timestamp': datetime.now()})
     assert om.orders[0]['side'] == 'BUY'
     
 def test_fractional_exit(pm_setup):
@@ -80,7 +80,7 @@ def test_fractional_exit(pm_setup):
     now = datetime(2026, 2, 11, 9, 15)
     
     # 1. Entry at 100. Targets: 110, 120, 130
-    pm.on_signal({'signal': MarketIntent.LONG, 'price': 100.0, 'timestamp': now})
+    pm.on_signal({'signal': MarketIntent.LONG, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 100.0, 'timestamp': now})
     
     # 2. Hit Target 1 (110)
     pm.update_tick({'ltp': 110.0, 'timestamp': now.timestamp() + 60})
@@ -103,7 +103,7 @@ def test_cash_short_blocking(pm_setup):
     """Verifies that SHORT intent is blocked for CASH/FUTURES."""
     pm, om = pm_setup
     pm.instrument_type = InstrumentType.CASH
-    pm.on_signal({'signal': MarketIntent.SHORT, 'price': 1000.0, 'timestamp': datetime.now()})
+    pm.on_signal({'signal': MarketIntent.SHORT, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 1000.0, 'timestamp': datetime.now()})
     
     assert pm.current_position is None
     assert len(om.orders) == 0
@@ -115,7 +115,7 @@ def test_pyramid_default_100_behaves_like_all_in(pm_setup):
     pm.pyramid_steps = [100]
     
     now = datetime(2026, 2, 11, 9, 15)
-    pm.on_signal({'signal': MarketIntent.LONG, 'price': 100.0, 'timestamp': now})
+    pm.on_signal({'signal': MarketIntent.LONG, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 100.0, 'timestamp': now})
     
     assert pm.current_position is not None
     assert pm.current_position.remaining_quantity == 100
@@ -131,22 +131,45 @@ def test_pyramid_staged_entry(pm_setup):
     now = datetime(2026, 2, 11, 9, 15)
     
     # Step 1: Initial entry → 25% of 100 = 25 lots
-    pm.on_signal({'signal': MarketIntent.LONG, 'price': 100.0, 'timestamp': now})
+    pm.on_signal({'signal': MarketIntent.LONG, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 100.0, 'timestamp': now})
     assert pm.current_position.remaining_quantity == 25
     assert pm.current_position.pyramid_step == 0
     assert om.orders[0]['qty'] == 25
     
     # Same-direction signal but price NOT confirmed (only +5, need +10)
-    pm.on_signal({'signal': MarketIntent.LONG, 'price': 105.0, 'timestamp': now})
+    pm.on_signal({'signal': MarketIntent.LONG, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 105.0, 'timestamp': now})
     assert pm.current_position.remaining_quantity == 25  # No change
     
     # Step 2: Same-direction signal WITH confirmation (+15 pts) → 50% of 100 = 50 lots
-    pm.on_signal({'signal': MarketIntent.LONG, 'price': 115.0, 'timestamp': now})
+    pm.on_signal({'signal': MarketIntent.LONG, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 115.0, 'timestamp': now})
     assert pm.current_position.remaining_quantity == 75  # 25 + 50
     assert pm.current_position.pyramid_step == 1
     assert om.orders[-1]['qty'] == 50
     
     # Step 3: Final step → 25% of 100 = 25 lots
-    pm.on_signal({'signal': MarketIntent.LONG, 'price': 130.0, 'timestamp': now})
+    pm.on_signal({'signal': MarketIntent.LONG, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 130.0, 'timestamp': now})
     assert pm.current_position.remaining_quantity == 100
     assert pm.current_position.pyramid_step == 2
+
+def test_indicator_based_tsl(pm_setup):
+    """Verifies that indicator-based TSL triggers only after profit."""
+    pm, om = pm_setup
+    pm.tsl_indicator_id = "active-ema-5"
+    now = datetime(2026, 2, 11, 9, 15)
+    
+    # 1. Entry at 100
+    pm.on_signal({'signal': MarketIntent.LONG, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 100.0, 'timestamp': now})
+    
+    # 2. Price in loss (95), EMA-5 is 90. No trigger (pnl <= 0)
+    pm.update_tick({'ltp': 95.0, 'timestamp': now.timestamp() + 60}, indicators={"active-ema-5": 90.0})
+    assert pm.current_position is not None
+    
+    # 3. Price in profit (115), EMA-5 is 110. No trigger (price > EMA)
+    pm.update_tick({'ltp': 115.0, 'timestamp': now.timestamp() + 120}, indicators={"active-ema-5": 110.0})
+    assert pm.current_position is not None
+    
+    # 4. Price in profit (105), but FALLS BELOW EMA-5 (110). TRIGGER EXIT!
+    pm.update_tick({'ltp': 105.0, 'timestamp': now.timestamp() + 180}, indicators={"active-ema-5": 110.0})
+    assert pm.current_position is None
+    assert pm.trades_history[-1].status == "INDICATOR_TSL"
+    assert "Value: 110.00" in pm.trades_history[-1].exit_reason_description

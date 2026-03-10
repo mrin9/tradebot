@@ -8,6 +8,7 @@ from packages.data.connectors.xts_wrapper import XTSManager
 from packages.utils.market_utils import MarketUtils
 from packages.utils.log_utils import setup_logger
 from packages.utils.mongo import MongoRepository
+from packages.utils.date_utils import DateUtils
 
 logger = setup_logger(__name__)
 
@@ -70,7 +71,7 @@ class MarketDataListener:
                  tick = {
                      "i": data.get("ExchangeInstrumentID"),
                      "p": data.get("IndexValue"),
-                     "t": data.get("LastTradedTime")
+                     "t": DateUtils.socket_timestamp_to_utc(data.get("LastTradedTime"))
                  }
                  
             # Ensure we have minimal data
@@ -168,7 +169,7 @@ class MarketDataListener:
 if __name__ == "__main__":
     # Test Run
     def print_tick(t):
-        print(f"TICK: {t['i']} -> {t['p']}")
+        logger.info(f"TICK: {t['i']} -> {t['p']}")
 
     listener = MarketDataListener(on_tick_callback=print_tick)
     

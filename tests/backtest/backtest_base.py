@@ -100,10 +100,10 @@ class BacktestBot:
         indicators = self.fm.indicator_calculator.config
         ind_summary = []
         for ind in indicators:
-            params = ind.get('params', {})
-            # Simplified format: InstrumentType | Type | PeriodValues
-            param_values = "-".join([str(v) for v in params.values()])
-            ind_summary.append(f"{ind.get('InstrumentType', 'SPOT')} | {ind.get('type', 'N/A')} | {param_values}")
+            cat = ind.get('InstrumentType', 'SPOT')
+            ind_val = ind.get('indicator', 'N/A')
+            ind_id = ind.get('indicatorId', 'N/A')
+            ind_summary.append(f"{cat} | {ind_id} ({ind_val})")
 
         period_str = f"{args.start} to {args.end or args.start}"
         if trading_days:
@@ -112,7 +112,7 @@ class BacktestBot:
         msg = f"""
 ========================= BACKTEST CONFIG =========================
 Mode: {args.mode.upper()} | Range: {period_str}
-Strategy: {args.rule_id or 'ML/Python'} | Mode: {args.strategy_mode.upper()}
+Strategy: {getattr(args, 'python_strategy_path', None) or args.strategy_id or 'Python'}
 Budget: ₹{args.budget:,.2f} | Invest Mode: {self.fm.invest_mode.upper()}
 Stop Loss: {self.fm.stop_loss_points} pts | Targets: {self.fm.target_points} pts
 Trailing SL: {self.fm.trailing_sl_points} pts | Break-Even: {self.fm.use_break_even}
@@ -178,13 +178,14 @@ Indicators:
             import random
             import string
             
-            if self.args.strategy_mode == "python_code" and self.args.python_strategy_path:
+            if getattr(self.args, "python_strategy_path", None):
                 strategy_id = os.path.basename(self.args.python_strategy_path).split(':')[0].split('.')[0]
             else:
-                strategy_id = (self.args.rule_id or "ml-model")
+                strategy_id = (self.args.strategy_id or "python")
+            
             # Prefix: first word (hyphen/underscore) or 10 chars, whichever is smaller
             import re
-            first_word = re.split('[-_]', strategy_id)[0]
+            first_word = re.split('[-_ ]', strategy_id)[0]
             prefix = first_word[:10].lower()
             
             # Formulate date range
@@ -197,17 +198,15 @@ Indicators:
             short_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=3))
             session_id = f"{prefix}-{date_range}-{short_id}"
 
-            # Prepare standardized config dict
             config = {
-                "strategy": strategy_id,
-                "rule_id": strategy_id,
-                "strategy_mode": self.args.strategy_mode,
-                "python_strategy_path": getattr(self.args, 'python_strategy_path', None),
+                "strategyId": strategy_id,
+                "python_strategy_path": getattr(self.args, "python_strategy_path", None),
                 "timeframe": self.fm.global_timeframe,
                 "indicators": [
-                    f"{ind.get('InstrumentType', 'SPOT')}|{ind.get('type', 'N/A')}|{'-'.join(str(v) for v in ind.get('params', {}).values())}"
+                    f"{ind.get('InstrumentType', 'SPOT')}|{ind.get('indicator', 'N/A')}|{ind.get('indicatorId', 'N/A')}"
                     for ind in self.fm.indicator_calculator.config
                 ],
+                "tsl_indicator_id": self.fm.tsl_indicator_id,
                 "budget": self.args.budget,
                 "invest_mode": self.fm.invest_mode,
                 "stop_loss_points": self.fm.stop_loss_points,
@@ -216,7 +215,6 @@ Indicators:
                 "use_break_even": self.fm.use_break_even,
                 "strike_selection": getattr(self.args, 'strike_selection', 'ATM'),
                 "price_source": self.fm.price_source,
-                # Include any other relevant CLI args for completeness
                 "pyramid_steps": getattr(self.args, 'pyramid_steps', None),
                 "pyramid_confirm_pts": getattr(self.args, 'pyramid_confirm_pts', None),
             }

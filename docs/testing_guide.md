@@ -24,7 +24,7 @@ docker compose exec api pytest tests/
 #### Run a Specific Test File
 ```bash
 # Local
-pytest tests/test_fund_manager.py
+pytest tests/readwrite_db/test_fund_manager_ticks.py
 
 # Docker (VPS/Container)
 docker compose exec api pytest tests/xts/test_xts_socket.py
@@ -32,7 +32,7 @@ docker compose exec api pytest tests/xts/test_xts_socket.py
 
 #### Run a Specific Test Case
 ```bash
-pytest tests/test_fund_manager.py::TestFundManager::test_orchestration
+pytest tests/readwrite_db/test_fund_manager_ticks.py::TestFundManager::test_orchestration
 ```
 
 #### Run Tests with Output
@@ -160,7 +160,7 @@ graph TD
 python -m tests.backtest.backtest_runner \
     --mode db \
     --start 2026-02-27 \
-    --rule-id triple-lock-momentum \
+    --strategy-id triple-confirmation \
     --budget 200000 \
     --stop-loss-points 15.0 \
     --target-points "15,25,50" \
@@ -171,15 +171,24 @@ python -m tests.backtest.backtest_runner \
 ```bash
 python -m tests.backtest.backtest_runner \
     --mode socket \
-    --socket-event 1505-json-full \
     --start 2026-02-02 \
     --end 2026-02-02 \
-    --rule-id scalp-ema-rsi-1 \
+    --strategy-id triple-confirmation \
     --strike-selection ATM \
     --budget 200000 \
     --stop-loss-points 20.0 \
     --target-points "5,15,30" \
     --trailing-sl-points 5.0
+```
+
+### Indicator-based Trailing SL (EMA-5)
+Instead of fixed points, you can use an indicator (like EMA-5) to trail the stop loss.
+```bash
+python -m tests.backtest.backtest_runner \
+    --mode db \
+    --start 2026-02-27 \
+    --strategy-id triple-confirmation \
+    --tsl-indicator-id active-ema-5
 ```
 
 ### Python Strategy Mode (Hybrid)
@@ -188,7 +197,6 @@ Bypass the database DSL entirely by providing your own `.py` script. The `--rule
 python -m tests.backtest.backtest_runner \
     --mode db \
     --start 2026-02-27 \
-    --strategy-mode python_code \
     --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
     --budget 200000 \
     --stop-loss-points 15.0 \
@@ -205,8 +213,7 @@ python -m tests.backtest.backtest_runner \
     --start 2026-02-27 \
     --budget 200000 \
     --invest-mode compound \
-    --strategy-mode rule \
-    --rule-id triple-lock-momentum \
+    --strategy-id triple-confirmation \
     --strike-selection ATM \
     --stop-loss-points 15.0 \
     --target-points "15,25,50" \
@@ -220,8 +227,7 @@ python -m tests.backtest.backtest_runner \
     --start 2026-02-27 \
     --budget 200000 \
     --invest-mode compound \
-    --strategy-mode python_code \
-    --rule-id triple-lock-momentum \
+    --strategy-id triple-confirmation \
     --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
     --stop-loss-points 15.0 \
     --target-points "15,25,50" \
@@ -237,20 +243,18 @@ The following table lists all available command-line arguments for `tests/backte
 | `--mode` | n/a | `db` | Backtest mode: `db` (historical from DB) or `socket` (high-fidelity simulation). |
 | `--start` | n/a | `2026-02-02` | Simulation Start Date (YYYY-MM-DD). |
 | `--end` | n/a | `None` | Simulation End Date. Defaults to `--start` if omitted. |
-| `--rule-id` | `-r` | `None` | Strategy Rule ID from MongoDB. Required for `rule` mode. |
+| `--strategy-id` | `-s` | `None` | Strategy ID from MongoDB. Required for indicator lookup. |
 | `--budget` | `-b` | `200000.0` | Initial Capital in ₹. |
-| `--stop-loss-points`| `-s` | `15.0` | Absolute stop loss points off premium. |
+| `--stop-loss-points`| `-l` | `15.0` | Absolute stop loss points off premium. |
 | `--target-points` | `-t` | `15,25,50` | Comma-separated profit booking levels (points). |
 | `--trailing-sl-points`| `-L` | `0.0` | Trailing SL increment. Set to `0.0` to disable. |
 | `--use-break-even` | `-e` | `n/a` | Flag to move SL to entry after first target is hit. |
-| `--instrument-type` | n/a | `OPTIONS` | `CASH` or `OPTIONS`. |
 | `--strike-selection`| `-S` | `ATM` | Option strike selector: `ATM`, `ITM`, or `OTM`. |
 | `--invest-mode` | `-i` | `compound` | `compound` (reinvest profits) or `fixed` (standard sizing). |
-| `--strategy-mode` | n/a | `rule` | Logic engine: `rule` (JSON DSL), `ml`, or `python_code`. |
 | `--python-strategy-path`| n/a | `None` | Path to custom Python strategy class. |
-| `--ml-model-path` | n/a | `None` | Path to `.joblib` or `.onnx` model file for ML mode. |
 | `--pyramid-steps` | n/a | `100` | Comma-separated entry percentages (e.g. `25,50,25`). |
+| `--pyramid-confirm-pts` | n/a | `10.0` | Points move before next pyramid step. |
 | `--price-source` | `-p` | `close` | Entry/Exit price source: `open` or `close`. |
-| `--socket-event` | n/a | `1501-json-full`| XTS Socket event to simulate (Socket mode only). |
+| `--tsl-indicator-id`| n/a | `None` | Indicator ID for Trailing SL. |
 
 - See `python -m tests.backtest.backtest_runner --help` for the latest complete list.

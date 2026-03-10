@@ -33,6 +33,8 @@ def test_papertrade_timestamps_reflect_market_time():
     
     pm.on_signal({
         'signal': MarketIntent.LONG, 
+        'symbol': 'NIFTY',
+        'display_symbol': 'NIFTY',
         'price': 100.0, 
         'timestamp': market_dt
     })
@@ -63,6 +65,8 @@ def test_papertrade_timestamps_reflect_market_time():
     
     pm.on_signal({
         'signal': MarketIntent.SHORT, 
+        'symbol': 'NIFTY',
+        'display_symbol': 'NIFTY',
         'price': 120.0, 
         'timestamp': exit_dt
     })
@@ -83,7 +87,13 @@ def test_live_trader_recorded_at_reflects_market_time():
     from unittest.mock import patch
     
     strategy_config = {"name": "Test", "ruleId": "TEST-001"}
-    position_config = {"quantity": 50}
+    position_config = {
+        "symbol": "NIFTY",
+        "quantity": 50,
+        "python_strategy_path": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
+        "stop_loss_points": 10,
+        "target_points": 20
+    }
     
     mock_db = MagicMock()
     mock_soc = MagicMock()

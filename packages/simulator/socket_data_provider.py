@@ -18,7 +18,7 @@ class SocketDataProvider:
         self.running = False
         self.task = None
 
-    async def start_simulation(self, instrument_id: int | None, start_dt: datetime, end_dt: datetime, delay: float = 0.01, mode: str = 'tick'):
+    async def start_simulation(self, instrument_id: int | None, start_dt: datetime, end_dt: datetime, delay: float = 0.01):
         """
         Starts the simulation as a background task.
         Cancels any existing task.
@@ -31,10 +31,10 @@ class SocketDataProvider:
                 pass
         
         self.running = True
-        logger.info(f"Starting Simulation Task for {instrument_id if instrument_id else 'ALL'} ({mode})")
+        logger.info(f"Starting Simulation Task for {instrument_id if instrument_id else 'ALL'} (TICK)")
         
         self.task = asyncio.create_task(
-            self.stream_data(instrument_id, start_dt, end_dt, delay, mode)
+            self.stream_data(instrument_id, start_dt, end_dt, delay)
         )
 
     async def stop_simulation(self):
@@ -47,7 +47,7 @@ class SocketDataProvider:
         self.running = False
         logger.info("Simulation Stopped.")
 
-    async def stream_data(self, instrument_id: int | None, start_dt: datetime, end_dt: datetime, delay: float, mode: str):
+    async def stream_data(self, instrument_id: int | None, start_dt: datetime, end_dt: datetime, delay: float):
         try:
             db = MongoRepository.get_db()
             
@@ -72,7 +72,7 @@ class SocketDataProvider:
                 key=lambda x: (x[0], x[1])
             )
 
-            logger.info(f"Replaying {mode} from {start_dt} to {end_dt}...")
+            logger.info(f"Replaying TICK data from {start_dt} to {end_dt}...")
             
             count = 0
             for timestamp, priority, doc in merged_stream:
@@ -84,34 +84,29 @@ class SocketDataProvider:
                 inst_id = doc['i']
                 base_t = doc['t']
                 
-                if mode == 'candle':
-                    # Emit 1505 Bar Data
-                    await self._emit_1505_candle(inst_id, doc)
-                    if delay > 0: await asyncio.sleep(delay)
-                else:
-                    # Tick Breakdown logic (4 sub-ticks per 1-min bar)
-                    # Note: base_t in our DB is end-of-minute (XX:XX:59)
-                    start_t = base_t - 59
-                    vol_chunk = doc.get('v', 0) // 4
-                    
-                    # 1. Open
-                    await self._emit_1501_tick(inst_id, doc['o'], start_t, vol_chunk)
-                    if delay > 0: await asyncio.sleep(delay)
-                    
-                    # 2. High
-                    if not self.running: break
-                    await self._emit_1501_tick(inst_id, doc['h'], start_t + 15, vol_chunk)
-                    if delay > 0: await asyncio.sleep(delay)
-                    
-                    # 3. Low
-                    if not self.running: break
-                    await self._emit_1512_snapshot(inst_id, doc['l'], start_t + 30, vol_chunk)
-                    if delay > 0: await asyncio.sleep(delay)
-                    
-                    # 4. Close
-                    if not self.running: break
-                    await self._emit_1501_tick(inst_id, doc['c'], base_t, vol_chunk)
-                    if delay > 0: await asyncio.sleep(delay)
+                # Tick Breakdown logic (4 sub-ticks per 1-min bar)
+                # Note: base_t in our DB is end-of-minute (XX:XX:59)
+                start_t = base_t - 59
+                vol_chunk = doc.get('v', 0) // 4
+                
+                # 1. Open
+                await self._emit_1501_tick(inst_id, doc['o'], start_t, vol_chunk)
+                if delay > 0: await asyncio.sleep(delay)
+                
+                # 2. High
+                if not self.running: break
+                await self._emit_1501_tick(inst_id, doc['h'], start_t + 15, vol_chunk)
+                if delay > 0: await asyncio.sleep(delay)
+                
+                # 3. Low
+                if not self.running: break
+                await self._emit_1512_snapshot(inst_id, doc['l'], start_t + 30, vol_chunk)
+                if delay > 0: await asyncio.sleep(delay)
+                
+                # 4. Close
+                if not self.running: break
+                await self._emit_1501_tick(inst_id, doc['c'], base_t, vol_chunk)
+                if delay > 0: await asyncio.sleep(delay)
                 
                 count += 1
                 if count % 100 == 0:
@@ -134,7 +129,8 @@ class SocketDataProvider:
         1. Add 19800 seconds (IST shift)
         2. Subtract 315532800 seconds (Epoch shift 1970 -> 1980)
         """
-        return ts + settings.XTS_TIME_OFFSET - 315532800
+        from packages.utils.date_utils import DateUtils
+        return ts + settings.XTS_TIME_OFFSET - DateUtils.XTS_EPOCH_OFFSET
 
     async def _emit_1501_tick(self, instrument_id: int, price: float, timestamp: int, volume: int):
         """Emits Touchline (1501) full and partial events."""
@@ -161,35 +157,6 @@ class SocketDataProvider:
         }
         await self.sio.emit('1501-json-full', payload)
 
-    async def _emit_1505_candle(self, instrument_id: int, doc: Dict):
-        """Emits Candle (1505) full and partial events."""
-        xts_ts = self._get_xts_timestamp(doc['t'])
-        
-        # 1. Full JSON (Nested under BarData as per XTS standard and existing tests)
-        # Note: Even if user prefers flat, 1505 usually wraps in BarData.
-        # But per user's request for "exact structure" and showing 1501 as flat, 
-        # I'll provide flat for 1505 if they implied all should be flat.
-        # However, MarketUtils.normalize_1505_candle_event expects BarData.
-        # So I will keep BarData for compatibility but include MessageCode if flat is needed.
-        # Let's try to follow what MarketUtils expects while being "Exact".
-        payload = {
-            "MessageCode": 1505,
-            "ExchangeInstrumentID": instrument_id,
-            "BarData": {
-                "Open": doc['o'],
-                "High": doc['h'],
-                "Low": doc['l'],
-                "Close": doc['c'],
-                "Volume": doc.get('v', 0),
-                "Timestamp": xts_ts
-            }
-        }
-        await self.sio.emit('1505-json-full', payload)
-        
-        # 2. Partial String
-        partial_str = f"i:{instrument_id},t:{xts_ts},o:{doc['o']},h:{doc['h']},l:{doc['l']},c:{doc['c']},v:{doc.get('v', 0)}"
-        await self.sio.emit('1505-json-partial', partial_str)
-
     async def _emit_1512_snapshot(self, instrument_id: int, price: float, timestamp: int, volume: int):
         """Emits Snapshot/L2 (1512) full and partial events."""
         xts_ts = self._get_xts_timestamp(timestamp)
@@ -204,8 +171,9 @@ class SocketDataProvider:
             "LastTradedQuantity": int(volume),
             "TotalTradedQuantity": 0
         }
+        await self.sio.emit('1501-json-full', payload) # Standardized to 1501-json-full for consumer
         await self.sio.emit('1512-json-full', payload)
         
         # 2. Partial String
         partial_str = f"i:{instrument_id},ltp:{price},ltq:{volume},v:0,ltt:{xts_ts}"
-        await self.sio.emit('1512-json-partial', partial_str)
+        await self.sio.emit('1501-json-partial', partial_str)

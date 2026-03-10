@@ -140,12 +140,14 @@ class PositionManager:
                  display_symbol: str | None = None,
                  pyramid_steps: List[int] | None = None,
                  pyramid_confirm_pts: float = 10.0,
-                 price_source: str = "close"):
+                 price_source: str = "close",
+                 tsl_indicator_id: str | None = None):
         self.symbol = symbol
         self.display_symbol = display_symbol or symbol
         self.quantity = quantity
         self.stop_loss_points = stop_loss_points
         self.trailing_sl_points = trailing_sl_points
+        self.tsl_indicator_id = tsl_indicator_id
         self.use_break_even = use_break_even
         self.instrument_type = instrument_type
         
@@ -179,28 +181,32 @@ class PositionManager:
     def set_order_manager(self, order_manager):
         self.order_manager = order_manager
 
-    def on_signal(self, signal_dict: Dict):
+    def on_signal(self, payload):
         """
         Processes a New Signal. 
-        Accepts: {'signal': MarketIntentType.LONG, 'price': 100.0, 'timestamp': datetime, 'symbol': '48215', 'display_symbol': 'NIFTY...'}
         """
-        intent = signal_dict['signal']
-        price = signal_dict['price']
-        timestamp = signal_dict['timestamp']
+        # If payload is a dict, parse it via Pydantic model (backward compatibility)
+        if isinstance(payload, dict):
+            from packages.tradeflow.types import SignalPayload
+            payload = SignalPayload(**payload)
+            
+        intent = payload.signal
+        price = payload.price
+        timestamp = payload.timestamp
         
         if isinstance(timestamp, (int, float)):
             timestamp = datetime.fromtimestamp(timestamp)
-        symbol = str(signal_dict.get('symbol', self.symbol))
-        display_symbol = signal_dict.get('display_symbol', symbol)
+        symbol = str(payload.symbol) if payload.symbol else self.symbol
+        display_symbol = payload.display_symbol or symbol
 
         if self.current_position:
             if self.current_position.intent != intent:
                 # Signal flip → close current position
-                nifty_price = signal_dict.get('nifty_price', 0.0)
+                nifty_price = payload.nifty_price
                 self._close_position(price, timestamp, "SIGNAL_EXIT", nifty_price=nifty_price)
             else:
                 # Same-direction signal → attempt pyramid add
-                self._try_pyramid_add(price, timestamp, signal_dict)
+                self._try_pyramid_add(price, timestamp, payload)
                 return
         else:
             # Check for Entry Signal
@@ -213,17 +219,17 @@ class PositionManager:
                 self.cycle_count += 1
             
             # 2. Extract specific trigger name if provided
-            entry_reason = signal_dict.get('reason', 'N/A')
-            nifty_price = signal_dict.get('nifty_price', 0.0)
+            entry_reason = payload.reason
+            nifty_price = payload.nifty_price
             
             date_prefix = trade_date.strftime("%Y%m%d")
             self._open_position(intent, price, timestamp, symbol, display_symbol, 
                                cycle_id=f"{date_prefix}-cycle-{self.cycle_count}", 
                                reason=entry_reason,
-                               reason_desc=signal_dict.get('reason_desc', ''),
+                               reason_desc=payload.reason_desc,
                                nifty_price=nifty_price)
 
-    def _try_pyramid_add(self, price: float, timestamp: datetime, signal_dict: Dict):
+    def _try_pyramid_add(self, price: float, timestamp: datetime, payload):
         """
         Attempts to add to an existing position via pyramiding.
         Only adds if:
@@ -284,7 +290,7 @@ class PositionManager:
         if self.order_manager:
             self.order_manager.place_order(pos.symbol, "BUY", add_qty)
 
-    def update_tick(self, tick: Dict, nifty_price: float | None = None):
+    def update_tick(self, tick: Dict, nifty_price: float | None = None, indicators: Dict | None = None):
         """
         Updates current position status based on latest price (tick/candle).
         Checks Stop Loss, Targets, and Trailing features.
@@ -351,6 +357,26 @@ class PositionManager:
                     desc = f"STOP_LOSS hit at {h:.2f} (SL: {pos.stop_loss:.2f})"
                 self._close_position(pos.stop_loss, exit_time, reason, reason_desc=desc, nifty_price=nifty_price)
                 return
+
+        # 1.b Indicator-based Trailing SL (EMA-5 etc) - ONLY after profit
+        if self.tsl_indicator_id and indicators:
+            ind_val = indicators.get(self.tsl_indicator_id)
+            if ind_val is not None:
+                # Check if trade is currently in profit
+                is_in_profit = pos.pnl > 0
+                if is_in_profit:
+                    triggered = False
+                    if is_long_dir and l < ind_val: # Use Low for Long
+                        triggered = True
+                        exit_price = min(current_price, ind_val) # Pessimistic exit
+                    elif not is_long_dir and h > ind_val: # Use High for Short
+                        triggered = True
+                        exit_price = max(current_price, ind_val)
+                    
+                    if triggered:
+                        desc = f"INDICATOR_TSL ({self.tsl_indicator_id}) hit at {exit_price:.2f} (Value: {ind_val:.2f})"
+                        self._close_position(exit_price, exit_time, "INDICATOR_TSL", reason_desc=desc, nifty_price=nifty_price)
+                        return
 
         # 2. Update Extremes and Trailing SL
         if is_long_dir:

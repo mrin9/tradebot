@@ -60,7 +60,7 @@ class HistoricalDataCollector:
                     compressionValue=self.COMPRESSION_VALUE
                 )
                 
-                if response and response.get('type') == 'success' and 'result' in response:
+                if isinstance(response, dict) and response.get('type') == 'success' and 'result' in response:
                     data_response = response['result'].get('dataReponse', '')
                     ticks = self._parse_ohlc_string(data_response, instrument_id)
                     
@@ -150,7 +150,7 @@ class HistoricalDataCollector:
                 if len(parts) < 6: continue
                 
                 # Schema matching old project
-                tick_ts = int(parts[0]) - settings.XTS_TIME_OFFSET
+                tick_ts = DateUtils.rest_timestamp_to_utc(parts[0])
                 tick = {
                     "i": instrument_id,
                     "t": tick_ts,

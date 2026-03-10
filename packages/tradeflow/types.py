@@ -1,5 +1,6 @@
 from typing import TypedDict, Any, Tuple
 from enum import Enum, auto
+from datetime import datetime
 
 class SignalType(Enum):
     LONG = 1
@@ -36,5 +37,27 @@ class CandleType(TypedDict):
     volume: int
     is_final: bool
 
+from pydantic import BaseModel, Field
+from typing import NewType
+
+# Strong Typing for Timestamps
+UtcTimestamp = NewType('UtcTimestamp', float) # Seconds since 1970 UTC
+XtsRestTimestamp = NewType('XtsRestTimestamp', int) # Seconds since 1970 IST (Shifted)
+XtsSocketTimestamp = NewType('XtsSocketTimestamp', int) # Seconds since 1980 IST (Shifted)
+
 # Type Aliases for cleaner signatures
 SignalReturnType = Tuple[SignalType, str, float]
+
+class SignalPayload(BaseModel):
+    """
+    Unified payload passed from FundManager down to PositionManager.
+    """
+    signal: MarketIntentType
+    price: float
+    timestamp: float | datetime
+    symbol: str | int
+    display_symbol: str
+    confidence: float = 0.0
+    reason: str = "N/A"
+    reason_desc: str = ""
+    nifty_price: float = 0.0

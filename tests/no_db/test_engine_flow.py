@@ -17,6 +17,9 @@ def test_engine_initialization():
     }
     pos_cfg = {
         "budget": 100000,
+        "symbol": "NIFTY",
+        "quantity": 50,
+        "python_strategy_path": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
         "stop_loss_points": 10,
         "target_points": 20
     }

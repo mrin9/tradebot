@@ -197,14 +197,14 @@ class XTSConnect(XTSCommon):
                 "secretKey": self.secretKey,
                 "source": self.source
             }
-            response = self._post("user.login", params)
+            response = self._post("user.login", json.dumps(params))
 
-            if "token" in response['result']:
+            if response and isinstance(response, dict) and "token" in response.get('result', {}):
                 self._set_common_variables(response['result']['token'], response['result']['userID'],
                                            response['result']['isInvestorClient'])
             return response
         except Exception as e:
-            return response['description'] if response else str(e)
+            return response.get('description', str(e)) if isinstance(response, dict) else str(e)
 
     def get_order_book(self, clientID=None):
         """Request Order book gives states of all the orders placed by an user"""
@@ -653,13 +653,13 @@ class XTSConnect(XTSCommon):
                 "secretKey": self.secretKey,
                 "source": self.source
             }
-            response = self._post("market.login", params)
+            response = self._post("market.login", json.dumps(params))
 
-            if "token" in response['result']:
+            if response and isinstance(response, dict) and "token" in response.get('result', {}):
                 self._set_common_variables(response['result']['token'], response['result']['userID'],False)
             return response
         except Exception as e:
-            return response['description'] if response else str(e)
+            return response.get('description', str(e)) if isinstance(response, dict) else str(e)
 
     def get_config(self):
         try:
@@ -827,9 +827,13 @@ class XTSConnect(XTSCommon):
         url = parse.urljoin(self.root, uri)
         headers = {}
 
+        # Always set content-type for POST/PUT if data is provided
+        if method in ["POST", "PUT"]:
+            headers.update({'Content-Type': 'application/json'})
+
         if self.token:
             # set authorization header
-            headers.update({'Content-Type': 'application/json', 'Authorization': self.token})
+            headers.update({'Authorization': self.token})
 
         try:
             r = self.reqsession.request(method,

@@ -11,7 +11,7 @@ from packages.config import settings
 DB_NAME = "tradebot_frozen_test"
 NIFTY_COL = "nifty_candle_test_data"
 OPT_COL = "options_candle_test_data"
-RULE_COL = "strategy_rules_test_data"
+RULE_COL = "strategy_indicators_test_data"
 INST_COL = "instrument_master_test_data"
 
 def clear_db(db):
@@ -192,121 +192,50 @@ def generate_day_data(db, start_dt, day_type, ce_map, pe_map, start_nifty_price=
     return nifty_price # return ending price for next day
 
 def generate_rules(db):
-    print("Seeding strategy rules...")
+    print("Seeding strategy indicators for tests...")
     rules = [
-        # 1. EMA 5/21 + RSI Filter (180s Timeframe) - Triple Lock
+        # 1. Triple Confirmation (180s)
         {
-            "ruleId": "ema-5x21+rsi-180s-triple",
+            "strategyId": "ema-5x21+rsi-180s-triple",
             "name": "EMA 5x21 + RSI Triple Lock",
-            "category": "TREND",
             "enabled": True,
-            "applicableTo": ["NIFTY"],
-            "timeframe": 180,
-            "indicators": [
-                {"indicatorId": "ema5", "displayLabel": "EMA 5 SPOT", "type": "EMA", "params": {"period": 5}, "InstrumentType": "SPOT"},
-                {"indicatorId": "ema21", "displayLabel": "EMA 21 SPOT", "type": "EMA", "params": {"period": 21}, "InstrumentType": "SPOT"},
-                {"indicatorId": "rsi", "displayLabel": "RSI 14 SPOT", "type": "RSI", "params": {"period": 14}, "InstrumentType": "SPOT"},
-                {"indicatorId": "ema5", "displayLabel": "EMA 5", "type": "EMA", "params": {"period": 5}, "InstrumentType": "OPTIONS_BOTH"},
-                {"indicatorId": "ema21", "displayLabel": "EMA 21", "type": "EMA", "params": {"period": 21}, "InstrumentType": "OPTIONS_BOTH"},
-                {"indicatorId": "rsi", "displayLabel": "RSI 14", "type": "RSI", "params": {"period": 14}, "InstrumentType": "OPTIONS_BOTH"}
-            ],
-            "entry": {
-                "intent": "AUTO",
-                "evaluateSpot": True,
-                "evaluateInverse": True,
-                "operator": "AND",
-                "conditions": [
-                    {
-                        "operator": "OR",
-                        "conditions": [
-                            {"type": "crossover", "fastIndicatorId": "ema5", "slowIndicatorId": "ema21"},
-                            {"type": "crossover", "fastIndicatorId": "ACTIVE_ema5", "slowIndicatorId": "ACTIVE_ema21"},
-                            {"type": "crossunder", "fastIndicatorId": "INVERSE_ema5", "slowIndicatorId": "INVERSE_ema21"}
-                        ]
-                    },
-                    {"type": "threshold", "indicatorId": "ema5", "op": ">", "valueIndicatorId": "ema21"},
-                    {"type": "threshold", "indicatorId": "ACTIVE_ema5", "op": ">", "valueIndicatorId": "ACTIVE_ema21"},
-                    {"type": "threshold", "indicatorId": "INVERSE_ema5", "op": "<", "valueIndicatorId": "INVERSE_ema21"},
-                    {"type": "threshold", "indicatorId": "rsi", "op": ">", "value": 50},
-                    {"type": "threshold", "indicatorId": "ACTIVE_rsi", "op": ">", "value": 50},
-                    {"type": "threshold", "indicatorId": "INVERSE_rsi", "op": "<", "value": 50}
-                ]
-            },
-            "exit": {
-                "evaluateSpot": True,
-                "evaluateInverse": False,
-                "operator": "AND",
-                "conditions": [
-                    {"type": "crossunder", "fastIndicatorId": "ACTIVE_ema5", "slowIndicatorId": "ACTIVE_ema21"}
-                ]
-            }
+            "timeframe_seconds": 180,
+            "pythonStrategyPath": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
+            "Indicators": [
+                { "indicatorId": "ema5", "indicator": "ema-5", "InstrumentType": "SPOT" },
+                { "indicatorId": "ema21", "indicator": "ema-21", "InstrumentType": "SPOT" },
+                { "indicatorId": "rsi", "indicator": "rsi-14", "InstrumentType": "SPOT" },
+                { "indicatorId": "ema5", "indicator": "ema-5", "InstrumentType": "OPTIONS_BOTH" },
+                { "indicatorId": "ema21", "indicator": "ema-21", "InstrumentType": "OPTIONS_BOTH" },
+                { "indicatorId": "rsi", "indicator": "rsi-14", "InstrumentType": "OPTIONS_BOTH" }
+            ]
         },
-        # 2. EMA 9/21 + Supertrend + RSI (300s Timeframe) - Active-Only
+        # 2. EMA 9/21 + Supertrend + RSI (300s)
         {
-            "ruleId": "ema-9x21+st+rsi-300s-active",
+            "strategyId": "ema-9x21+st+rsi-300s-active",
             "name": "EMA 9x21 Supertrend Active Only",
-            "category": "TREND",
             "enabled": True,
-            "applicableTo": ["NIFTY"],
-            "timeframe": 300,
-            "indicators": [
-                {"indicatorId": "ema9", "displayLabel": "EMA 9", "type": "EMA", "params": {"period": 9}, "InstrumentType": "OPTIONS_BOTH"},
-                {"indicatorId": "ema21", "displayLabel": "EMA 21", "type": "EMA", "params": {"period": 21}, "InstrumentType": "OPTIONS_BOTH"},
-                {"indicatorId": "st", "displayLabel": "Supertrend", "type": "SUPERTREND", "params": {"period": 10, "multiplier": 3}, "InstrumentType": "OPTIONS_BOTH"},
-                {"indicatorId": "rsi", "displayLabel": "RSI", "type": "RSI", "params": {"period": 14}, "InstrumentType": "OPTIONS_BOTH"}
-            ],
-            "entry": {
-                "intent": "AUTO",
-                "evaluateSpot": False, # ACTIVE ONLY
-                "evaluateInverse": False,
-                "operator": "AND",
-                "conditions": [
-                    {"type": "crossover", "fastIndicatorId": "ACTIVE_ema9", "slowIndicatorId": "ACTIVE_ema21"},
-                    {"type": "direction_match", "indicatorId": "ACTIVE_st_dir", "op": "==", "value": 1},
-                    {"type": "threshold", "indicatorId": "ACTIVE_rsi", "op": ">", "value": 50}
-                ]
-            },
-            "exit": {
-                "evaluateSpot": False,
-                "evaluateInverse": False,
-                "operator": "AND",
-                "conditions": [
-                    {"type": "crossunder", "fastIndicatorId": "ACTIVE_ema9", "slowIndicatorId": "ACTIVE_ema21"}
-                ]
-            }
+            "timeframe_seconds": 300,
+            "pythonStrategyPath": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
+            "Indicators": [
+                { "indicatorId": "ema9", "indicator": "ema-9", "InstrumentType": "OPTIONS_BOTH" },
+                { "indicatorId": "ema21", "indicator": "ema-21", "InstrumentType": "OPTIONS_BOTH" },
+                { "indicatorId": "st", "indicator": "supertrend-10-3", "InstrumentType": "OPTIONS_BOTH" },
+                { "indicatorId": "rsi", "indicator": "rsi-14", "InstrumentType": "OPTIONS_BOTH" }
+            ]
         },
-        # 3. MACD + Supertrend + EMA Slope (180s Timeframe) - Active + Spot
+        # 3. MACD + Supertrend + EMA Slope (180s)
         {
-            "ruleId": "macd+st+slope-180s-dual",
+            "strategyId": "macd+st+slope-180s-dual",
             "name": "MACD ST Slope Dual",
-            "category": "MOMENTUM",
             "enabled": True,
-            "applicableTo": ["NIFTY"],
-            "timeframe": 180,
-            "indicators": [
-                {"indicatorId": "macd", "displayLabel": "MACD", "type": "MACD", "params": {"fast": 12, "slow": 26, "signal": 9}, "InstrumentType": "SPOT"},
-                {"indicatorId": "st", "displayLabel": "Supertrend", "type": "SUPERTREND", "params": {"period": 10, "multiplier": 3}, "InstrumentType": "SPOT"},
-                {"indicatorId": "ema_slope", "displayLabel": "EMA Slope", "type": "EMA", "params": {"period": 20}, "InstrumentType": "SPOT"} # Simplified slope as just the indicator to mock
-            ],
-            "entry": {
-                "intent": "AUTO",
-                "evaluateSpot": True,
-                "evaluateInverse": False,
-                "operator": "AND",
-                "conditions": [
-                    {"type": "threshold", "indicatorId": "macd_hist", "op": ">", "value": 0},
-                    {"type": "direction_match", "indicatorId": "st_dir", "op": "==", "value": 1}
-                ]
-            },
-            "exit": {
-                "evaluateSpot": False,
-                "evaluateInverse": True,
-                "operator": "OR",
-                "conditions": [
-                    {"type": "threshold", "indicatorId": "macd_hist", "op": "<", "value": 0},
-                    {"type": "crossover", "fastIndicatorId": "INVERSE_macd_hist", "slowIndicatorId": "INVERSE_ema_slope", "op": ">", "value": 0} # Dummy cross to trigger inverse evaluate parsing
-                ]
-            }
+            "timeframe_seconds": 180,
+            "pythonStrategyPath": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
+            "Indicators": [
+                { "indicatorId": "macd", "indicator": "macd-12-26-9", "InstrumentType": "SPOT" },
+                { "indicatorId": "st", "indicator": "supertrend-10-3", "InstrumentType": "SPOT" },
+                { "indicatorId": "ema_slope", "indicator": "ema-20", "InstrumentType": "SPOT" }
+            ]
         }
     ]
     db[RULE_COL].insert_many(rules)
