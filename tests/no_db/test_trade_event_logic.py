@@ -114,3 +114,19 @@ def test_skip_summary_in_papertrade():
     # Case 2: No position active
     service.record_trade_event({"type": "SUMMARY"}, MagicMock())
     assert not service.db["papertrade"].insert_one.called
+
+def test_record_init_standardization():
+    service = TradeEventService(session_id="test-session")
+    service.db = MagicMock()
+    
+    fm = MagicMock()
+    fm.config = {"strategyId": "test", "name": "Test Strategy"}
+    fm.position_config = {"budget": 100}
+    fm.indicator_calculator.config = []
+    
+    service.record_init(fm, mode="backtest")
+    
+    inserted_doc = service.db["papertrade"].insert_one.call_args[0][0]
+    assert inserted_doc["type"] == "INIT"
+    assert inserted_doc["config"]["mode"] == "backtest"
+    assert inserted_doc["config"]["strategyId"] == "test"

@@ -137,13 +137,8 @@ class LiveTradeEngine:
             self.history_service.run_warmup(self.fund_manager, settings.NIFTY_EXCHANGE_INSTRUMENT_ID, anchor_timestamp, "SPOT", use_api=True)
             self.has_warmed_up = True
             
-            # Record INIT event with normalized config
-            init_data = {
-                "type": "INIT",
-                "msg": "Trading session initialized after successful warmup.",
-                "config": self.config_service.normalize_strategy_config(self.strategy_config)
-            }
-            self.event_service.record_init(init_data["config"])
+            # Record INIT event with enriched config
+            self.event_service.record_init(self.fund_manager, mode="live")
         finally:
             self.fund_manager.is_warming_up = False
 

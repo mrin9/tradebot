@@ -13,6 +13,7 @@ from packages.utils.trade_persistence import TradePersistence
 from packages.config import settings
 from packages.data.connectors.xts_normalizer import XTSNormalizer
 from packages.tradeflow.fund_manager import FundManager
+from packages.services.trade_event import TradeEventService
 
 logger = setup_logger("BacktestEngine")
 
@@ -94,7 +95,10 @@ class BacktestEngine:
         
         self.daily_pnl = {}
         self._last_pnl_checkpoint = 0.0
-        self.session_id = None
+        
+        # Session ID and Recording
+        self.session_id = DateUtils.generate_session_id(self.strategy_config.get("strategyId", "python"))
+        self.event_service = TradeEventService(self.session_id, record_papertrade=position_config.get("record_papertrade", True))
 
     def record_daily_pnl(self, day_str: str):
         current_total_pnl = sum([t.pnl for t in self.fund_manager.position_manager.trades_history])
@@ -112,6 +116,10 @@ class BacktestEngine:
             raise NotImplementedError(f"Mode {self.mode} not implemented in BacktestEngine yet.")
         
         feeder.start(self)
+        
+        # Record INIT event with enriched config
+        self.event_service.record_init(self.fund_manager, mode=self.mode)
+        
         self.generate_report()
         self.save_results()
 
@@ -129,9 +137,6 @@ class BacktestEngine:
 
     def save_results(self):
         try:
-            self.session_id = DateUtils.generate_session_id(self.strategy_config.get("strategyId", "python"))
-
-            from packages.services.trade_event import TradeEventService
             config_summary = TradeEventService.build_config_summary(self.fund_manager, mode=self.mode)
 
             persistence = TradePersistence()

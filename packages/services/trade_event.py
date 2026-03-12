@@ -20,8 +20,9 @@ class TradeEventService:
         self.db = MongoRepository.get_db()
         self.active_signals: List[Dict] = []
 
-    def record_init(self, config: Dict):
+    def record_init(self, fund_manager: Any, mode: str = "live"):
         """Records the session initialization."""
+        config = self.build_config_summary(fund_manager, mode=mode)
         event = {
             "type": "INIT",
             "msg": "Trading session initialized.",
