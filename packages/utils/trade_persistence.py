@@ -20,7 +20,7 @@ class TradePersistence:
         self.backtest_col = settings.BACKTEST_RESULT_COLLECTION
         self.paper_col = "papertrade"
 
-    def record_granular_event(self, session_id: str, event_type: str, pos: Position, nifty_price: float, msg: str = ""):
+    def record_granular_event(self, session_id: str, event_type: str, pos: Position, nifty_price: float, msg: str = "", action_pnl: float = 0.0):
         """
         Records a real-time event to the 'papertrade' collection for granular tracking.
         """
@@ -33,7 +33,7 @@ class TradePersistence:
                 "description": pos.display_symbol,
                 "price": pos.current_price,
                 "quantity": pos.remaining_quantity,
-                "actionPnL": getattr(pos, 'last_action_pnl', 0.0), # Needs position support or passed in
+                "actionPnL": action_pnl,
                 "cyclePnL": pos.total_realized_pnl,
                 "totalPnL": getattr(pos, 'session_realized_pnl', 0.0),
                 "niftyPrice": nifty_price,

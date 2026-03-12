@@ -129,18 +129,7 @@ class BacktestEngine:
 
     def save_results(self):
         try:
-            # Generate session ID logic
-            strategy_id = self.strategy_config.get("strategyId", "python")
-            prefix = re.split('[-_ ]', strategy_id)[0][:10].lower()
-
-            s_dt = DateUtils._parse_keyword(self.start_date, is_end=False)
-            e_dt = DateUtils._parse_keyword(self.end_date, is_end=True)
-            date_range = s_dt.strftime("%d%b").upper()
-            if s_dt.date() != e_dt.date():
-                date_range += f"-{e_dt.strftime('%d%b').upper()}"
-            
-            short_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=3))
-            self.session_id = f"{prefix}-{date_range}-{short_id}"
+            self.session_id = DateUtils.generate_session_id(self.strategy_config.get("strategyId", "python"))
 
             from packages.services.trade_event import TradeEventService
             config_summary = TradeEventService.build_config_summary(self.fund_manager, mode=self.mode)

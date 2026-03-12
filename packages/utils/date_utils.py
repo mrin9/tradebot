@@ -1,5 +1,8 @@
 import datetime
 import pytz
+import random
+import string
+import re
 from typing import Tuple, Union
 
 # Constants
@@ -233,6 +236,23 @@ class DateUtils:
         ]
         results = db[collection_name].aggregate(pipeline)
         return [r["_id"] for r in results if r["_id"]]
+
+    @staticmethod
+    def generate_session_id(strategy_id: str = "default") -> str:
+        """
+        Generates a standardized session ID: monthday-hourminute-strategyPrefix-rand3
+        Example: mar12-0928-triple-hlf
+        """
+        now = datetime.datetime.now(MARKET_TZ)
+        date_part = now.strftime('%b%d').lower()
+        time_part = now.strftime('%H%M')
+        
+        # Extract first word of strategy indicator (clean prefix)
+        clean_prefix = re.split('[-_ ]', str(strategy_id))[0][:10].lower()
+        
+        rand_alpha = ''.join(random.choices(string.ascii_lowercase + string.digits, k=3))
+        
+        return f"{date_part}-{time_part}-{clean_prefix}-{rand_alpha}"
 
 
 

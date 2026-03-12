@@ -51,6 +51,10 @@ class TradeEventService:
         if not self.record_papertrade:
             return
             
+        # Skip summary records in papertrade collection as requested
+        if event_data.get("type", "").upper() == "SUMMARY":
+            return
+
         nifty_price = fund_manager.latest_tick_prices.get(26000, 0.0)
         pos_manager = fund_manager.position_manager
         pos = pos_manager.current_position
@@ -65,11 +69,12 @@ class TradeEventService:
                 event_type=event_data.get("type", "EVENT"),
                 pos=pos,
                 nifty_price=nifty_price,
-                msg=event_data.get("transaction")
+                msg=event_data.get("transaction"),
+                action_pnl=event_data.get("actionPnL", 0.0)
             )
             
-            # If it's an exit or summary event, sync the full session summary
-            if event_data.get("type", "").lower() in ["exit", "summary", "target", "breakeven"]:
+            # If it's an exit or target event, sync the full session summary
+            if event_data.get("type", "").lower() in ["exit", "target", "breakeven"]:
                 self.sync_session_summary(fund_manager)
         else:
             # Handle events that happen when no position is active (e.g., target hit on closed chunk)
@@ -80,15 +85,15 @@ class TradeEventService:
         """
         Builds a comprehensive configuration summary for the session.
         """
-        config = fund_manager.strategy_config.copy()
+        config = fund_manager.config.copy()
         config.update({
             "mode": mode,
-            "strategy": fund_manager.strategy_config.get('name'),
-            "strategyId": fund_manager.strategy_config.get('strategyId'),
-            "python_strategy_path": fund_manager.pos_config.get("python_strategy_path") or fund_manager.config.get("pythonStrategyPath"),
+            "strategy": fund_manager.config.get('name'),
+            "strategyId": fund_manager.config.get('strategyId'),
+            "python_strategy_path": fund_manager.position_config.get("python_strategy_path") or fund_manager.config.get("pythonStrategyPath"),
             "timeframe": fund_manager.global_timeframe,
             "indicators": [
-                f"{ind.get('InstrumentType', 'SPOT')}|{ind.get('indicator', 'N/A')}"
+                f"{ind.get('InstrumentType', 'SPOT').replace('_', '-')}-{ind.get('indicator', 'N/A')}".upper()
                 for ind in fund_manager.indicator_calculator.config
             ],
             "tsl_indicator_id": fund_manager.tsl_indicator_id,
@@ -100,8 +105,8 @@ class TradeEventService:
             "use_break_even": fund_manager.use_break_even,
             "strike_selection": getattr(fund_manager, 'strike_selection', 'ATM'),
             "price_source": getattr(fund_manager, 'price_source', 'close'),
-            "pyramid_steps": fund_manager.pos_config.get("pyramid_steps"),
-            "pyramid_confirm_pts": fund_manager.pos_config.get("pyramid_confirm_pts"),
+            "pyramid_steps": fund_manager.position_config.get("pyramid_steps"),
+            "pyramid_confirm_pts": fund_manager.position_config.get("pyramid_confirm_pts"),
         })
         return config
 
@@ -133,16 +138,18 @@ class TradeEventService:
 
     def _persist_non_position_event(self, event_data: Dict, fund_manager: Optional[Any] = None):
         """Helper to persist generic events to papertrade collection."""
-        if fund_manager and hasattr(fund_manager, 'latest_market_time'):
-            ts = DateUtils.market_timestamp_to_iso(fund_manager.latest_market_time)
-        else:
-            ts = datetime.now(DateUtils.MARKET_TZ).isoformat()
-            
+        # Skip summary records in papertrade
+        if event_data.get("type", "").upper() == "SUMMARY":
+            return
+
         event_data.update({
             "sessionId": self.session_id,
-            "timestamp": ts,
             "createdAt": datetime.now(DateUtils.MARKET_TZ).replace(microsecond=0).isoformat()
         })
+        # Remove redundant timestamp
+        if "timestamp" in event_data:
+            del event_data["timestamp"]
+
         try:
             self.db["papertrade"].insert_one(event_data)
         except Exception as e:

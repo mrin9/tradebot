@@ -5,10 +5,14 @@ import json
 import logging
 import os
 import requests
+import urllib3
 from urllib import parse
 from . import XTSException as ex
 from .settings import settings
 from .logger import setup_logger
+
+# Suppress InsecureRequestWarning globally as SSL verification is often disabled for XTS
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = setup_logger(__name__)
 

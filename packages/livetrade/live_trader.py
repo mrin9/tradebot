@@ -32,9 +32,7 @@ class LiveTradeEngine:
         self.position_config = position_config
         
         # Session ID
-        now = datetime.now()
-        rand_alpha = ''.join(random.choices(string.ascii_lowercase, k=3))
-        self.session_id = f"{now.strftime('%b%d').lower()}-{now.strftime('%H%M')}-{rand_alpha}"
+        self.session_id = DateUtils.generate_session_id(strategy_config.get("strategyId", "python"))
         
         # 1. Initialize Services
         self.config_service = TradeConfigService()

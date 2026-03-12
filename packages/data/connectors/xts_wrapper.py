@@ -4,7 +4,11 @@ from datetime import datetime, timedelta
 from packages.config import settings
 from packages.data.connectors.xts_sdk.XTSConnect import XTSConnect
 from packages.data.connectors.xts_sdk.MarketDataSocketClient import MDSocket_io
+import urllib3
 from packages.utils.log_utils import setup_logger
+
+# Suppress InsecureRequestWarning caused by disabling SSL verification
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = setup_logger(__name__)
 

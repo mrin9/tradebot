@@ -23,8 +23,8 @@ def test_call_api_rate_limit_retry():
         assert resp == {"type": "success", "result": "done"}
         assert mock_func.call_count == 2
         assert m_sleep.call_count == 1
-        # For e-apirl-0004, wait is 5 * attempt = 5s
-        m_sleep.assert_called_with(5)
+        # For e-apirl-0004, wait is now hardcoded to 1s in xts_wrapper.py
+        m_sleep.assert_called_with(1)
 
 def test_call_api_session_expired_recovery():
     """Verifies that call_api re-logs when the session is invalid."""

@@ -602,7 +602,7 @@ class PositionManager:
                     "cycleId": pos.trade_cycle,
                     "cycleSeq": pos.event_count,
                     "type": reason.lower(),
-                    "transaction": f"{reason} Hit: {trans_desc}",
+                    "transaction": f"{reason} Hit: {trans_desc} | Action PnL: {chunk_pnl:+.2f} | Total PnL: {self.session_realized_pnl:+.2f}",
                     "actionPnL": chunk_pnl,
                     "cyclePnL": pos.total_realized_pnl,
                     "totalPnL": self.session_realized_pnl
@@ -640,7 +640,7 @@ class PositionManager:
                     "cycleId": pos.trade_cycle,
                     "cycleSeq": pos.event_count,
                     "type": "exit",
-                    "transaction": f"Exit {reason}: {trans_desc}",
+                    "transaction": f"Exit {reason}: {trans_desc} | Action PnL: {chunk_pnl:+.2f} | Total PnL: {self.session_realized_pnl:+.2f}",
                     "actionPnL": chunk_pnl,
                     "cyclePnL": pos.total_realized_pnl,
                     "totalPnL": self.session_realized_pnl
