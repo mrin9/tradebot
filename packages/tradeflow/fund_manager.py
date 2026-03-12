@@ -210,10 +210,17 @@ class FundManager:
     def on_tick_or_base_candle(self, market_data: Dict):
         """
         Process a real-time TICK or a base 1-minute CANDLE from the stream.
-        Routes it to all configured timeframes for resampling.
+        Routes it to all configured timeframes for resampling and updates 
+        the PositionManager for real-time stop loss/target monitoring.
+        
+        Indicators:
+            Before updating the PositionManager, this method fetches 'mapped' 
+            indicators (active-*, inverse-*, etc.) which are used for 
+            Indicator-based Trailing SL (e.g. EMA-5 exit).
         
         Args:
-            market_data (Dict): OHLCV data or Tick data.
+            market_data (Dict): OHLCV data or Tick data containing instrument ID ('i'), 
+                               price ('p' or 'c'), and timestamp ('t').
         """
         inst_id = market_data.get('i', market_data.get('instrument_id'))
         
@@ -355,6 +362,8 @@ class FundManager:
 
         # Execute Strategy (Python script)
         mapped_indicators = self._get_mapped_indicators()
+        mapped_indicators['meta-is-warming-up'] = self.is_warming_up
+        
         signal, reason, confidence = self.strategy.on_resampled_candle_closed(
             candle, mapped_indicators, current_position_intent=intent_enum
         )

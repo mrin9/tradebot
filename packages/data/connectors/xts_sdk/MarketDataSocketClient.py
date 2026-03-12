@@ -1,5 +1,6 @@
 import socketio
 import json
+import time
 from .settings import settings
 from .logger import setup_logger
 
@@ -175,9 +176,22 @@ class MDSocket_io:
         :param socketio_path: The endpoint where the Socket.IO server is installed. The default value is appropriate for most cases.
         :param verify       : Verify SSL.
         """
-        # Connect to the socket.
-        self.sid.connect(url=self.connection_url, headers=headers, transports=transports, namespaces=namespaces, socketio_path=socketio_path)
-        self.sid.wait()
+        # Connect to the socket with retry logic
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                self.sid.connect(url=self.connection_url, headers=headers, transports=transports, namespaces=namespaces, socketio_path=socketio_path)
+                self.sid.wait()
+                break # Success
+            except socketio.exceptions.ConnectionError as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Socket connection attempt {attempt + 1} failed: {e}. Retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                else:
+                    logger.error(f"Socket connection failed after {max_retries} attempts: {e}")
+                    raise e
 
     def get_event_listener(self):
         return self.sid

@@ -223,8 +223,8 @@ class XTSManager:
                 continue
                 
             if is_rate_limited and attempt < max_attempts:
-                # e-apirl-0004 is 'max limit reached', usually needs longer wait
-                wait_sec = 5 * attempt if error_code == "e-apirl-0004" else 2 * attempt
+                # User requested 1s wait instead of 5s backoff
+                wait_sec = 1
                 logger.warning(f"XTS Rate Limit hit ({func_name}, {error_code}). Waiting {wait_sec}s...")
                 time.sleep(wait_sec)
                 continue

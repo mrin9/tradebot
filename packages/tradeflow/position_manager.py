@@ -294,6 +294,18 @@ class PositionManager:
         """
         Updates current position status based on latest price (tick/candle).
         Checks Stop Loss, Targets, and Trailing features.
+
+        Args:
+            tick: The latest price data (LTP or finalized candle).
+            nifty_price: Current price of Nifty Spot for tracking/logging.
+            indicators: Dictionary containing technical and meta-indicators.
+                        Used for Indicator-based Trailing SL (e.g. EMA-5).
+                        Example: {
+                            'active-ema-5': 120.5, 
+                            'nifty-ema-21': 24120.0,
+                            'meta-is-warming-up': False
+                        }
+                        The value at key `self.tsl_indicator_id` is used as the trailing stop level.
         """
         if not self.current_position:
             return

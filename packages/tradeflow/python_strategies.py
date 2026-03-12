@@ -2,8 +2,22 @@ from typing import Dict, Any, Tuple, Optional
 from packages.tradeflow.types import CandleType, SignalType, MarketIntentType, SignalReturnType
 
 class TripleLockStrategy:
-    """Target this via CLI: --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy"""
+    """
+    Standard Triple Confirmation Strategy implementation.
     
+    Logic:
+    - Entry: Requires a crossover on the Option (CE/PE) EMA, confirmed by Nifty Spot EMA state 
+      and the opposing option's EMA state (pe-ema < pe-ema-21 for call entry).
+    - Recovery: Recognizes when a crossover was missed during a warmup/disconnect period 
+      by allowing 'Continuity' entries on the first live candle if conditions are already met.
+    
+    Target this via CLI: --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy
+    """
+    
+    def __init__(self):
+        """Initializes strategy state, tracking warmup transitions."""
+        self.was_warming_up = True
+
     def on_resampled_candle_closed(
         self, 
         candle: CandleType, 
@@ -11,27 +25,35 @@ class TripleLockStrategy:
         current_position_intent: Optional[MarketIntentType] = None
     ) -> Tuple[SignalType, str, float]:
         """
-        Processes a finalized candle to determine trading signals.
+        Processes a finalized candle to determine trading signals based on EMA crossovers.
 
         Args:
             candle: The finalized OHLCV data for the current timeframe.
-            indicators: A dictionary of pre-calculated technical indicators (e.g., NIFTY_fast_ema, CE_fast_ema).
-            current_position_intent: The intent of the currently open position, if any (MarketIntentType.LONG or MarketIntentType.SHORT).
+            indicators: Dictionary containing technical indicators and meta-indicators.
+                        Example: {
+                            'nifty-ema-5': 24150.5, 
+                            'nifty-ema-21': 24120.0,
+                            'ce-ema-5': 120.5, 
+                            'ce-ema-21': 115.0,
+                            'ce-ema-5-prev': 114.0, 
+                            'ce-ema-21-prev': 116.0,
+                            'pe-ema-5': 80.0, 
+                            'pe-ema-21': 95.0,
+                            'active-ema-5': 120.5, 
+                            'active-ema-21': 115.0,
+                            'inverse-ema-5': 80.0,
+                            'inverse-ema-21': 95.0,
+                            'meta-is-warming-up': False
+                        }
+            current_position_intent: The current trade direction if a position is open.
 
         Returns:
-            A tuple containing:
-                - SignalType: The generated trade signal (LONG, SHORT, EXIT, or NEUTRAL).
-                - str: A human-readable reason or log message for the signal.
-                - float: Confidence score (usually 1.0 for crossover strategies).
+            Tuple[SignalType, str, float]: (SignalType, Reason, Confidence)
         """
+        is_warming_up = indicators.get("meta-is-warming-up", False)
+        
         spot_fast = indicators.get("nifty-ema-5")
         spot_slow = indicators.get("nifty-ema-21")
-
-        # active/inverse mapping provided by FundManager
-        active_fast = indicators.get("active-ema-5")
-        active_slow = indicators.get("active-ema-21")
-        inverse_fast = indicators.get("inverse-ema-5")
-        inverse_slow = indicators.get("inverse-ema-21")
 
         # 1. Gather Required Data
         ce_fast = indicators.get("ce-ema-5")
@@ -53,20 +75,30 @@ class TripleLockStrategy:
         if any(v is None for v in required_indicators):
             return SignalType.NEUTRAL, "PYTHON: WAITING FOR INDICATOR WARMUP", 0.0
 
-        if "nifty-ema-5" in indicators: # Just a heartbeat to know we reached logic
-             pass # print(f"--- TRIPLE LOCK EVAL --- CE: {ce_fast:.2f}/{ce_slow:.2f} PE: {pe_fast:.2f}/{pe_slow:.2f} SPOT: {spot_fast:.2f}/{spot_slow:.2f}")
+        # Allow entry on continuation only if this is the FIRST live candle after a warmup phase
+        # This handles cases where the actual crossover happened during the disconnect period.
+        is_first_live_candle = not is_warming_up and self.was_warming_up
+        self.was_warming_up = is_warming_up
 
         # 2. Entry Logic (Bidirectional)
         if current_position_intent is None:
             # --- CHECK CALL ENTRY ---
-            if (ce_f_prev <= ce_s_prev) and (ce_fast > ce_slow): # Crossover
+            crossover_ce = (ce_f_prev <= ce_s_prev) and (ce_fast > ce_slow)
+            continuation_ce = is_first_live_candle and (ce_fast > ce_slow)
+            
+            if crossover_ce or continuation_ce:
                 if spot_fast > spot_slow and pe_fast < pe_slow: # Confirmations
-                    return SignalType.LONG, "PYTHON: Triple Lock CALL Entry", 1.0
+                    reason = "Triple Lock CALL Entry" + (" (Continuity)" if continuation_ce and not crossover_ce else "")
+                    return SignalType.LONG, f"PYTHON: {reason}", 1.0
 
             # --- CHECK PUT ENTRY ---
-            if (pe_f_prev <= pe_s_prev) and (pe_fast > pe_slow): # Crossover
+            crossover_pe = (pe_f_prev <= pe_s_prev) and (pe_fast > pe_slow)
+            continuation_pe = is_first_live_candle and (pe_fast > pe_slow)
+            
+            if crossover_pe or continuation_pe:
                 if spot_fast < spot_slow and ce_fast < ce_slow: # Confirmations
-                    return SignalType.SHORT, "PYTHON: Triple Lock PUT Entry", 1.0
+                    reason = "Triple Lock PUT Entry" + (" (Continuity)" if continuation_pe and not crossover_pe else "")
+                    return SignalType.SHORT, f"PYTHON: {reason}", 1.0
 
         # 3. Exit Logic
         if current_position_intent == MarketIntentType.LONG:

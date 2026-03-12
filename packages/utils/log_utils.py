@@ -1,6 +1,7 @@
 import logging
 import sys
 from datetime import datetime
+import pytz
 from pathlib import Path
 
 # Create logs directory if it doesn't exist
@@ -9,12 +10,13 @@ LOG_DIR.mkdir(exist_ok=True)
 
 class UppercaseFormatter(logging.Formatter):
     def formatTime(self, record, datefmt=None):
-        ct = self.converter(record.created)
+        # Force IST for logs
+        ist = pytz.timezone('Asia/Kolkata')
+        dt = datetime.fromtimestamp(record.created, tz=ist)
         if datefmt:
-            s = datetime.fromtimestamp(record.created).strftime(datefmt)
+            s = dt.strftime(datefmt)
         else:
-            t = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
-            s = "%s,%03d" % (t, record.msecs)
+            s = dt.strftime("%Y-%m-%d %H:%M:%S,%03d")
         return s.upper()
 
 def setup_logger(name: str, log_file: str = "app.log", level=logging.INFO):

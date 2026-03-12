@@ -24,6 +24,7 @@ class LiveMarketService:
         self.subscribed_instruments: Set[int] = set()
         self.is_running = False
         self.last_tick_time = time.time()
+        self._is_connecting = False
         
         # Socket callbacks
         self.soc.on_connect = self._on_connect
@@ -37,14 +38,37 @@ class LiveMarketService:
         """
         Connects to XTS and starts the tick processing loop.
         """
+        if self.is_running:
+            logger.warning("Live Market Service is already running.")
+            return
+
         self.on_tick_callback = on_tick
         self.is_running = True
         
-        logger.info(TradeFormatter.format_connection("connecting", "Connecting to Market Data Socket..."))
-        threading.Thread(target=self.soc.connect, daemon=True).start()
-        
         self._processor_thread = threading.Thread(target=self._tick_processor_loop, daemon=True)
         self._processor_thread.start()
+        
+        self._attempt_connection()
+
+    def _attempt_connection(self):
+        """Internal helper to safely trigger connection in a background thread."""
+        if self._is_connecting or self.soc.sid.connected:
+            return
+            
+        self._is_connecting = True
+        logger.info(TradeFormatter.format_connection("connecting", "Connecting to Market Data Socket..."))
+        
+        def run_connect():
+            try:
+                # soc.connect now has its own internal retry logic
+                self.soc.connect()
+            except Exception as e:
+                logger.error(f"❌ Socket connection final failure: {e}")
+            finally:
+                self._is_connecting = False
+                logger.debug("Socket connection thread finished.")
+
+        threading.Thread(target=run_connect, daemon=True).start()
 
     def stop(self):
         """
@@ -107,8 +131,9 @@ class LiveMarketService:
         Monitors health and forces reconnection if needed.
         """
         if not self.soc.sid.connected:
-            logger.warning("🔌 Socket disconnected. Attempting RE-CONNECT...")
-            threading.Thread(target=self.soc.connect, daemon=True).start()
+            if not self._is_connecting:
+                logger.warning("🔌 Socket disconnected. Attempting RE-CONNECT...")
+                self._attempt_connection()
         else:
             # Send keep-alive (re-subscribe to Nifty)
             try:

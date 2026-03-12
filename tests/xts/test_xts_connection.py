@@ -26,6 +26,7 @@ def test_api_login():
         
         if client.token:
             logger.info(f"✅ API Login Successful! Token: {client.token[:10]}...")
+            return True
         else:
             logger.error("❌ API Login Failed: No token received.")
         
@@ -86,10 +87,12 @@ def test_socket_connection():
             time.sleep(2)
             logger.info("Disconnecting...")
             soc.sid.disconnect()
+            return True
         else:
             logger.error("❌ Socket connection timed out. Check your internet or API credentials.")
             # Try to clean up even if failed
             soc.sid.disconnect()
+            return False
         
         assert is_connected is True, "Socket connection timed out"
     except Exception as e:
