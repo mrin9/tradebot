@@ -11,8 +11,10 @@ class MockOrderManager:
     def __init__(self):
         self.orders = []
     
-    def place_order(self, symbol, side, quantity):
-        self.orders.append({'symbol': symbol, 'side': side, 'qty': quantity})
+    def place_order(self, symbol, side, qty, order_type="MARKET", price=0.0, timestamp=None):
+        self.last_order = {'symbol': symbol, 'side': side, 'qty': qty, 'timestamp': timestamp}
+        self.orders.append(self.last_order)
+        return {'status': 'FILLED', 'order_id': 'MOCK-1'}
 
 @pytest.fixture
 def pm_setup():

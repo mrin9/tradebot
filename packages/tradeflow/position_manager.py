@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+import datetime
 from enum import Enum, auto
 from typing import Dict, List
 from packages.utils.date_utils import DateUtils
@@ -28,7 +28,7 @@ class Position:
     intent: MarketIntentType
     entry_price: float
     initial_quantity: int
-    entry_time: datetime
+    entry_time: datetime.datetime
     stop_loss: float
     targets: list[float]
     current_price: float = 0.0
@@ -47,7 +47,7 @@ class Position:
     highest_price: float = field(init=False)
     lowest_price: float = field(init=False)
     exit_price: float | None = None
-    exit_time: datetime | None = None
+    exit_time: datetime.datetime | None = None
     trade_cycle: str = "N/A"
     event_count: int = 0
     entry_signal: str = "N/A"
@@ -195,7 +195,7 @@ class PositionManager:
         timestamp = payload.timestamp
         
         if isinstance(timestamp, (int, float)):
-            timestamp = datetime.fromtimestamp(timestamp)
+            timestamp = datetime.datetime.fromtimestamp(timestamp)
         symbol = str(payload.symbol) if payload.symbol else self.symbol
         display_symbol = payload.display_symbol or symbol
 
@@ -229,7 +229,7 @@ class PositionManager:
                                reason_desc=payload.reason_desc,
                                nifty_price=nifty_price)
 
-    def _try_pyramid_add(self, price: float, timestamp: datetime, payload):
+    def _try_pyramid_add(self, price: float, timestamp: datetime.datetime, payload):
         """
         Attempts to add to an existing position via pyramiding.
         Only adds if:
@@ -288,7 +288,7 @@ class PositionManager:
         logger.info(log_msg)
         
         if self.order_manager:
-            self.order_manager.place_order(pos.symbol, "BUY", add_qty)
+            self.order_manager.place_order(pos.symbol, "BUY", add_qty, timestamp=timestamp)
 
     def update_tick(self, tick: Dict, nifty_price: float | None = None, indicators: Dict | None = None):
         """
@@ -328,7 +328,7 @@ class PositionManager:
         if isinstance(ts, (int, float)):
             exit_time = DateUtils.market_timestamp_to_datetime(ts)
         else:
-            exit_time = datetime.now()
+            exit_time = datetime.datetime.now(DateUtils.MARKET_TZ)
 
         pos = self.current_position
         pos.current_price = current_price
@@ -457,7 +457,7 @@ class PositionManager:
                         self._close_position(exit_price, exit_time, "INDICATOR_TSL", reason_desc=desc, nifty_price=nifty_price)
                         return
 
-    def _open_position(self, intent: MarketIntentType, price: float, timestamp: datetime, 
+    def _open_position(self, intent: MarketIntentType, price: float, timestamp: datetime.datetime, 
                       symbol: str | None = None, display_symbol: str | None = None,
                       cycle_id: str = "N/A", reason: str = "N/A", reason_desc: str = "", nifty_price: float = 0.0):
         """
@@ -554,9 +554,9 @@ class PositionManager:
         logger.info(log_msg)
         
         if self.order_manager:
-            self.order_manager.place_order(self.symbol, side, pyramid_qty)
+            self.order_manager.place_order(self.symbol, side, pyramid_qty, timestamp=timestamp)
 
-    def _close_position(self, price: float, timestamp: datetime, reason: str, reason_desc: str = "", quantity: int | None = None, nifty_price: float | None = None):
+    def _close_position(self, price: float, timestamp: datetime.datetime, reason: str, reason_desc: str = "", quantity: int | None = None, nifty_price: float | None = None):
         if not self.current_position:
             return
             
@@ -681,7 +681,7 @@ class PositionManager:
         pos.remaining_quantity -= close_qty
         
         if self.order_manager:
-            self.order_manager.place_order(self.symbol, exit_side, close_qty)
+            self.order_manager.place_order(self.symbol, exit_side, close_qty, timestamp=timestamp)
 
         if pos.remaining_quantity <= 0:
             # Trigger summary event
@@ -689,7 +689,7 @@ class PositionManager:
                 pos.event_count += 1
                 
                 # Prioritize market timestamp for the summary event
-                summary_time = timestamp if timestamp else datetime.now(DateUtils.MARKET_TZ)
+                summary_time = timestamp if timestamp else datetime.datetime.now(DateUtils.MARKET_TZ)
                 
                 self.on_trade_event({
                     "tradetime": DateUtils.to_iso(summary_time),

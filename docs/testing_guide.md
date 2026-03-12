@@ -157,7 +157,7 @@ graph TD
 
 ### Fast DB Mode
 ```bash
-python -m tests.backtest.backtest_runner \
+python3 -m tests.backtest.backtest_runner \
     --mode db \
     --start 2026-02-27 \
     --strategy-id triple-confirmation \
@@ -169,7 +169,7 @@ python -m tests.backtest.backtest_runner \
 
 ### High-Fidelity Socket Mode
 ```bash
-python -m tests.backtest.backtest_runner \
+python3 -m tests.backtest.backtest_runner \
     --mode socket \
     --start 2026-02-02 \
     --end 2026-02-02 \
@@ -184,51 +184,22 @@ python -m tests.backtest.backtest_runner \
 ### Indicator-based Trailing SL (EMA-5)
 Instead of fixed points, you can use an indicator (like EMA-5) to trail the stop loss.
 ```bash
-python -m tests.backtest.backtest_runner \
+python3 -m tests.backtest.backtest_runner \
     --mode db \
     --start 2026-02-27 \
     --strategy-id triple-confirmation \
     --tsl-id active-ema-5
 ```
 
-### Python Strategy Mode (Hybrid)
-Bypass the database DSL entirely by providing your own `.py` script. The `--rule-id` is optional here (it can be used to load standard indicators if desired, or omitted to use a default Feature Stub).
+### Full Parameter Example (Compound + Trailing SL)
 ```bash
-python -m tests.backtest.backtest_runner \
-    --mode db \
-    --start 2026-02-27 \
-    --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
-    --budget 200000 \
-    --sl-points 15.0 \
-    --target-points "15,25,50" \
-    --tsl-points 10.0
-```
-
-### Full Parameter Examples
-
-#### Comprehensive Rule Mode (Compound + Trailing SL)
-```bash
-python -m tests.backtest.backtest_runner \
+python3 -m tests.backtest.backtest_runner \
     --mode db \
     --start 2026-02-27 \
     --budget 200000 \
     --invest-mode compound \
     --strategy-id triple-confirmation \
     --strike-selection ATM \
-    --sl-points 15.0 \
-    --target-points "15,25,50" \
-    --tsl-points 10.0
-```
-
-#### Comprehensive Python Mode (Fixed + ITM Options)
-```bash
-python -m tests.backtest.backtest_runner \
-    --mode db \
-    --start 2026-02-27 \
-    --budget 200000 \
-    --invest-mode compound \
-    --strategy-id triple-confirmation \
-    --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
     --sl-points 15.0 \
     --target-points "15,25,50" \
     --tsl-points 10.0
@@ -243,7 +214,7 @@ The following table lists all available command-line arguments for `tests/backte
 | `--mode` | n/a | `db` | Backtest mode: `db` (historical from DB) or `socket` (high-fidelity simulation). |
 | `--start` | n/a | `2026-02-02` | Simulation Start Date (YYYY-MM-DD). |
 | `--end` | n/a | `None` | Simulation End Date. Defaults to `--start` if omitted. |
-| `--strategy-id` | `-s` | `None` | Strategy ID from MongoDB. Required for indicator lookup. |
+| `--strategy-id` | `-I` | `n/a` | **Required**. Strategy ID from MongoDB. Used to load indicators and python path. |
 | `--budget` | `-b` | `200000.0` | Initial Capital in ₹. |
 | `--sl-points`| `-s` | `15.0` | Absolute stop loss points off premium. |
 | `--target-points` | `-t` | `15,25,50` | Comma-separated profit booking levels (points). |
@@ -251,7 +222,6 @@ The following table lists all available command-line arguments for `tests/backte
 | `--use-be` | `-e` | `n/a` | Flag to move SL to entry after first target is hit. |
 | `--strike-selection`| `-S` | `ATM` | Option strike selector: `ATM`, `ITM`, or `OTM`. |
 | `--invest-mode` | `-i` | `compound` | `compound` (reinvest profits) or `fixed` (standard sizing). |
-| `--python-strategy-path`| n/a | `None` | Path to custom Python strategy class. |
 | `--pyramid-steps` | n/a | `100` | Comma-separated entry percentages (e.g. `25,50,25`). |
 | `--pyramid-confirm-pts` | n/a | `10.0` | Points move before next pyramid step. |
 | `--price-source` | `-p` | `close` | Entry/Exit price source: `open` or `close`. |

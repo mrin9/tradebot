@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime, timedelta
+import datetime
 from packages.config import settings
 from packages.data.connectors.xts_sdk.XTSConnect import XTSConnect
 from packages.data.connectors.xts_sdk.MarketDataSocketClient import MDSocket_io
@@ -60,8 +60,8 @@ class XTSManager:
             if session_type in data:
                 sess = data[session_type]
                 # Check for freshness (23h to be safe as XTS tokens expire at midnight or after 24h)
-                created_at = datetime.fromisoformat(sess['createdAt'])
-                if datetime.now() - created_at < timedelta(hours=23):
+                created_at = datetime.datetime.fromisoformat(sess['createdAt'])
+                if datetime.datetime.now() - created_at < datetime.timedelta(hours=23):
                         return sess
         except Exception as e:
             logger.warning(f"Failed to load {session_type} session from file: {e}")

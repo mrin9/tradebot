@@ -149,9 +149,9 @@ def crossover(
 
 @app.command()
 def backtest(
-    strategy_id: Annotated[Optional[str], typer.Option("--strategy-id", "-s", help="Strategy Indicator ID")] = None,
+    strategy_id: Annotated[str, typer.Option("--strategy-id", "-s", help="Strategy Indicator ID")] = "triple-confirmation",
     start: Annotated[Optional[str], typer.Option(help="Start Date (YYYY-MM-DD)")] = None,
-    end: Annotated[Optional[str], typer.Option(help="End Date (YYYY-MM-DD)")] = None,
+    end: Annotated[Optional[str], typer.Option(help="End Date (YYYY-MM-DD). Defaults to --start if omitted.")] = None,
     mode: Annotated[Optional[str], typer.Option(help="Backtest mode: db or socket")] = None,
     budget: Annotated[Optional[float], typer.Option("--budget", "-b", help="Initial Capital")] = None,
     invest_mode: Annotated[Optional[str], typer.Option("--invest-mode", "-i", help="ReInvest Type: fixed or compound")] = None,
@@ -171,10 +171,9 @@ def backtest(
     tsl_id = None
 
     # 1. Strategy ID (Primary selection first)
-    if not strategy_id:
+    if not strategy_id or strategy_id == "SKIP":
         strategies = list(db["strategy_indicators"].find({"enabled": True}, {"strategyId": 1, "name": 1}))
         choices = [questionary.Choice(title=f"{s.get('name', 'Unnamed')} ({s['strategyId']})", value=s["strategyId"]) for s in strategies]
-        choices.append(questionary.Choice(title="Skip (use default indicators)", value="SKIP"))
         choices.append(questionary.Choice(title="Back", value="BACK"))
         
         strategy_id = questionary.select(
@@ -183,15 +182,17 @@ def backtest(
             default="triple-confirmation" if any(s['strategyId'] == 'triple-confirmation' for s in strategies) else None
         ).ask()
 
-    if strategy_id == "BACK": return
-    if strategy_id == "SKIP": strategy_id = ""
+    if not strategy_id or strategy_id == "BACK": return
 
-    # Fetch configuration for path and TSL
-    if strategy_id:
-        strat_doc = db["strategy_indicators"].find_one({"strategyId": strategy_id})
-        if strat_doc:
-            python_strategy_path = strat_doc.get("pythonStrategyPath")
-            tsl_id = strat_doc.get("tslIndicatorId")
+    # Fetch configuration
+    try:
+        from packages.services.trade_config_service import TradeConfigService
+        strat_doc = TradeConfigService.fetch_strategy_config(strategy_id)
+        python_strategy_path = strat_doc.get("python_strategy_path")
+        tsl_id = strat_doc.get("tslIndicatorId")
+    except Exception as e:
+        typer.secho(f"❌ Error fetching strategy: {e}", fg=typer.colors.RED)
+        return
 
     # 2. Mode
     if not mode:
@@ -297,12 +298,10 @@ def backtest(
         "--target-points", f'"{target_points}"',
         "--tsl-points", str(tsl_points),
         "--strike-selection", strike_selection,
-        "--python-strategy-path", python_strategy_path,
-        "--pyramid-steps", pyramid_steps,
+        "--strategy-id", strategy_id,
+        "--pyramid_steps", pyramid_steps,
         "--pyramid-confirm-pts", str(pyramid_confirm_pts),
     ]
-    if strategy_id:
-        cmd.extend(["--strategy-id", strategy_id])
     if tsl_id:
         cmd.extend(["--tsl-id", tsl_id])
     if use_be:
@@ -426,7 +425,6 @@ def seed_strategies():
 
 @app.command()
 def live_trade(
-    python_strategy_path: Annotated[Optional[str], typer.Option(help="Python strategy (file:ClassName)")] = None,
     strategy_id: Annotated[str, typer.Option("--strategy-id", "-s", help="Strategy ID for indicators and path")] = "triple-confirmation",
     strike_selection: Annotated[str, typer.Option("--strike-selection", "-S", help="Option Selection Basis (ATM, ITM, OTM)")] = "ATM",
     budget: Annotated[float, typer.Option("--budget", "-b", help="Initial Budget for Live Trading")] = 200000.0,
@@ -440,17 +438,12 @@ def live_trade(
 ):
     """Starts the Live Trading Engine."""
     try:
-        db = MongoRepository.get_db()
-        rule = db["strategy_indicators"].find_one({"strategyId": strategy_id})
-        if not rule:
-            typer.secho(f"❌ Strategy {strategy_id} not found!", fg=typer.colors.RED)
-            return
-
-        if not python_strategy_path:
-            python_strategy_path = rule.get("pythonStrategyPath")
+        from packages.services.trade_config_service import TradeConfigService
+        rule = TradeConfigService.fetch_strategy_config(strategy_id)
+        python_strategy_path = rule.get("python_strategy_path") or rule.get("pythonStrategyPath")
             
         if not python_strategy_path:
-             typer.secho(f"❌ No strategy path found for {strategy_id} and no path provided.", fg=typer.colors.RED)
+             typer.secho(f"❌ No strategy path found for {strategy_id}.", fg=typer.colors.RED)
              return
 
         pos_cfg = {

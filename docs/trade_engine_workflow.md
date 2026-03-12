@@ -23,7 +23,7 @@ graph TD
     
     subgraph "Python Strategy Evaluator"
     State -->|All Indicators Context| Strat[PythonStrategy.on_resampled_candle_closed]
-    DB -->|Python Script Path| Strat
+    DB -->|Fetch via strategy_id| Strat
     Strat -->|Signal: LONG/SHORT/EXIT| PosMgr
     end
     

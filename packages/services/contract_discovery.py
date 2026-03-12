@@ -1,5 +1,5 @@
 from typing import Dict, Optional, Tuple, Set
-from datetime import datetime
+import datetime
 from packages.utils.mongo import MongoRepository
 from packages.utils.date_utils import DateUtils
 from packages.config import settings
@@ -16,7 +16,38 @@ class ContractDiscoveryService:
 
     def __init__(self, db=None):
         self.db = db if db is not None else MongoRepository.get_db()
+        self._cache: Dict[Tuple[str, str], list] = {} # {(symbol, series): [instruments]}
+        self._is_cache_loaded = False
 
+    def load_cache(self, symbol: str = "NIFTY", series: str = "OPTIDX", effective_date: Optional[datetime.datetime] = None):
+        """
+        Loads all active instruments for a symbol into memory.
+        Uses only instrument_master collection.
+        If effective_date is provided, it filters expiries relative to that date (critical for backtesting).
+        """
+        target_date = effective_date or datetime.datetime.now()
+        now_iso = DateUtils.to_iso(target_date)
+        
+        query = {
+            "name": symbol,
+            "series": series,
+            "contractExpiration": {"$gte": now_iso}
+        }
+        # Smart projection to save memory
+        projection = {
+            "exchangeInstrumentID": 1,
+            "strikePrice": 1,
+            "optionType": 1,
+            "description": 1,
+            "displayName": 1,
+            "contractExpiration": 1,
+            "_id": 0
+        }
+        
+        instruments = list(self.db[settings.INSTRUMENT_MASTER_COLLECTION].find(query, projection))
+        self._cache[(symbol, series)] = instruments
+        self._is_cache_loaded = True
+        logger.info(f"📁 Loaded {len(instruments)} {symbol} contracts into memory cache.")
     def resolve_option_contract(
         self, 
         strike: float, 
@@ -27,10 +58,28 @@ class ContractDiscoveryService:
     ) -> Tuple[Optional[int], Optional[str]]:
         """
         Finds the nearest expiry option contract for a given strike and timestamp.
+        Checks cache first if loaded.
         """
         dt_iso = DateUtils.market_timestamp_to_iso(current_ts)
         opt_type_num = 3 if is_ce else 4  # CE=3, PE=4 in XTS
         
+        # 1. Check Cache
+        if self._is_cache_loaded:
+            cache = self._cache.get((symbol, series), [])
+            # Filter and sort by expiry
+            matches = [
+                c for c in cache 
+                if c["strikePrice"] == strike 
+                and c["optionType"] == opt_type_num 
+                and c["contractExpiration"] >= dt_iso
+            ]
+            if matches:
+                # Sort by expiry to get the nearest one
+                matches.sort(key=lambda x: x["contractExpiration"])
+                contract = matches[0]
+                return int(contract["exchangeInstrumentID"]), contract.get("description", contract.get("displayName"))
+
+        # 2. Fallback to DB
         query = {
             "name": symbol,
             "series": series,
@@ -55,22 +104,41 @@ class ContractDiscoveryService:
         atm_strike: float, 
         window_size: int = 3, 
         symbol: str = "NIFTY",
-        series: str = "OPTIDX"
+        series: str = "OPTIDX",
+        current_ts: Optional[float] = None
     ) -> Set[int]:
         """
         Returns a set of exchange instrument IDs for ATM ± window_size strikes.
+        Uses cache if loaded.
         """
-        now_iso = DateUtils.to_iso(datetime.now())
-        # Step increment depends on the index (NIFTY is 50, BANKNIFTY is 100)
+        target_iso = DateUtils.market_timestamp_to_iso(current_ts) if current_ts else DateUtils.to_iso(datetime.datetime.now())
         step = 50 if symbol == "NIFTY" else 100
-        
         target_strikes = [atm_strike + (i * step) for i in range(-window_size, window_size + 1)]
-        
+
+        # 1. Check Cache
+        if self._is_cache_loaded:
+            cache = self._cache.get((symbol, series), [])
+            # Find nearest expiry first
+            expiries = sorted({c["contractExpiration"] for c in cache if c["contractExpiration"] >= target_iso})
+            if not expiries:
+                logger.error(f"Could not find any active {symbol} contracts in cache relative to {target_iso}")
+                return set()
+                
+            nearest_expiry = expiries[0]
+            ids = {
+                int(c["exchangeInstrumentID"]) for c in cache 
+                if c["contractExpiration"] == nearest_expiry 
+                and c["strikePrice"] in target_strikes
+            }
+            logger.debug(f"Resolved {len(ids)} contracts for ATM {atm_strike} window (±{window_size}) from cache")
+            return ids
+
+        # 2. Fallback to DB
         # Get nearest expiry
         opt_ref = self.db[settings.INSTRUMENT_MASTER_COLLECTION].find_one({
             "name": symbol, 
             "series": series, 
-            "contractExpiration": {"$gte": now_iso}
+            "contractExpiration": {"$gte": target_iso}
         }, sort=[("contractExpiration", 1)])
         
         if not opt_ref:
@@ -86,7 +154,7 @@ class ContractDiscoveryService:
         }))
         
         ids = {int(c['exchangeInstrumentID']) for c in contracts}
-        logger.debug(f"Resolved {len(ids)} contracts for ATM {atm_strike} window (±{window_size})")
+        logger.debug(f"Resolved {len(ids)} contracts for ATM {atm_strike} window (±{window_size}) from DB")
         return ids
 
     @staticmethod

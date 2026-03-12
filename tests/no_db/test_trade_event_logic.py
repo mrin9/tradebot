@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
+import datetime
 from packages.services.trade_event import TradeEventService
 from packages.utils.date_utils import DateUtils
 
@@ -83,7 +84,7 @@ def test_persist_non_position_event_structure():
     event_data = {
         "type": "INIT",
         "msg": "Initialization",
-        "timestamp": "2026-03-12T09:00:00+05:30" # Should be removed
+        "timestamp": datetime.datetime(2026, 3, 12, 9, 30, 0) # Should be removed
     }
     
     service._persist_non_position_event(event_data)

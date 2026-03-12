@@ -93,11 +93,20 @@ class BacktestEngine:
             is_backtest=True
         )
         
+        # Performance optimization: Load contract cache for the symbol relative to backtest start
+        bt_start_dt = DateUtils.parse_iso(self.start_date)
+        self.fund_manager.discovery_service.load_cache(
+            symbol=self.strategy_config.get("symbol", "NIFTY"),
+            series=self.strategy_config.get("series", "OPTIDX"),
+            effective_date=bt_start_dt
+        )
+        
         self.daily_pnl = {}
         self._last_pnl_checkpoint = 0.0
-        
-        # Session ID and Recording
-        self.session_id = DateUtils.generate_session_id(self.strategy_config.get("strategyId", "python"))
+        # 2. Setup Session ID
+        # bt_start_dt is already defined above
+        prefix = self.strategy_config.get("strategyId", "BT")
+        self.session_id = DateUtils.generate_session_id(prefix, custom_time=bt_start_dt)
         self.event_service = TradeEventService(self.session_id, record_papertrade=position_config.get("record_papertrade", True))
 
     def record_daily_pnl(self, day_str: str):

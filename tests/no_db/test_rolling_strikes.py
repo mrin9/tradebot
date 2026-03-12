@@ -3,6 +3,7 @@ Tests for the dynamic Rolling Strike subscription logic in LiveTradeEngine.
 """
 import pytest
 from unittest.mock import MagicMock, patch
+import datetime
 from packages.livetrade.live_trader import LiveTradeEngine
 from packages.config import settings
 

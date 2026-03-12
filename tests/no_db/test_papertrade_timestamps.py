@@ -6,8 +6,9 @@ from packages.tradeflow.types import MarketIntentType as MarketIntent, Instrumen
 from packages.utils.date_utils import DateUtils
 
 class MockOrderManager:
-    def place_order(self, symbol, side, quantity):
-        pass
+    def place_order(self, symbol, side, qty, order_type="MARKET", price=0.0, timestamp=None):
+        self.last_order = {'symbol': symbol, 'side': side, 'qty': qty, 'timestamp': timestamp}
+        return {'status': 'FILLED', 'order_id': 'TEST-ORDER'}
 
 def test_papertrade_timestamps_reflect_market_time():
     """

@@ -25,9 +25,8 @@ You can start live trading via the CLI using either the interactive menu or a di
 You can run the live trader directly, bypassing the interactive menu, by specifying parameters. Here is the recommended command sequence for a custom Python strategy:
 
 ```bash
-# Example 1: Standard Python Strategy with Fixed Trailing SL
+# Example 1: Standard Python Strategy (Triple Lock)
 python3 apps/cli/main.py live-trade \
-  --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
   --strategy-id triple-confirmation \
   --strike-selection ATM \
   --budget 200000 \
@@ -50,8 +49,7 @@ Values that denote points (like Stop Loss) correspond to absolute price changes 
 
 | Parameter | Short | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `--python-strategy-path`| n/a | `TripleLockStrategy`| Path to custom Python script (e.g. `path/to/script.py:ClassName`). |
-| `--strategy-id` | `-s` | `triple-confirmation`| Strategy ID from database. Required for indicators. |
+| `--strategy-id` | `-s` | `triple-confirmation`| **Required**. Strategy ID from database. Used to load indicators and python path. |
 | `--strike-selection`| `-S` | `ATM` | Strike selection: `ATM`, `ITM`, or `OTM`. |
 | `--budget` | `-b` | `200000.0` | Initial capital for the session. |
 | `--sl-points`| `-l` | `15.0` | Absolute stop loss points off premium. |

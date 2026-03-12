@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+import datetime
 from packages.config import settings
 from packages.utils.mongo import MongoRepository
 from packages.utils.log_utils import setup_logger
@@ -15,7 +15,7 @@ def age_out_history(days: int):
         return
 
     db = MongoRepository.get_db()
-    cutoff_date = datetime.now() - timedelta(days=days)
+    cutoff_date = datetime.datetime.now() - datetime.timedelta(days=days)
     # Ticks use epoch seconds or milliseconds? 
     # In historical.py we likely store 't' as standard timestamp (seconds or millis). 
     # Let's check historical parser... usually XTS sends seconds or we convert.

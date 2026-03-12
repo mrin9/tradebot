@@ -1,7 +1,4 @@
-from typing import Dict, Any, List, Optional
-import os
-import importlib
-import importlib.util
+from packages.utils.mongo import MongoRepository
 from packages.config import settings
 from packages.utils.log_utils import setup_logger
 from packages.tradeflow.types import InstrumentKindType
@@ -13,6 +10,21 @@ class TradeConfigService:
     Centralized service for building, validating, and normalizing trade configurations.
     Consolidates logic from CLI, Backtest Runner, and FundManager.
     """
+
+    @staticmethod
+    def fetch_strategy_config(strategy_id: str) -> Dict[str, Any]:
+        """
+        Fetches strategy configuration from MongoDB by strategyId.
+        Centralizes logic previously split between BacktestRunner and CLI.
+        """
+        db = MongoRepository.get_db()
+        strategy = db["strategy_indicators"].find_one({"strategyId": strategy_id})
+        
+        if not strategy:
+            raise ValueError(f"Strategy ID '{strategy_id}' not found in 'strategy_indicators' collection.")
+            
+        # Normalize and return
+        return TradeConfigService.normalize_strategy_config(strategy)
 
     @staticmethod
     def normalize_strategy_config(raw_config: Dict[str, Any]) -> Dict[str, Any]:

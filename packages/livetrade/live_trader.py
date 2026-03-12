@@ -3,7 +3,7 @@ import random
 import string
 import time
 import threading
-from datetime import datetime, timedelta
+import datetime
 from typing import Dict, Any, List, Optional
 
 from packages.utils.log_utils import setup_logger
@@ -20,6 +20,7 @@ from packages.services.trade_config_service import TradeConfigService
 from packages.services.contract_discovery import ContractDiscoveryService
 from packages.services.market_history import MarketHistoryService
 from packages.tradeflow.fund_manager import FundManager
+from packages.tradeflow.drift_manager import DriftManager
 
 logger = setup_logger("LiveTrader")
 
@@ -37,11 +38,19 @@ class LiveTradeEngine:
         # 1. Initialize Services
         self.config_service = TradeConfigService()
         self.discovery_service = ContractDiscoveryService()
+        self.discovery_service.load_cache(
+            symbol=self.strategy_config.get("symbol", "NIFTY"),
+            series=self.strategy_config.get("series", "OPTIDX")
+        )
         self.history_service = MarketHistoryService(fetch_ohlc_api_fn=self._fetch_ohlc_api)
         
         self.market_service = LiveMarketService(debug=debug)
         self.event_service = TradeEventService(self.session_id, record_papertrade=position_config.get("record_papertrade", True))
         
+        # 1.1 Initialize DriftManager
+        self.drift_manager = DriftManager(self.discovery_service, instrument_type=self.strategy_config.get("instrument_type", "OPTIONS"))
+        self.drift_manager.on_instruments_changed = self._on_drift_instruments_changed
+
         # 2. Initialize FundManager with services
         self.fund_manager = FundManager(
             strategy_config=self.strategy_config,
@@ -50,7 +59,8 @@ class LiveTradeEngine:
             config_service=self.config_service,
             discovery_service=self.discovery_service,
             history_service=self.history_service,
-            fetch_quote_fn=self._fetch_quote_api
+            fetch_quote_fn=self._fetch_quote_api,
+            drift_manager=self.drift_manager
         )
         
         # Hook FundManager events into TradeEventService
@@ -75,9 +85,9 @@ class LiveTradeEngine:
         
         try:
             while self.is_running:
-                now = datetime.now()
+                now = datetime.datetime.now()
                 # EOD Settlement
-                if now.hour == 15 and now.minute >= 30:
+                if now.hour == 15 and now.minute >= 31:
                     self.fund_manager.handle_eod_settlement(time.time())
                     self.stop()
                     break
@@ -112,13 +122,6 @@ class LiveTradeEngine:
 
         # 2. FundManager Feed
         self.fund_manager.on_tick_or_base_candle(tick)
-        
-        # 3. ATM Drift Check (Nifty only)
-        if tick['i'] == settings.NIFTY_EXCHANGE_INSTRUMENT_ID:
-            spot = tick['p']
-            atm = self.discovery_service.get_atm_strike(spot)
-            if self.current_atm_strike is None or abs(spot - self.current_atm_strike) > 40:
-                self._update_rolling_strikes(atm)
         
     def _handle_signal(self, payload: Dict):
         """FundManager signal callback."""
@@ -157,6 +160,13 @@ class LiveTradeEngine:
         except Exception as e:
             logger.error(f"❌ Error in _resync_strike_chain: {e}")
 
+    def _on_drift_instruments_changed(self, changed_info: Dict[str, Any]):
+        """
+        Callback from DriftManager. Updates market subscriptions.
+        """
+        new_atm = self.discovery_service.get_atm_strike(self.drift_manager.selection_spot_price or 0)
+        self._update_rolling_strikes(new_atm)
+
     def _update_rolling_strikes(self, new_atm):
         """Calculates window and delegates to MarketService."""
         if self.current_atm_strike is not None:
@@ -164,7 +174,7 @@ class LiveTradeEngine:
         else:
             logger.info(f"Targeting ATM: {new_atm}")
         
-        new_ids = self.discovery_service.get_strike_window_ids(new_atm)
+        new_ids = self.discovery_service.get_strike_window_ids(new_atm, current_ts=self.fund_manager.latest_market_time)
         if not new_ids: return
         
         # Add Nifty Spot
@@ -189,7 +199,7 @@ class LiveTradeEngine:
         """Wrapper for XTS REST API."""
         try:
             if not start_time or not end_time:
-                now = datetime.now(DateUtils.MARKET_TZ)
+                now = datetime.datetime.now(DateUtils.MARKET_TZ)
                 fmt = "%b %d %Y %H%M%S"
                 end_time = now.strftime(fmt)
                 start_time = (now - timedelta(hours=1)).strftime(fmt)

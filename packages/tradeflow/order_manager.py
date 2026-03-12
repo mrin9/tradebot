@@ -11,7 +11,7 @@ class OrderManager(ABC):
     Implementations: PaperTradingOrderManager, XTSOrderManager
     """
     @abstractmethod
-    def place_order(self, symbol: str, side: str, quantity: int, order_type: str = "MARKET", price: float = 0.0) -> Dict:
+    def place_order(self, symbol: str, side: str, quantity: int, order_type: str = "MARKET", price: float = 0.0, timestamp: Optional[datetime] = None) -> Dict:
         pass
 
     @abstractmethod
@@ -31,7 +31,7 @@ class PaperTradingOrderManager(OrderManager):
         self.orders = {}
         self.order_counter = 1
 
-    def place_order(self, symbol: str, side: str, quantity: int, order_type: str = "MARKET", price: float = 0.0) -> Dict:
+    def place_order(self, symbol: str, side: str, quantity: int, order_type: str = "MARKET", price: float = 0.0, timestamp: Optional[datetime] = None) -> Dict:
         order_id = f"PAPER-{self.order_counter}"
         self.order_counter += 1
         
@@ -43,7 +43,7 @@ class PaperTradingOrderManager(OrderManager):
             'type': order_type,
             'price': price,
             'status': 'FILLED', # Instant fill for paper trading
-            'timestamp': datetime.now()
+            'timestamp': timestamp or datetime.now()
         }
         
         self.orders[order_id] = order

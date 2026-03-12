@@ -1,5 +1,5 @@
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+import datetime
 from packages.utils.log_utils import setup_logger
 from packages.utils.trade_formatter import TradeFormatter
 from packages.utils.trade_persistence import TradePersistence
@@ -39,7 +39,7 @@ class TradeEventService:
         log_msg = TradeFormatter.format_signal(
             signal_name=payload.get('reason_desc', 'SIGNAL'),
             reason=payload.get('reason', ''),
-            time_str=datetime.fromtimestamp(payload.get('timestamp', 0)).strftime("%H:%M:%S"),
+            time_str=datetime.datetime.fromtimestamp(payload.get('timestamp', 0)).strftime("%H:%M:%S"),
             timeframe=payload.get('timeframe', 0),
             indicators={} # Indicators are logged in heartbeat, keeping signal clean
         )
@@ -130,7 +130,7 @@ class TradeEventService:
             pos_manager = fund_manager.position_manager
             
             daily_pnl = {}
-            today_str = datetime.now(DateUtils.MARKET_TZ).strftime("%Y-%m-%d")
+            today_str = datetime.datetime.now(DateUtils.MARKET_TZ).strftime("%Y-%m-%d")
             daily_pnl[today_str] = pos_manager.session_realized_pnl
             
             # Prepare config summary
@@ -156,7 +156,7 @@ class TradeEventService:
 
         event_data.update({
             "sessionId": self.session_id,
-            "createdAt": datetime.now(DateUtils.MARKET_TZ).replace(microsecond=0).isoformat()
+            "createdAt": datetime.datetime.now(DateUtils.MARKET_TZ).replace(microsecond=0).isoformat()
         })
         # Remove redundant timestamp
         if "timestamp" in event_data:

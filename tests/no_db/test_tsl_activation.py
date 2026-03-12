@@ -1,6 +1,6 @@
 
 import unittest
-from datetime import datetime
+import datetime
 from packages.tradeflow.position_manager import PositionManager
 from packages.tradeflow.types import MarketIntentType, InstrumentKindType, SignalPayload
 
@@ -22,7 +22,7 @@ class TestTSLActivation(unittest.TestCase):
             display_symbol="NIFTY",
             signal=MarketIntentType.LONG,
             price=100.0,
-            timestamp=datetime.now(),
+            timestamp=datetime.datetime.now(),
             reason="ENTRY"
         )
         pm.on_signal(payload)
@@ -60,7 +60,7 @@ class TestTSLActivation(unittest.TestCase):
             display_symbol="NIFTY",
             signal=MarketIntentType.LONG,
             price=100.0,
-            timestamp=datetime.now(),
+            timestamp=datetime.datetime.now(),
             reason="ENTRY"
         )
         pm.on_signal(payload)

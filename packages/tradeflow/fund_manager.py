@@ -16,6 +16,7 @@ from packages.tradeflow.order_manager import PaperTradingOrderManager
 from packages.tradeflow.candle_resampler import CandleResampler
 from packages.utils.mongo import MongoRepository
 from packages.config import settings
+from packages.tradeflow.drift_manager import DriftManager
 import time
 
 logger = setup_logger(__name__)
@@ -35,7 +36,8 @@ class FundManager:
         discovery_service: Optional[ContractDiscoveryService] = None,
         history_service: Optional[MarketHistoryService] = None,
         fetch_ohlc_fn: Callable = None, # Legacy injection
-        fetch_quote_fn: Callable = None # Legacy injection
+        fetch_quote_fn: Callable = None, # Legacy injection
+        drift_manager: Optional[DriftManager] = None
     ):
         # 1. Initialize Services
         self.config_service = config_service or TradeConfigService()
@@ -103,23 +105,26 @@ class FundManager:
         self.global_timeframe = self.config['timeframe_seconds']
         
         # Track active instruments being monitored {category: instrument_id}
-        self.active_instruments: Dict[str, int] = {"SPOT": 26000}
-        self.selection_spot_price: float | None = None
+        self.drift_manager = drift_manager or DriftManager(self.discovery_service, instrument_type=self.trade_instrument_type)
+        self.active_instruments = self.drift_manager.active_instruments
+        self.drift_manager.on_instruments_changed = self._on_drift_instruments_changed
         
         # Initialize Resamplers per instrument_id
         self.resamplers: Dict[int, CandleResampler] = {}
         self._ensure_resampler(26000, InstrumentCategoryType.SPOT)
             
-        # 5. Global cache 
+        # Global cache 
         self.latest_indicators_state: Dict[str, float] = {}
+        self._cached_mapped_indicators: Dict[str, float] = {}
+        self._needs_mapping_update = True
+        
         self.is_warming_up = False
         self.latest_market_time: float | None = None
         
-        # Track last sync timestamp per instrument to optimize re-warmups
-        self.instrument_last_sync: Dict[int, float] = {}
-
-        # Track the last processed day to force instrument re-selection on day change
-        self.last_day_str: str | None = None
+        # Position Events also invalidate the mapping cache (due to direction-based Active/Inverse mapping)
+        def invalidate_mapping_cache(event):
+            self._needs_mapping_update = True
+        self.position_manager.on_trade_event = invalidate_mapping_cache
 
     def _ensure_resampler(self, instrument_id: int, category: InstrumentCategoryType):
         """Ensures a resampler exists for the given instrument ID."""
@@ -131,48 +136,42 @@ class FundManager:
             )
             logger.debug(f"🛠️ Created resampler for {category.value} ({instrument_id})")
         
-    def _check_and_update_monitored_instruments(self, current_spot: float, current_ts: float):
-        """Continuously manages the CE and PE instruments being monitored. Handles drift re-selection."""
-        if self.trade_instrument_type != "OPTIONS":
-            return
+    def _on_drift_instruments_changed(self, changed_info: Dict[str, Any]):
+        """
+        Callback triggered when DriftManager resolves new instruments.
+        Handles resampler management and initial warmup.
+        """
         if self.is_warming_up: return
-            
-        atm_strike = self.discovery_service.get_atm_strike(current_spot)
         
-        # 0. Check for Day Change and Drift
-        current_day_str = DateUtils.market_timestamp_to_datetime(current_ts).strftime("%Y-%m-%d")
-        is_new_day = False
-        if self.last_day_str != current_day_str:
-            is_new_day = True
-            self.last_day_str = current_day_str
+        self._needs_mapping_update = True # Invalidate cache
+        
+        current_ts = changed_info.get("current_ts")
+        instruments = changed_info.get("instruments", {})
+        
+        for cat, info in instruments.items():
+            if not info["is_new"]: continue
             
-        needs_update = False
-        if self.selection_spot_price is None or is_new_day:
-            needs_update = True
-        elif abs(current_spot - self.selection_spot_price) > 25:
-            # Price drifted significantly, recalculate ATM and re-map
-            logger.debug(TradeFormatter.format_drift(current_spot, self.selection_spot_price))
-            needs_update = True
+            new_id = info["id"]
+            new_desc = info["desc"]
             
-        if needs_update:
-            self.selection_spot_price = current_spot
+            logger.info(f"🔄 Component Drift Update: {cat} -> {new_desc} ({new_id})")
             
-            for cat, is_ce in [("CE", True), ("PE", False)]:
-                new_id, new_desc = self.discovery_service.resolve_option_contract(atm_strike, is_ce, current_ts)
-                if new_id:
-                    new_id_int = int(new_id)
-                    if self.active_instruments.get(cat) != new_id_int:
-                        self.active_instruments[cat] = new_id_int
-                        self.active_instruments[f"{cat}_DESC"] = new_desc
-                        # 1. Ensure Resampler and Reset it for clean start
-                        self._ensure_resampler(new_id_int, InstrumentCategoryType(cat))
-                        self.resamplers[new_id_int].reset() # Reset current_candle and last_period_start
-                        # 2. Extract cached indicators immediately to avoid stale data
-                        cached_indicators = self.indicator_calculator.extract_indicators(new_id_int, InstrumentCategoryType(cat))
-                        if cached_indicators:
-                            self.latest_indicators_state.update(cached_indicators)
-                        # 3. Perform Top-up/Initial Warmup
-                        self.history_service.run_warmup(self, new_id_int, current_ts, cat, use_api=not self.is_backtest)
+            # Sync description to FundManager's local copy (used for logs)
+            self.active_instruments[f"{cat}_DESC"] = new_desc
+            
+            # 1. Ensure Resampler and Reset it
+            self._ensure_resampler(new_id, InstrumentCategoryType(cat))
+            self.resamplers[new_id].reset()
+            
+            # 2. Extract cached indicators immediately to avoid stale data
+            cached_indicators = self.indicator_calculator.extract_indicators(new_id, InstrumentCategoryType(cat))
+            if cached_indicators:
+                self.latest_indicators_state.update(cached_indicators)
+                
+            # 3. Perform Initial Warmup
+            # Use provided current_ts from drift check, fallback to fund manager's latest market time
+            warmup_anchor = current_ts or self.latest_market_time or time.time()
+            self.history_service.run_warmup(self, new_id, warmup_anchor, cat, use_api=not self.is_backtest)
 
     def _get_fallback_option_price(self, symbol_id: int, current_ts: float | None, is_entry: bool = False) -> float | None:
         """
@@ -262,7 +261,7 @@ class FundManager:
         
         # 1.a Drift Check (Only when we get Spot)
         if is_spot and ts:
-            self._check_and_update_monitored_instruments(price, ts)
+            self.drift_manager.check_drift(price, ts)
 
         # 2. Update Position Manager immediately for Stop Loss / Target Checks
         if self.position_manager.current_position:
@@ -322,6 +321,9 @@ class FundManager:
         # Update indicators (Python strategy receives them in on_resampled_candle_closed)
         inst_id = candle.get('instrument_id', candle.get('i'))
         self.indicator_calculator.add_candle(candle, instrument_category=category, instrument_id=inst_id)
+        
+        # Invalidate mapping cache as raw indicator values just changed
+        self._needs_mapping_update = True
         
         # Refresh the flat state for logging and heartbeats
         # We pull the fully mapped (active/inverse) indicators so logs match strategy view
@@ -528,9 +530,11 @@ class FundManager:
     def _get_mapped_indicators(self) -> Dict[str, float]:
         """
         Builds a unified indicator dictionary for the strategy.
-        Explicitly pulls indicators for the current primary instruments (Spot, ATM CE, ATM PE)
-        and the currently traded instrument to avoid collision and ensure correctness.
+        Caches the result to avoid redundant mapping on every tick.
         """
+        if not self._needs_mapping_update:
+            return self._cached_mapped_indicators
+
         mapped = {}
         
         # 1. Pull Spot Indicators (Always present)
@@ -547,24 +551,19 @@ class FundManager:
         mapped.update(pe_inds)
             
         # 3. Handle Active/Inverse Mapping
-        # If in a position, map CE/PE to Active/Inverse based on ACTUAL trade direction
-        # If NOT in a position, map CE -> Active and PE -> Inverse as a default for entry checks
         pos = self.position_manager.current_position
         if pos:
             is_long = pos.intent == MarketIntentType.LONG
-            # For logging/strategy context, use indicators from the TRADED instrument for 'active-'
             traded_id = int(pos.symbol)
             t_cat = InstrumentCategoryType.CE if is_long else InstrumentCategoryType.PE
             traded_inds = self.indicator_calculator.extract_indicators(traded_id, t_cat)
-            
-            # Use ATM for 'inverse-' side
             inv_inds = pe_inds if is_long else ce_inds
-            
             self._apply_active_inverse_mapping(mapped, traded_inds, inv_inds, is_long)
         else:
-            # Entry Mode: Map ATM CE -> Active, ATM PE -> Inverse
             self._apply_active_inverse_mapping(mapped, ce_inds, pe_inds, True)
-        
+
+        self._cached_mapped_indicators = mapped
+        self._needs_mapping_update = False
         return mapped
 
     def _apply_active_inverse_mapping(self, target: Dict, active_source: Dict, inverse_source: Dict, is_long: bool):

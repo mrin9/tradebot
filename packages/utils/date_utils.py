@@ -238,17 +238,18 @@ class DateUtils:
         return [r["_id"] for r in results if r["_id"]]
 
     @staticmethod
-    def generate_session_id(strategy_id: str = "default") -> str:
+    def generate_session_id(strategy_id: str = "default", custom_time: Optional[datetime.datetime] = None) -> str:
         """
         Generates a standardized session ID: monthday-hourminute-strategyPrefix-rand3
         Example: mar12-0928-triple-hlf
         """
-        now = datetime.datetime.now(MARKET_TZ)
+        import random, string, re
+        now = custom_time or datetime.datetime.now(DateUtils.MARKET_TZ)
         date_part = now.strftime('%b%d').lower()
         time_part = now.strftime('%H%M')
         
         # Extract first word of strategy indicator (clean prefix)
-        clean_prefix = re.split('[-_ ]', str(strategy_id))[0][:10].lower()
+        clean_prefix = re.split('[-_ ]', str(strategy_id or "default"))[0][:10].lower()
         
         rand_alpha = ''.join(random.choices(string.ascii_lowercase + string.digits, k=3))
         

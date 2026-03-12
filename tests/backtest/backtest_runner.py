@@ -12,6 +12,8 @@ from packages.tradeflow.fund_manager import FundManager
 from tests.backtest.backtest_base import BacktestBot
 from packages.config import settings
 
+from packages.services.trade_config_service import TradeConfigService
+
 logger = setup_logger("BacktestRunner")
 
 def get_parser():
@@ -19,7 +21,7 @@ def get_parser():
     parser.add_argument("--mode", type=str, choices=["db", "socket"], default="db", help="Backtest mode: db or socket")
     parser.add_argument("--start", type=str, default="2026-02-02", help="Start Date (YYYY-MM-DD)")
     parser.add_argument("--end", type=str, default=None, help="End Date (YYYY-MM-DD). Defaults to --start if omitted.")
-    parser.add_argument("--strategy-id", "-I", type=str, default=None, help="Strategy Indicator ID (from DB).")
+    parser.add_argument("--strategy-id", "-I", type=str, required=True, help="Strategy Indicator ID (from DB).")
     parser.add_argument("--budget", "-b", type=float, default=200000.0, help="Initial Capital")
     parser.add_argument("--sl-points", "-s", type=float, default=settings.BACKTEST_STOP_LOSS, help="Stop Loss Points")
     parser.add_argument("--target-points", "-t", type=str, default=settings.BACKTEST_TARGET_STEPS, help="Comma separated target points")
@@ -29,33 +31,11 @@ def get_parser():
     parser.add_argument("--strike-selection", "-S", type=str, choices=["ITM", "ATM", "OTM"], default="ATM", help="Option Strike selection")
     parser.add_argument("--invest-mode", "-i", type=str, choices=["compound", "fixed"], default=settings.BACKTEST_INVEST_MODE)
     # Hybrid Strategy & Pyramiding
-    parser.add_argument("--python-strategy-path", type=str, default=None, help="Path to python strategy (e.g. packages/tradeflow/python_strategies.py:TripleLockStrategy)")
     parser.add_argument("--pyramid-steps", type=str, default="100", help="Comma-separated entry percentages (e.g., 25,50,25 or 100 for all-in)")
     parser.add_argument("--pyramid-confirm-pts", type=float, default=10.0, help="Points price must move in our favor before next pyramid step")
     parser.add_argument("--price-source", "-p", type=str, choices=["open", "close"], default=settings.BACKTEST_PRICE_SOURCE, help="Price source for backtest entry/exit (open or close)")
     parser.add_argument("--tsl-id", "-T", type=str, default=None, help="Indicator ID for Trailing Stop Loss (e.g. active-ema-5)")
     return parser
-
-def fetch_strategy_config(strategy_id: Optional[str], python_strategy_path: Optional[str]):
-    """Build strategy_config for FundManager. Optional strategy_id loads indicators from DB."""
-    if strategy_id:
-        db = MongoRepository.get_db()
-        strategy = db["strategy_indicators"].find_one({"strategyId": strategy_id})
-        if strategy:
-            return strategy
-        logger.warning(f"Strategy ID '{strategy_id}' not found; using default indicators.")
-    
-    default_indicators = [
-        {"indicator": "ema-9", "InstrumentType": "SPOT"},
-        {"indicator": "ema-21", "InstrumentType": "SPOT"},
-        {"indicator": "ema-9", "InstrumentType": "OPTIONS_BOTH"},
-        {"indicator": "ema-21", "InstrumentType": "OPTIONS_BOTH"},
-    ]
-    return {
-        "strategyId": "python_default",
-        "name": "Python Strategy",
-        "indicators": default_indicators,
-    }
 
 def setup_fund_manager(args, rule_config):
     pos_config = {
@@ -70,7 +50,7 @@ def setup_fund_manager(args, rule_config):
         "strike_selection": args.strike_selection,
         "invest_mode": args.invest_mode,
         "budget": args.budget,
-        "python_strategy_path": args.python_strategy_path,
+        "python_strategy_path": rule_config.get("python_strategy_path"),
         # Pyramiding
         "pyramid_steps": args.pyramid_steps,
         "pyramid_confirm_pts": args.pyramid_confirm_pts,
@@ -88,15 +68,13 @@ def main():
     if args.end is None:
         args.end = args.start
         
-    rule_config = fetch_strategy_config(args.strategy_id, args.python_strategy_path)
+    rule_config = TradeConfigService.fetch_strategy_config(args.strategy_id)
     
-    strategy_path = args.python_strategy_path or rule_config.get("pythonStrategyPath")
+    strategy_path = rule_config.get("python_strategy_path") or rule_config.get("pythonStrategyPath")
     if not strategy_path:
-        logger.error("--python-strategy-path is required.")
+        logger.error(f"Strategy {args.strategy_id} has no pythonStrategyPath configured in DB.")
         sys.exit(1)
         
-    args.python_strategy_path = strategy_path
-
     pos_config = {
         "symbol": "NIFTY",
         "quantity": 1,
@@ -109,7 +87,7 @@ def main():
         "strike_selection": args.strike_selection,
         "invest_mode": args.invest_mode,
         "budget": args.budget,
-        "python_strategy_path": args.python_strategy_path,
+        "python_strategy_path": strategy_path,
         "pyramid_steps": args.pyramid_steps,
         "pyramid_confirm_pts": args.pyramid_confirm_pts,
         "price_source": args.price_source
