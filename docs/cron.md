@@ -29,10 +29,10 @@ To automate these tasks, add the following lines to your crontab.
 
 ```cron
 # Trade Bot: Morning Start (Mon-Fri at 9:00 AM)
-0 9 * * 1-5 /path/to/trade-bot-v2/scripts/daily_trade_workflow.sh start >> /path/to/trade-bot-v2/logs/cron.log 2>&1
+0 9 * * 1-5 /home/bot/htdocs/www.bazaartrend.com/tradebot/scripts/daily_trade_workflow.sh start >> /home/bot/htdocs/www.bazaartrend.com/tradebot/logs/cron.log 2>&1
 
 # Trade Bot: Afternoon Stop (Mon-Fri at 3:30 PM)
-30 15 * * 1-5 /path/to/trade-bot-v2/scripts/daily_trade_workflow.sh stop >> /path/to/trade-bot-v2/logs/cron.log 2>&1
+30 15 * * 1-5 /home/bot/htdocs/www.bazaartrend.com/tradebot/scripts/daily_trade_workflow.sh stop >> /home/bot/htdocs/www.bazaartrend.com/tradebot/logs/cron.log 2>&1
 ```
 
 ## 3. Monitoring & Logs
