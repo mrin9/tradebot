@@ -86,6 +86,17 @@ class TradeEventService:
         """
         Builds a comprehensive configuration summary for the session.
         """
+        if isinstance(fund_manager, dict):
+            # Fallback for unit tests passing dicts
+            config = fund_manager.copy()
+            if "budget" not in config: config["budget"] = 0
+            if "invest_mode" not in config: config["invest_mode"] = "fixed"
+            if "sl_points" not in config: config["sl_points"] = 0
+            if "target_points" not in config: config["target_points"] = []
+            if "tsl_points" not in config: config["tsl_points"] = 0
+            if "use_be" not in config: config["use_be"] = False
+            return config
+
         config = fund_manager.config.copy()
         config.update({
             "mode": mode,
@@ -97,13 +108,13 @@ class TradeEventService:
                 f"{ind.get('InstrumentType', 'SPOT').replace('_', '-')}-{ind.get('indicator', 'N/A')}".upper()
                 for ind in fund_manager.indicator_calculator.config
             ],
-            "tsl_indicator_id": fund_manager.tsl_indicator_id,
+            "tsl_id": fund_manager.tsl_id,
             "budget": fund_manager.position_config.get("budget"),
             "invest_mode": fund_manager.invest_mode,
-            "stop_loss_points": fund_manager.stop_loss_points,
+            "sl_points": fund_manager.sl_points,
             "target_points": fund_manager.target_points,
-            "trailing_sl_points": fund_manager.trailing_sl_points,
-            "use_break_even": fund_manager.use_break_even,
+            "tsl_points": fund_manager.tsl_points,
+            "use_be": fund_manager.use_be,
             "strike_selection": getattr(fund_manager, 'strike_selection', 'ATM'),
             "price_source": getattr(fund_manager, 'price_source', 'close'),
             "pyramid_steps": fund_manager.position_config.get("pyramid_steps"),

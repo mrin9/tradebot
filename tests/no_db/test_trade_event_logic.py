@@ -23,10 +23,10 @@ def test_build_config_summary_enrichment():
     ]
     fm.tsl_indicator_id = "SPOT-EMA-5"
     fm.invest_mode = "fixed"
-    fm.stop_loss_points = 15.0
+    fm.sl_points = 15.0
     fm.target_points = [15.0, 25.0, 50.0]
-    fm.trailing_sl_points = 0.0
-    fm.use_break_even = True
+    fm.tsl_points = 15.0
+    fm.use_be = True
     fm.strike_selection = "ATM"
     fm.price_source = "close"
     

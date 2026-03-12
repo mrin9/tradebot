@@ -63,11 +63,11 @@ class FundManager:
         # 4. Core Parameters
         self.initial_budget = self.position_config["budget"]
         self.invest_mode = self.position_config["invest_mode"]
-        self.stop_loss_points = self.position_config['stop_loss_points']
+        self.sl_points = self.position_config['sl_points']
         self.target_points = self.position_config['target_points']
-        self.trailing_sl_points = self.position_config['trailing_sl_points']
-        self.tsl_indicator_id = self.position_config.get('tsl_indicator_id')
-        self.use_break_even = self.position_config['use_break_even']
+        self.tsl_points = self.position_config['tsl_points']
+        self.tsl_id = self.position_config.get('tsl_id')
+        self.use_be = self.position_config['use_be']
         
         self.trade_instrument_type = self.position_config["instrument_type"]
         self.strike_selection = self.position_config["strike_selection"]
@@ -84,15 +84,15 @@ class FundManager:
         self.position_manager = PositionManager(
             symbol=self.position_config["symbol"], 
             quantity=self.position_config.get("quantity", 50), 
-            stop_loss_points=self.stop_loss_points, 
+            sl_points=self.sl_points, 
             target_points=self.target_points,
             instrument_type=instr_enum,
-            trailing_sl_points=self.trailing_sl_points,
-            use_break_even=self.use_break_even,
+            tsl_points=self.tsl_points,
+            use_be=self.use_be,
             pyramid_steps=self.position_config["pyramid_steps"],
             pyramid_confirm_pts=self.position_config["pyramid_confirm_pts"],
             price_source=self.position_config["price_source"],
-            tsl_indicator_id = self.tsl_indicator_id
+            tsl_id = self.tsl_id
         )
         self.order_manager = PaperTradingOrderManager()
         self.position_manager.set_order_manager(self.order_manager)

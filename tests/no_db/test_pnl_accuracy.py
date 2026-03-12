@@ -12,7 +12,7 @@ def test_pnl_currency_accuracy():
     pm = PositionManager(
         symbol="NIFTY", 
         quantity=10, # 10 lots
-        stop_loss_points=20, 
+        sl_points=20, 
         target_points=[50],
         instrument_type=InstrumentType.OPTIONS
     )
@@ -48,7 +48,7 @@ def test_pnl_currency_accuracy():
 def test_pnl_session_carryover():
     """Verifies that PnL carries over across multiple independent trades."""
     pm = PositionManager(
-        symbol="NIFTY", quantity=10, stop_loss_points=20,
+        symbol="NIFTY", quantity=10, sl_points=20,
         target_points=[50], instrument_type=InstrumentType.OPTIONS
     )
     
@@ -69,7 +69,7 @@ def test_pnl_session_carryover():
 def test_short_pnl_accuracy():
     """Verifies PnL math for SHORT/PE positions (Buy Put - Long Option Dir)."""
     pm = PositionManager(
-        symbol="NIFTY", quantity=10, stop_loss_points=20,
+        symbol="NIFTY", quantity=10, sl_points=20,
         target_points=[50], instrument_type=InstrumentType.OPTIONS
     )
     
@@ -89,7 +89,7 @@ def test_intra_candle_sl_hit():
     Close is safe. This is critical for DB-mode backtest fidelity.
     """
     pm = PositionManager(
-        symbol="NIFTY", quantity=1, stop_loss_points=15,
+        symbol="NIFTY", quantity=1, sl_points=15,
         target_points=[], instrument_type=InstrumentType.OPTIONS
     )
     

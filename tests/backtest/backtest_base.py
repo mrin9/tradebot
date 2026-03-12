@@ -116,8 +116,8 @@ class BacktestBot:
 Mode: {args.mode.upper()} | Range: {period_str}
 Strategy: {getattr(args, 'python_strategy_path', None) or args.strategy_id or 'Python'}
 Budget: ₹{args.budget:,.2f} | Invest Mode: {self.fm.invest_mode.upper()}
-Stop Loss: {self.fm.stop_loss_points} pts | Targets: {self.fm.target_points} pts
-Trailing SL: {self.fm.trailing_sl_points} pts | Break-Even: {self.fm.use_break_even}
+Stop Loss: {self.fm.sl_points} pts | Targets: {self.fm.target_points} pts
+Trailing SL: {self.fm.tsl_points} pts | Break-Even: {self.fm.use_be}
 Option Selection: {getattr(args, 'strike_selection', 'ATM')} | Price Source: {getattr(args, 'price_source', 'close').upper()}
 Warmup Candles: {settings.GLOBAL_WARMUP_CANDLES}
 

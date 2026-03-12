@@ -133,22 +133,22 @@ class PositionManager:
     - Exit Execution
     - PnL Calculation
     """
-    def __init__(self, symbol: str, quantity: int, stop_loss_points: float = 0, target_points: List[float] | None = None,
+    def __init__(self, symbol: str, quantity: int, sl_points: float = 0, target_points: List[float] | None = None,
                  instrument_type: InstrumentKindType = InstrumentKindType.OPTIONS, 
-                 trailing_sl_points: float = 0.0,
-                 use_break_even: bool = True,
+                 tsl_points: float = 0.0,
+                 use_be: bool = True,
                  display_symbol: str | None = None,
                  pyramid_steps: List[int] | None = None,
                  pyramid_confirm_pts: float = 10.0,
                  price_source: str = "close",
-                 tsl_indicator_id: str | None = None):
+                 tsl_id: str | None = None):
         self.symbol = symbol
         self.display_symbol = display_symbol or symbol
         self.quantity = quantity
-        self.stop_loss_points = stop_loss_points
-        self.trailing_sl_points = trailing_sl_points
-        self.tsl_indicator_id = tsl_indicator_id
-        self.use_break_even = use_break_even
+        self.sl_points = sl_points
+        self.tsl_points = tsl_points
+        self.tsl_id = tsl_id
+        self.use_be = use_be
         self.instrument_type = instrument_type
         
         # Parse Targets
@@ -269,10 +269,10 @@ class PositionManager:
         
         # Recalculate SL and Targets based on new avg entry
         if is_long_dir:
-            pos.stop_loss = pos.entry_price - self.stop_loss_points
+            pos.stop_loss = pos.entry_price - self.sl_points
             pos.targets = [pos.entry_price + t for t in self.target_steps]
         else:
-            pos.stop_loss = pos.entry_price + self.stop_loss_points
+            pos.stop_loss = pos.entry_price + self.sl_points
             pos.targets = [pos.entry_price - t for t in self.target_steps]
         pos.achieved_targets = 0  # Reset targets for recalculated levels
         
@@ -370,42 +370,6 @@ class PositionManager:
                 self._close_position(pos.stop_loss, exit_time, reason, reason_desc=desc, nifty_price=nifty_price)
                 return
 
-        # 1.b Indicator-based Trailing SL (EMA-5 etc) - ONLY after profit
-        if self.tsl_indicator_id and indicators:
-            ind_val = indicators.get(self.tsl_indicator_id)
-            if ind_val is not None:
-                # Check if trade is currently in profit
-                is_in_profit = pos.pnl > 0
-                if is_in_profit:
-                    triggered = False
-                    if is_long_dir and l < ind_val: # Use Low for Long
-                        triggered = True
-                        exit_price = min(current_price, ind_val) # Pessimistic exit
-                    elif not is_long_dir and h > ind_val: # Use High for Short
-                        triggered = True
-                        exit_price = max(current_price, ind_val)
-                    
-                    if triggered:
-                        desc = f"INDICATOR_TSL ({self.tsl_indicator_id}) hit at {exit_price:.2f} (Value: {ind_val:.2f})"
-                        self._close_position(exit_price, exit_time, "INDICATOR_TSL", reason_desc=desc, nifty_price=nifty_price)
-                        return
-
-        # 2. Update Extremes and Trailing SL
-        if is_long_dir:
-            if h > pos.highest_price:
-                pos.highest_price = h
-                if self.trailing_sl_points > 0:
-                    new_sl = pos.highest_price - self.trailing_sl_points
-                    if new_sl > pos.stop_loss:
-                        pos.stop_loss = new_sl
-        else:
-            if l < pos.lowest_price:
-                pos.lowest_price = l
-                if self.trailing_sl_points > 0:
-                    new_sl = pos.lowest_price + self.trailing_sl_points
-                    if new_sl < pos.stop_loss:
-                        pos.stop_loss = new_sl
-            
         # 3. Targets execution (using High for LONG, Low for SHORT)
         target_reference_price = h if is_long_dir else l
         while pos.achieved_targets < len(pos.targets):
@@ -416,7 +380,7 @@ class PositionManager:
                 pos.achieved_targets += 1
                 
                 # Move SL to Break-Even if first target hit
-                if pos.achieved_targets == 1 and self.use_break_even:
+                if pos.achieved_targets == 1 and self.use_be:
                     is_far = (pos.entry_price > pos.stop_loss) if is_long_dir else (pos.entry_price < pos.stop_loss)
                     if is_far:
                         pos.stop_loss = pos.entry_price
@@ -452,6 +416,47 @@ class PositionManager:
             else:
                 break
 
+        if not self.current_position:
+            return
+
+        # 4. Update Extremes and Trailing SL (TSL active ONLY after Target-1)
+        if is_long_dir:
+            if h > pos.highest_price:
+                pos.highest_price = h
+            
+            if self.tsl_points > 0 and pos.achieved_targets >= 1:
+                new_sl = pos.highest_price - self.tsl_points
+                if new_sl > pos.stop_loss:
+                    pos.stop_loss = new_sl
+        else:
+            if l < pos.lowest_price:
+                pos.lowest_price = l
+            
+            if self.tsl_points > 0 and pos.achieved_targets >= 1:
+                new_sl = pos.lowest_price + self.tsl_points
+                if new_sl < pos.stop_loss:
+                    pos.stop_loss = new_sl
+
+        # 5. Indicator-based Trailing SL (EMA-5 etc) - ONLY after Target-1
+        if self.tsl_id and indicators and pos.achieved_targets >= 1:
+            ind_val = indicators.get(self.tsl_id)
+            if ind_val is not None:
+                # Check if trade is currently in profit
+                is_in_profit = pos.pnl > 0
+                if is_in_profit:
+                    triggered = False
+                    if is_long_dir and l < ind_val: # Use Low for Long
+                        triggered = True
+                        exit_price = min(current_price, ind_val) # Pessimistic exit
+                    elif not is_long_dir and h > ind_val: # Use High for Short
+                        triggered = True
+                        exit_price = max(current_price, ind_val)
+                    
+                    if triggered:
+                        desc = f"INDICATOR_TSL ({self.tsl_id}) hit at {exit_price:.2f} (Value: {ind_val:.2f})"
+                        self._close_position(exit_price, exit_time, "INDICATOR_TSL", reason_desc=desc, nifty_price=nifty_price)
+                        return
+
     def _open_position(self, intent: MarketIntentType, price: float, timestamp: datetime, 
                       symbol: str | None = None, display_symbol: str | None = None,
                       cycle_id: str = "N/A", reason: str = "N/A", reason_desc: str = "", nifty_price: float = 0.0):
@@ -472,11 +477,11 @@ class PositionManager:
         # Set SL and Targets based on Direction
         if is_long_dir:
             # Profit on increase
-            sl = price - self.stop_loss_points
+            sl = price - self.sl_points
             targets = [price + t for t in self.target_steps]
         else:
             # Profit on decrease (Short Selling - only for Options Put contracts internally)
-            sl = price + self.stop_loss_points
+            sl = price + self.sl_points
             targets = [price - t for t in self.target_steps]
 
         # Calculate initial pyramid quantity

@@ -21,10 +21,10 @@ def get_parser():
     parser.add_argument("--end", type=str, default=None, help="End Date (YYYY-MM-DD). Defaults to --start if omitted.")
     parser.add_argument("--strategy-id", "-I", type=str, default=None, help="Strategy Indicator ID (from DB).")
     parser.add_argument("--budget", "-b", type=float, default=200000.0, help="Initial Capital")
-    parser.add_argument("--stop-loss-points", "-s", type=float, default=settings.BACKTEST_STOP_LOSS, help="Stop Loss Points")
+    parser.add_argument("--sl-points", "-s", type=float, default=settings.BACKTEST_STOP_LOSS, help="Stop Loss Points")
     parser.add_argument("--target-points", "-t", type=str, default=settings.BACKTEST_TARGET_STEPS, help="Comma separated target points")
-    parser.add_argument("--trailing-sl-points", "-L", type=float, default=0.0, help="Trailing Stop Loss Points (0 to disable)")
-    parser.add_argument("--use-break-even", "-e", action="store_true", help="Enable Break-Even trailing on first target")
+    parser.add_argument("--tsl-points", "-L", type=float, default=0.0, help="Trailing Stop Loss Points (0 to disable)")
+    parser.add_argument("--use-be", "-e", action="store_true", help="Enable Break-Even trailing on first target")
     parser.add_argument("--instrument-type", type=str, choices=["CASH", "OPTIONS"], default="OPTIONS", help="Instrument to trade")
     parser.add_argument("--strike-selection", "-S", type=str, choices=["ITM", "ATM", "OTM"], default="ATM", help="Option Strike selection")
     parser.add_argument("--invest-mode", "-i", type=str, choices=["compound", "fixed"], default=settings.BACKTEST_INVEST_MODE)
@@ -33,7 +33,7 @@ def get_parser():
     parser.add_argument("--pyramid-steps", type=str, default="100", help="Comma-separated entry percentages (e.g., 25,50,25 or 100 for all-in)")
     parser.add_argument("--pyramid-confirm-pts", type=float, default=10.0, help="Points price must move in our favor before next pyramid step")
     parser.add_argument("--price-source", "-p", type=str, choices=["open", "close"], default=settings.BACKTEST_PRICE_SOURCE, help="Price source for backtest entry/exit (open or close)")
-    parser.add_argument("--tsl-indicator-id", type=str, default=None, help="Indicator ID for Trailing Stop Loss (e.g. active-ema-5)")
+    parser.add_argument("--tsl-id", "-T", type=str, default=None, help="Indicator ID for Trailing Stop Loss (e.g. active-ema-5)")
     return parser
 
 def fetch_strategy_config(strategy_id: Optional[str], python_strategy_path: Optional[str]):
@@ -61,11 +61,11 @@ def setup_fund_manager(args, rule_config):
     pos_config = {
         "symbol": "NIFTY",
         "quantity": 1, # Default placeholder, will be recalculated by FundManager
-        "stop_loss_points": args.stop_loss_points,
+        "sl_points": args.sl_points,
         "target_points": args.target_points,
-        "trailing_sl_points": args.trailing_sl_points,
-        "tsl_indicator_id": args.tsl_indicator_id,
-        "use_break_even": args.use_break_even,
+        "tsl_points": args.tsl_points,
+        "tsl_id": args.tsl_id,
+        "use_be": args.use_be,
         "instrument_type": args.instrument_type,
         "strike_selection": args.strike_selection,
         "invest_mode": args.invest_mode,
@@ -100,11 +100,11 @@ def main():
     pos_config = {
         "symbol": "NIFTY",
         "quantity": 1,
-        "stop_loss_points": args.stop_loss_points,
+        "sl_points": args.sl_points,
         "target_points": args.target_points,
-        "trailing_sl_points": args.trailing_sl_points,
-        "tsl_indicator_id": args.tsl_indicator_id,
-        "use_break_even": args.use_break_even,
+        "tsl_points": args.tsl_points,
+        "tsl_id": args.tsl_id,
+        "use_be": args.use_be,
         "instrument_type": args.instrument_type,
         "strike_selection": args.strike_selection,
         "invest_mode": args.invest_mode,

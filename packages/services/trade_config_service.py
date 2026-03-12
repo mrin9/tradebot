@@ -67,11 +67,11 @@ class TradeConfigService:
     @staticmethod
     def build_position_config(
         budget: float = 200000.0,
-        stop_loss_points: float = 15.0,
+        sl_points: float = 15.0,
         target_points: str | List[float] = "15,25,50",
-        trailing_sl_points: float = 0.0,
-        tsl_indicator_id: Optional[str] = None,
-        use_break_even: bool = True,
+        tsl_points: float = 0.0,
+        tsl_id: Optional[str] = None,
+        use_be: bool = True,
         instrument_type: str = "OPTIONS",
         strike_selection: str = "ATM",
         invest_mode: str = "fixed",
@@ -99,11 +99,11 @@ class TradeConfigService:
 
         config = {
             "budget": budget,
-            "stop_loss_points": stop_loss_points,
+            "sl_points": sl_points,
             "target_points": targets,
-            "trailing_sl_points": trailing_sl_points,
-            "tsl_indicator_id": tsl_indicator_id,
-            "use_break_even": use_break_even,
+            "tsl_points": tsl_points,
+            "tsl_id": tsl_id,
+            "use_be": use_be,
             "instrument_type": instrument_type.upper(),
             "strike_selection": strike_selection.upper(),
             "invest_mode": invest_mode.lower(),

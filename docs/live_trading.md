@@ -31,16 +31,16 @@ python3 apps/cli/main.py live-trade \
   --strategy-id triple-confirmation \
   --strike-selection ATM \
   --budget 200000 \
-  --stop-loss-points 15 \
+  --sl-points 15 \
   --target-points 15,25,45 \
-  --trailing-sl-points 15 \
-  --use-break-even \
+  --tsl-points 15 \
+  --use-be \
   --record-papertrade
 
 # Example 2: Using Indicator-based Trailing SL (EMA-5)
 python3 apps/cli/main.py live-trade \
   --strategy-id triple-confirmation \
-  --tsl-indicator-id active-ema-5 \
+  --tsl-id active-ema-5 \
   --budget 200000
 ```
 
@@ -54,12 +54,12 @@ Values that denote points (like Stop Loss) correspond to absolute price changes 
 | `--strategy-id` | `-s` | `triple-confirmation`| Strategy ID from database. Required for indicators. |
 | `--strike-selection`| `-S` | `ATM` | Strike selection: `ATM`, `ITM`, or `OTM`. |
 | `--budget` | `-b` | `200000.0` | Initial capital for the session. |
-| `--stop-loss-points`| `-l` | `15.0` | Absolute stop loss points off premium. |
+| `--sl-points`| `-l` | `15.0` | Absolute stop loss points off premium. |
 | `--target-points` | `-t` | `15,25,45` | Comma-separated profit booking levels. |
-| `--trailing-sl-points`| `-L` | `15.0` | Trailing SL increment. |
-| `--use-break-even` | `-e` | `True` | Move SL to entry after Target 1. |
+| `--tsl-points`| `-L` | `15.0` | Trailing SL increment. |
+| `--use-be` | `-e` | `True` | Move SL to entry after Target 1. |
 | `--record-papertrade`| n/a | `True` | Record high-fidelity events in `paper_trades` collection. |
-| `--tsl-indicator-id`| n/a | `None` | Indicator ID for Trailing SL (e.g. `active-ema-5`). |
+| `--tsl-id`| `-T` | `None` | Indicator ID for Trailing SL (e.g. `active-ema-5`). |
 | `--debug` | n/a | `False` | Enable raw socket debug logs. |
 
 ### Interactive Menu

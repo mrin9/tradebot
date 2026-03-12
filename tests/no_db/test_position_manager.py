@@ -20,7 +20,7 @@ def pm_setup():
     pm = PositionManager(
         symbol="NIFTY", 
         quantity=50, 
-        stop_loss_points=20, 
+        sl_points=20, 
         target_points=[40, 80],
         instrument_type=InstrumentType.OPTIONS
     )
@@ -154,22 +154,27 @@ def test_pyramid_staged_entry(pm_setup):
 def test_indicator_based_tsl(pm_setup):
     """Verifies that indicator-based TSL triggers only after profit."""
     pm, om = pm_setup
-    pm.tsl_indicator_id = "active-ema-5"
+    pm.tsl_id = "active-ema-5"
     now = datetime(2026, 2, 11, 9, 15)
     
-    # 1. Entry at 100
+    # 1. Entry at 100. Target 1 is at 140.0
     pm.on_signal({'signal': MarketIntent.LONG, 'symbol': 'NIFTY', 'display_symbol': 'NIFTY', 'price': 100.0, 'timestamp': now})
     
-    # 2. Price in loss (95), EMA-5 is 90. No trigger (pnl <= 0)
+    # 2. Price in loss (95), EMA-5 is 90. No trigger (pnl <= 0 and T1 not hit)
     pm.update_tick({'ltp': 95.0, 'timestamp': now.timestamp() + 60}, indicators={"active-ema-5": 90.0})
     assert pm.current_position is not None
     
-    # 3. Price in profit (115), EMA-5 is 110. No trigger (price > EMA)
+    # 3. Price in profit (115), but T1 (140) not hit. EMA-5 is 110. No trigger!
     pm.update_tick({'ltp': 115.0, 'timestamp': now.timestamp() + 120}, indicators={"active-ema-5": 110.0})
     assert pm.current_position is not None
+
+    # 4. Price hits Target 1 at 140. TSL now active.
+    pm.update_tick({'ltp': 140.0, 'timestamp': now.timestamp() + 150}, indicators={"active-ema-5": 130.0})
+    assert pm.current_position is not None
+    assert pm.current_position.achieved_targets == 1
     
-    # 4. Price in profit (105), but FALLS BELOW EMA-5 (110). TRIGGER EXIT!
-    pm.update_tick({'ltp': 105.0, 'timestamp': now.timestamp() + 180}, indicators={"active-ema-5": 110.0})
+    # 5. Price falls below EMA-5 (138) while EMA-5 is 142. TRIGGER EXIT!
+    pm.update_tick({'ltp': 138.0, 'timestamp': now.timestamp() + 180}, indicators={"active-ema-5": 142.0})
     assert pm.current_position is None
     assert pm.trades_history[-1].status == "INDICATOR_TSL"
-    assert "Value: 110.00" in pm.trades_history[-1].exit_reason_description
+    assert "Value: 142.00" in pm.trades_history[-1].exit_reason_description

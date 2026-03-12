@@ -155,9 +155,9 @@ def backtest(
     mode: Annotated[Optional[str], typer.Option(help="Backtest mode: db or socket")] = None,
     budget: Annotated[Optional[float], typer.Option("--budget", "-b", help="Initial Capital")] = None,
     invest_mode: Annotated[Optional[str], typer.Option("--invest-mode", "-i", help="ReInvest Type: fixed or compound")] = None,
-    stop_loss_points: Annotated[Optional[float], typer.Option("--stop-loss-points", "-l", help="Stop Loss Points")] = None,
-    use_break_even: Annotated[Optional[bool], typer.Option("--use-break-even", "-e", help="Enable Break-Even trailing")] = None,
-    trailing_sl_points: Annotated[Optional[float], typer.Option("--trailing-sl-points", "-L", help="Trailing Stop Loss Points")] = None,
+    sl_points: Annotated[Optional[float], typer.Option("--sl-points", "-l", help="Stop Loss Points")] = None,
+    use_be: Annotated[Optional[bool], typer.Option("--use-be", "-e", help="Enable Break-Even trailing")] = None,
+    tsl_points: Annotated[Optional[float], typer.Option("--tsl-points", "-L", help="Trailing Stop Loss Points")] = None,
     strike_selection: Annotated[Optional[str], typer.Option("--strike-selection", "-S", help="Option Strike Type (ATM, ITM, OTM)")] = None,
     pyramid_steps: Annotated[Optional[str], typer.Option(help="Pyramid entry percentages (e.g., 25,50,25 or 100)")] = None,
     pyramid_confirm_pts: Annotated[Optional[float], typer.Option(help="Pyramid confirmation points")] = None,
@@ -168,7 +168,7 @@ def backtest(
     
     # Initialize variables to avoid UnboundLocalError
     python_strategy_path = None
-    tsl_indicator_id = None
+    tsl_id = None
 
     # 1. Strategy ID (Primary selection first)
     if not strategy_id:
@@ -191,7 +191,7 @@ def backtest(
         strat_doc = db["strategy_indicators"].find_one({"strategyId": strategy_id})
         if strat_doc:
             python_strategy_path = strat_doc.get("pythonStrategyPath")
-            tsl_indicator_id = strat_doc.get("tslIndicatorId")
+            tsl_id = strat_doc.get("tslIndicatorId")
 
     # 2. Mode
     if not mode:
@@ -242,24 +242,24 @@ def backtest(
     if not invest_mode: return
 
     # 7. Stop Loss & Trailing SL
-    if stop_loss_points is None:
-        sl_str = questionary.text("Stop Loss Points:", default="15").ask()
-        stop_loss_points = float(sl_str) if sl_str else 15.0
-
-    if trailing_sl_points is None:
+    if sl_points is None:
+        sl_str = questionary.text("SL Points:", default="15").ask()
+        sl_points = float(sl_str) if sl_str else 15.0
+ 
+    if tsl_points is None:
         tsl_choice = questionary.select("Enable Trailing Stop Loss?", choices=["No", "Yes"]).ask()
         if tsl_choice == "Yes":
             tsl_type = questionary.select("TSL Type:", choices=["Indicator", "Fixed Points"]).ask()
             if tsl_type == "Indicator":
-                tsl_indicator_id = questionary.text("Trailing SL Indicator:", default=tsl_indicator_id or "active-ema-5").ask()
-                trailing_sl_points = 1.0 # Minimal value to signal TSL is active if points aren't used
+                tsl_id = questionary.text("TSL Indicator ID:", default=tsl_id or "active-ema-5").ask()
+                tsl_points = 1.0 # Minimal value to signal TSL is active if points aren't used
             else:
-                pts_str = questionary.text("Trailing SL Points:", default="15").ask()
-                trailing_sl_points = float(pts_str) if pts_str else 15.0
-                tsl_indicator_id = None
+                pts_str = questionary.text("TSL Points:", default="15").ask()
+                tsl_points = float(pts_str) if pts_str else 15.0
+                tsl_id = None
         else:
-            trailing_sl_points = 0.0
-            tsl_indicator_id = None
+            tsl_points = 0.0
+            tsl_id = None
 
     # 9. Targets
     if not target_points:
@@ -268,9 +268,9 @@ def backtest(
         target_points = "15,25,50"
 
     # 10. Break Even
-    if use_break_even is None:
+    if use_be is None:
         be_choice = questionary.select("Enable Break Even at First Target?", choices=["Yes", "No"]).ask()
-        use_break_even = (be_choice == "Yes")
+        use_be = (be_choice == "Yes")
 
     # 11. Option Type
     if not strike_selection:
@@ -293,9 +293,9 @@ def backtest(
         "--end", end,
         "--budget", str(budget),
         "--invest-mode", invest_mode,
-        "--stop-loss-points", str(stop_loss_points),
+        "--sl-points", str(sl_points),
         "--target-points", f'"{target_points}"',
-        "--trailing-sl-points", str(trailing_sl_points),
+        "--tsl-points", str(tsl_points),
         "--strike-selection", strike_selection,
         "--python-strategy-path", python_strategy_path,
         "--pyramid-steps", pyramid_steps,
@@ -303,10 +303,10 @@ def backtest(
     ]
     if strategy_id:
         cmd.extend(["--strategy-id", strategy_id])
-    if tsl_indicator_id:
-        cmd.extend(["--tsl-indicator-id", tsl_indicator_id])
-    if use_break_even:
-        cmd.append("--use-break-even")
+    if tsl_id:
+        cmd.extend(["--tsl-id", tsl_id])
+    if use_be:
+        cmd.append("--use-be")
 
     typer.secho(f"\n🧪 Starting {mode.upper()} Backtest: {python_strategy_path}...", fg=typer.colors.BLUE, bold=True)
     try:
@@ -430,11 +430,11 @@ def live_trade(
     strategy_id: Annotated[str, typer.Option("--strategy-id", "-s", help="Strategy ID for indicators and path")] = "triple-confirmation",
     strike_selection: Annotated[str, typer.Option("--strike-selection", "-S", help="Option Selection Basis (ATM, ITM, OTM)")] = "ATM",
     budget: Annotated[float, typer.Option("--budget", "-b", help="Initial Budget for Live Trading")] = 200000.0,
-    stop_loss_points: Annotated[float, typer.Option("--stop-loss-points", "-l", help="Stop Loss Points")] = 15.0,
+    sl_points: Annotated[float, typer.Option("--sl-points", "-l", help="Stop Loss Points")] = 15.0,
     target_points: Annotated[str, typer.Option("--target-points", "-t", help="Target Points (Comma separated)")] = "15,25,45",
-    trailing_sl_points: Annotated[float, typer.Option("--trailing-sl-points", "-L", help="Trailing Stop Loss Points")] = 15.0,
-    use_break_even: Annotated[bool, typer.Option("--use-break-even", "-e", help="Enable Break-even Trailing")] = True,
-    tsl_indicator_id: Annotated[Optional[str], typer.Option(help="Indicator ID for Trailing SL (e.g. active-ema-5)")] = None,
+    tsl_points: Annotated[float, typer.Option("--tsl-points", "-L", help="Trailing Stop Loss Points")] = 15.0,
+    use_be: Annotated[bool, typer.Option("--use-be", "-e", help="Enable Break-even Trailing")] = True,
+    tsl_id: Annotated[Optional[str], typer.Option("--tsl-id", "-T", help="Indicator ID for Trailing SL (e.g. active-ema-5)")] = None,
     record_papertrade: Annotated[bool, typer.Option(help="Record detailed trade logs in 'paper_trades' collection")] = True,
     debug: Annotated[bool, typer.Option(help="Enable Socket Debug Logging")] = False
 ):
@@ -455,13 +455,13 @@ def live_trade(
 
         pos_cfg = {
             "budget": budget,
-            "stop_loss_points": stop_loss_points,
+            "sl_points": sl_points,
             "target_points": target_points,
-            "trailing_sl_points": trailing_sl_points,
+            "tsl_points": tsl_points,
             "strike_selection": strike_selection.upper(),
             "instrument_type": "OPTIONS",
-            "use_break_even": use_break_even,
-            "tsl_indicator_id": tsl_indicator_id,
+            "use_be": use_be,
+            "tsl_id": tsl_id,
             "record_papertrade_db": record_papertrade,
             "symbol": "NIFTY",
             "python_strategy_path": python_strategy_path,
@@ -539,12 +539,12 @@ def interactive_menu():
 
              if sid:
                  budget = float(questionary.text("Budget:", default="200000").ask())
-                 stop_loss_points = float(questionary.text("Stop Loss Points:", default="20").ask())
+                 sl_points = float(questionary.text("SL Points:", default="20").ask())
                  target_points = questionary.text("Target Points:", default="5,10,15").ask()
                  live_trade(
                      strategy_id=sid,
                      budget=budget,
-                     stop_loss_points=stop_loss_points,
+                     sl_points=sl_points,
                      target_points=target_points,
                  )
         elif choice == "Tests": tests_menu()

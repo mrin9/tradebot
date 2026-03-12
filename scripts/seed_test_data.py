@@ -201,13 +201,13 @@ def generate_rules(db):
             "enabled": True,
             "timeframe_seconds": 180,
             "pythonStrategyPath": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
-            "Indicators": [
-                { "indicatorId": "ema5", "indicator": "ema-5", "InstrumentType": "SPOT" },
-                { "indicatorId": "ema21", "indicator": "ema-21", "InstrumentType": "SPOT" },
-                { "indicatorId": "rsi", "indicator": "rsi-14", "InstrumentType": "SPOT" },
-                { "indicatorId": "ema5", "indicator": "ema-5", "InstrumentType": "OPTIONS_BOTH" },
-                { "indicatorId": "ema21", "indicator": "ema-21", "InstrumentType": "OPTIONS_BOTH" },
-                { "indicatorId": "rsi", "indicator": "rsi-14", "InstrumentType": "OPTIONS_BOTH" }
+            "indicators": [
+                { "indicator": "ema-5", "InstrumentType": "SPOT" },
+                { "indicator": "ema-21", "InstrumentType": "SPOT" },
+                { "indicator": "rsi-14", "InstrumentType": "SPOT" },
+                { "indicator": "ema-5", "InstrumentType": "OPTIONS_BOTH" },
+                { "indicator": "ema-21", "InstrumentType": "OPTIONS_BOTH" },
+                { "indicator": "rsi-14", "InstrumentType": "OPTIONS_BOTH" }
             ]
         },
         # 2. EMA 9/21 + Supertrend + RSI (300s)
@@ -217,11 +217,11 @@ def generate_rules(db):
             "enabled": True,
             "timeframe_seconds": 300,
             "pythonStrategyPath": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
-            "Indicators": [
-                { "indicatorId": "ema9", "indicator": "ema-9", "InstrumentType": "OPTIONS_BOTH" },
-                { "indicatorId": "ema21", "indicator": "ema-21", "InstrumentType": "OPTIONS_BOTH" },
-                { "indicatorId": "st", "indicator": "supertrend-10-3", "InstrumentType": "OPTIONS_BOTH" },
-                { "indicatorId": "rsi", "indicator": "rsi-14", "InstrumentType": "OPTIONS_BOTH" }
+            "indicators": [
+                { "indicator": "ema-9", "InstrumentType": "OPTIONS_BOTH" },
+                { "indicator": "ema-21", "InstrumentType": "OPTIONS_BOTH" },
+                { "indicator": "supertrend-10-3", "InstrumentType": "OPTIONS_BOTH" },
+                { "indicator": "rsi-14", "InstrumentType": "OPTIONS_BOTH" }
             ]
         },
         # 3. MACD + Supertrend + EMA Slope (180s)
@@ -231,10 +231,10 @@ def generate_rules(db):
             "enabled": True,
             "timeframe_seconds": 180,
             "pythonStrategyPath": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
-            "Indicators": [
-                { "indicatorId": "macd", "indicator": "macd-12-26-9", "InstrumentType": "SPOT" },
-                { "indicatorId": "st", "indicator": "supertrend-10-3", "InstrumentType": "SPOT" },
-                { "indicatorId": "ema_slope", "indicator": "ema-20", "InstrumentType": "SPOT" }
+            "indicators": [
+                { "indicator": "macd-12-26-9", "InstrumentType": "SPOT" },
+                { "indicator": "supertrend-10-3", "InstrumentType": "SPOT" },
+                { "indicator": "ema-20", "InstrumentType": "SPOT" }
             ]
         }
     ]

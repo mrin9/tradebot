@@ -162,9 +162,9 @@ python -m tests.backtest.backtest_runner \
     --start 2026-02-27 \
     --strategy-id triple-confirmation \
     --budget 200000 \
-    --stop-loss-points 15.0 \
+    --sl-points 15.0 \
     --target-points "15,25,50" \
-    --trailing-sl-points 10.0
+    --tsl-points 10.0
 ```
 
 ### High-Fidelity Socket Mode
@@ -176,9 +176,9 @@ python -m tests.backtest.backtest_runner \
     --strategy-id triple-confirmation \
     --strike-selection ATM \
     --budget 200000 \
-    --stop-loss-points 20.0 \
+    --sl-points 20.0 \
     --target-points "5,15,30" \
-    --trailing-sl-points 5.0
+    --tsl-points 5.0
 ```
 
 ### Indicator-based Trailing SL (EMA-5)
@@ -188,7 +188,7 @@ python -m tests.backtest.backtest_runner \
     --mode db \
     --start 2026-02-27 \
     --strategy-id triple-confirmation \
-    --tsl-indicator-id active-ema-5
+    --tsl-id active-ema-5
 ```
 
 ### Python Strategy Mode (Hybrid)
@@ -199,9 +199,9 @@ python -m tests.backtest.backtest_runner \
     --start 2026-02-27 \
     --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
     --budget 200000 \
-    --stop-loss-points 15.0 \
+    --sl-points 15.0 \
     --target-points "15,25,50" \
-    --trailing-sl-points 10.0
+    --tsl-points 10.0
 ```
 
 ### Full Parameter Examples
@@ -215,9 +215,9 @@ python -m tests.backtest.backtest_runner \
     --invest-mode compound \
     --strategy-id triple-confirmation \
     --strike-selection ATM \
-    --stop-loss-points 15.0 \
+    --sl-points 15.0 \
     --target-points "15,25,50" \
-    --trailing-sl-points 10.0
+    --tsl-points 10.0
 ```
 
 #### Comprehensive Python Mode (Fixed + ITM Options)
@@ -229,9 +229,9 @@ python -m tests.backtest.backtest_runner \
     --invest-mode compound \
     --strategy-id triple-confirmation \
     --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy \
-    --stop-loss-points 15.0 \
+    --sl-points 15.0 \
     --target-points "15,25,50" \
-    --trailing-sl-points 10.0
+    --tsl-points 10.0
 ```
 
 ### Parameters Reference
@@ -245,16 +245,16 @@ The following table lists all available command-line arguments for `tests/backte
 | `--end` | n/a | `None` | Simulation End Date. Defaults to `--start` if omitted. |
 | `--strategy-id` | `-s` | `None` | Strategy ID from MongoDB. Required for indicator lookup. |
 | `--budget` | `-b` | `200000.0` | Initial Capital in ₹. |
-| `--stop-loss-points`| `-l` | `15.0` | Absolute stop loss points off premium. |
+| `--sl-points`| `-s` | `15.0` | Absolute stop loss points off premium. |
 | `--target-points` | `-t` | `15,25,50` | Comma-separated profit booking levels (points). |
-| `--trailing-sl-points`| `-L` | `0.0` | Trailing SL increment. Set to `0.0` to disable. |
-| `--use-break-even` | `-e` | `n/a` | Flag to move SL to entry after first target is hit. |
+| `--tsl-points`| `-L` | `0.0` | Trailing SL increment. Set to `0.0` to disable. |
+| `--use-be` | `-e` | `n/a` | Flag to move SL to entry after first target is hit. |
 | `--strike-selection`| `-S` | `ATM` | Option strike selector: `ATM`, `ITM`, or `OTM`. |
 | `--invest-mode` | `-i` | `compound` | `compound` (reinvest profits) or `fixed` (standard sizing). |
 | `--python-strategy-path`| n/a | `None` | Path to custom Python strategy class. |
 | `--pyramid-steps` | n/a | `100` | Comma-separated entry percentages (e.g. `25,50,25`). |
 | `--pyramid-confirm-pts` | n/a | `10.0` | Points move before next pyramid step. |
 | `--price-source` | `-p` | `close` | Entry/Exit price source: `open` or `close`. |
-| `--tsl-indicator-id`| n/a | `None` | Indicator ID for Trailing SL. |
+| `--tsl-id`| `-T` | `None` | Indicator ID for Trailing SL. |
 
 - See `python -m tests.backtest.backtest_runner --help` for the latest complete list.

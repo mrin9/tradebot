@@ -16,7 +16,7 @@ def test_papertrade_timestamps_reflect_market_time():
     pm = PositionManager(
         symbol="NIFTY", 
         quantity=50, 
-        stop_loss_points=20, 
+        sl_points=20, 
         target_points=[40],
         instrument_type=InstrumentType.OPTIONS
     )
@@ -91,8 +91,8 @@ def test_live_trader_recorded_at_reflects_market_time():
         "symbol": "NIFTY",
         "quantity": 50,
         "python_strategy_path": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
-        "stop_loss_points": 10,
-        "target_points": 20,
+        "sl_points": 10,
+        "tsl_points": 20,
         "record_papertrade_db": True
     }
     
