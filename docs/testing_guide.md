@@ -225,6 +225,7 @@ The following table lists all available command-line arguments for `tests/backte
 | `--pyramid-steps` | n/a | `100` | Comma-separated entry percentages (e.g. `25,50,25`). |
 | `--pyramid-confirm-pts` | n/a | `10.0` | Points move before next pyramid step. |
 | `--price-source` | `-p` | `close` | Entry/Exit price source: `open` or `close`. |
-| `--tsl-id`| `-T` | `None` | Indicator ID for Trailing SL. |
+| `--tsl-id`| `-T` | `active-ema-5` | Indicator ID for Trailing SL. |
 
 - See `python -m tests.backtest.backtest_runner --help` for the latest complete list.
+```

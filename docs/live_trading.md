@@ -54,10 +54,10 @@ Values that denote points (like Stop Loss) correspond to absolute price changes 
 | `--budget` | `-b` | `200000.0` | Initial capital for the session. |
 | `--sl-points`| `-l` | `15.0` | Absolute stop loss points off premium. |
 | `--target-points` | `-t` | `15,25,45` | Comma-separated profit booking levels. |
-| `--tsl-points`| `-L` | `15.0` | Trailing SL increment. |
+| `--tsl-points`| `-L` | `0.0` | Trailing SL increment. |
 | `--use-be` | `-e` | `True` | Move SL to entry after Target 1. |
 | `--record-papertrade`| n/a | `True` | Record high-fidelity events in `paper_trades` collection. |
-| `--tsl-id`| `-T` | `None` | Indicator ID for Trailing SL (e.g. `active-ema-5`). |
+| `--tsl-id`| `-T` | `active-ema-5` | Indicator ID for Trailing SL (e.g. `active-ema-5`). |
 | `--debug` | n/a | `False` | Enable raw socket debug logs. |
 
 ### Interactive Menu

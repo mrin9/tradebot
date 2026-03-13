@@ -157,7 +157,7 @@ def backtest(
     invest_mode: Annotated[Optional[str], typer.Option("--invest-mode", "-i", help="ReInvest Type: fixed or compound")] = None,
     sl_points: Annotated[Optional[float], typer.Option("--sl-points", "-l", help="Stop Loss Points")] = None,
     use_be: Annotated[Optional[bool], typer.Option("--use-be", "-e", help="Enable Break-Even trailing")] = None,
-    tsl_points: Annotated[Optional[float], typer.Option("--tsl-points", "-L", help="Trailing Stop Loss Points")] = None,
+    tsl_points: Annotated[Optional[float], typer.Option("--tsl-points", "-L", help="Trailing Stop Loss Points")] = 0.0,
     strike_selection: Annotated[Optional[str], typer.Option("--strike-selection", "-S", help="Option Strike Type (ATM, ITM, OTM)")] = None,
     pyramid_steps: Annotated[Optional[str], typer.Option(help="Pyramid entry percentages (e.g., 25,50,25 or 100)")] = None,
     pyramid_confirm_pts: Annotated[Optional[float], typer.Option(help="Pyramid confirmation points")] = None,
@@ -189,7 +189,7 @@ def backtest(
         from packages.services.trade_config_service import TradeConfigService
         strat_doc = TradeConfigService.fetch_strategy_config(strategy_id)
         python_strategy_path = strat_doc.get("python_strategy_path")
-        tsl_id = strat_doc.get("tslIndicatorId")
+        tsl_id = strat_doc.get("tslIndicatorId") or "active-ema-5"
     except Exception as e:
         typer.secho(f"❌ Error fetching strategy: {e}", fg=typer.colors.RED)
         return
@@ -430,9 +430,9 @@ def live_trade(
     budget: Annotated[float, typer.Option("--budget", "-b", help="Initial Budget for Live Trading")] = 200000.0,
     sl_points: Annotated[float, typer.Option("--sl-points", "-l", help="Stop Loss Points")] = 15.0,
     target_points: Annotated[str, typer.Option("--target-points", "-t", help="Target Points (Comma separated)")] = "15,25,45",
-    tsl_points: Annotated[float, typer.Option("--tsl-points", "-L", help="Trailing Stop Loss Points")] = 15.0,
+    tsl_points: Annotated[float, typer.Option("--tsl-points", "-L", help="Trailing Stop Loss Points")] = 0.0,
     use_be: Annotated[bool, typer.Option("--use-be", "-e", help="Enable Break-even Trailing")] = True,
-    tsl_id: Annotated[Optional[str], typer.Option("--tsl-id", "-T", help="Indicator ID for Trailing SL (e.g. active-ema-5)")] = None,
+    tsl_id: Annotated[Optional[str], typer.Option("--tsl-id", "-T", help="Indicator ID for Trailing SL (e.g. active-ema-5)")] = "active-ema-5",
     record_papertrade: Annotated[bool, typer.Option(help="Record detailed trade logs in 'paper_trades' collection")] = True,
     debug: Annotated[bool, typer.Option(help="Enable Socket Debug Logging")] = False
 ):

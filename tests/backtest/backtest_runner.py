@@ -21,7 +21,7 @@ def get_parser():
     parser.add_argument("--mode", type=str, choices=["db", "socket"], default="db", help="Backtest mode: db or socket")
     parser.add_argument("--start", type=str, default="2026-02-02", help="Start Date (YYYY-MM-DD)")
     parser.add_argument("--end", type=str, default=None, help="End Date (YYYY-MM-DD). Defaults to --start if omitted.")
-    parser.add_argument("--strategy-id", "-I", type=str, required=True, help="Strategy Indicator ID (from DB).")
+    parser.add_argument("--strategy-id", "-I", type=str, default="triple-confirmation", help="Strategy Indicator ID (from DB).")
     parser.add_argument("--budget", "-b", type=float, default=200000.0, help="Initial Capital")
     parser.add_argument("--sl-points", "-s", type=float, default=settings.BACKTEST_STOP_LOSS, help="Stop Loss Points")
     parser.add_argument("--target-points", "-t", type=str, default=settings.BACKTEST_TARGET_STEPS, help="Comma separated target points")
@@ -34,7 +34,7 @@ def get_parser():
     parser.add_argument("--pyramid-steps", type=str, default="100", help="Comma-separated entry percentages (e.g., 25,50,25 or 100 for all-in)")
     parser.add_argument("--pyramid-confirm-pts", type=float, default=10.0, help="Points price must move in our favor before next pyramid step")
     parser.add_argument("--price-source", "-p", type=str, choices=["open", "close"], default=settings.BACKTEST_PRICE_SOURCE, help="Price source for backtest entry/exit (open or close)")
-    parser.add_argument("--tsl-id", "-T", type=str, default=None, help="Indicator ID for Trailing Stop Loss (e.g. active-ema-5)")
+    parser.add_argument("--tsl-id", "-T", type=str, default="active-ema-5", help="Indicator ID for Trailing Stop Loss (e.g. active-ema-5)")
     return parser
 
 def setup_fund_manager(args, rule_config):
