@@ -171,7 +171,9 @@ def generate_day_data(db, start_dt, day_type, ce_map, pe_map, start_nifty_price=
         
         # CE Candle (generate for the currently active ATM strike specifically to ensure data exists for that strike)
         # We also generate data for the previous strike if it diverged, but for simplicity, we provide valid options data for all generated strikes close to ATM
-        for strike in [new_atm_strike - 50, new_atm_strike, new_atm_strike + 50]:
+        # Seed strikes within +/- 15 of initial ATM
+        for offset in range(-15, 16):
+            strike = int(atm_strike + (offset * 50))
             if strike in ce_map:
                 offset_factor = (strike - new_atm_strike)/50.0  # Just arbitrary pricing difference
                 strike_ce_o = max(1.0, c_o - offset_factor * 10)
@@ -210,31 +212,39 @@ def generate_rules(db):
                 { "indicator": "rsi-14", "InstrumentType": "OPTIONS_BOTH" }
             ]
         },
-        # 2. EMA 9/21 + Supertrend + RSI (300s)
+        # 2. Supertrend + Price (300s)
         {
-            "strategyId": "ema-9x21+st+rsi-300s-active",
-            "name": "EMA 9x21 Supertrend Active Only",
+            "strategyId": "st-price-300s-active",
+            "name": "Supertrend Price Active",
             "enabled": True,
             "timeframe_seconds": 300,
-            "pythonStrategyPath": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
+            "pythonStrategyPath": "packages/tradeflow/python_strategies.py:SuperTrendAndPriceCrossStrategy",
             "indicators": [
-                { "indicator": "ema-9", "InstrumentType": "OPTIONS_BOTH" },
+                { "indicator": "supertrend-10-3", "InstrumentType": "OPTIONS_BOTH" }
+            ]
+        },
+        # 3. EMA Cross + RSI (180s)
+        {
+            "strategyId": "ema-cross-rsi-180s",
+            "name": "EMA Cross RSI Confirm",
+            "enabled": True,
+            "timeframe_seconds": 180,
+            "pythonStrategyPath": "packages/tradeflow/python_strategies.py:EmaCrossWithRsiStrategy",
+            "indicators": [
+                { "indicator": "ema-5", "InstrumentType": "OPTIONS_BOTH" },
                 { "indicator": "ema-21", "InstrumentType": "OPTIONS_BOTH" },
-                { "indicator": "supertrend-10-3", "InstrumentType": "OPTIONS_BOTH" },
                 { "indicator": "rsi-14", "InstrumentType": "OPTIONS_BOTH" }
             ]
         },
-        # 3. MACD + Supertrend + EMA Slope (180s)
+        # 4. Simple MACD (180s)
         {
-            "strategyId": "macd+st+slope-180s-dual",
-            "name": "MACD ST Slope Dual",
+            "strategyId": "macd-180s-dual",
+            "name": "Simple MACD Dual",
             "enabled": True,
             "timeframe_seconds": 180,
-            "pythonStrategyPath": "packages/tradeflow/python_strategies.py:TripleLockStrategy",
+            "pythonStrategyPath": "packages/tradeflow/python_strategies.py:SimpleMACDStrategy",
             "indicators": [
-                { "indicator": "macd-12-26-9", "InstrumentType": "SPOT" },
-                { "indicator": "supertrend-10-3", "InstrumentType": "SPOT" },
-                { "indicator": "ema-20", "InstrumentType": "SPOT" }
+                { "indicatorId": "macd", "indicator": "macd-12-26-9", "InstrumentType": "OPTIONS_BOTH" }
             ]
         }
     ]

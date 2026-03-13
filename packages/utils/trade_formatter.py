@@ -26,6 +26,7 @@ class TradeFormatter:
     EMOJI_PLUG = "🔌"
     EMOJI_THREAD = "🧵"
     EMOJI_MOON = "🌙"
+    EMOJI_CONTINUITY = "🔁"
 
     @staticmethod
     def format_entry(timestamp: datetime, symbol: str, quantity: int, price: float, total: float, lot_size: int, step: Optional[int] = None, total_steps: Optional[int] = None) -> str:
@@ -127,9 +128,11 @@ class TradeFormatter:
         return " | ".join(formatted_parts)
 
     @staticmethod
-    def format_signal(signal_name: str, reason: str, time_str: str, timeframe: int, indicators: Dict[str, float]) -> str:
+    def format_signal(signal_name: str, reason: str, time_str: str, timeframe: int, indicators: Dict[str, float], is_continuity: bool = False) -> str:
         state_str = TradeFormatter._format_indicator_state(indicators)
-        return f"{TradeFormatter.EMOJI_SIGNAL} Signal: {signal_name} ({reason}) | Time: {time_str} | Timeframe: {timeframe}s | State: {state_str}"
+        emoji = TradeFormatter.EMOJI_CONTINUITY if is_continuity else TradeFormatter.EMOJI_SIGNAL
+        prefix = "Continuity " if is_continuity else ""
+        return f"{emoji} {prefix}Signal: {signal_name} ({reason}) | Time: {time_str} | Timeframe: {timeframe}s | State: {state_str}"
 
     @staticmethod
     def format_instrument_switch(category: str, old_id: int, new_id: int) -> str:

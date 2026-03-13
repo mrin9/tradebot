@@ -370,6 +370,8 @@ class FundManager:
             candle, mapped_indicators, current_position_intent=intent_enum
         )
         
+        is_cont = "(Continuity)" in reason
+
         if signal != SignalType.NEUTRAL:
             if self.is_warming_up:
                 # No signals/trades during warmup!
@@ -379,18 +381,18 @@ class FundManager:
             if ts and self.latest_market_time and (self.latest_market_time - ts) > 1800:
                  logger.warning(f"⚠️ SignalType ignored: Triggered by stale data from {ts}")
                  return
-
+ 
             # Use period end for signal/entry time (signal is finalized at end of candle)
             signal_ts = ts + self.global_timeframe
             spot_price = candle.get('c', candle.get('close'))
-
+ 
             # 1. Handle SignalTypes for existing positions
             if self.position_manager.current_position:
                 if signal == SignalType.EXIT:
                     # Fallback to market time if signal_ts is missing
                     ts_dt = self._resolve_signal_time(signal_ts)
                     ts_str = ts_dt.strftime('%d-%b %H:%M')
-                    logger.info(TradeFormatter.format_signal("EXIT", reason, ts_str, self.global_timeframe, self.latest_indicators_state))
+                    logger.info(TradeFormatter.format_signal("EXIT", reason, ts_str, self.global_timeframe, self.latest_indicators_state, is_continuity=is_cont))
                     
                     pos = self.position_manager.current_position
                     opt_price = self._get_fallback_option_price(int(pos.symbol), signal_ts)
@@ -409,7 +411,7 @@ class FundManager:
                 # SignalType changed (flip) - log it and handle closure
                 ts_dt = self._resolve_signal_time(signal_ts)
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
-                logger.info(TradeFormatter.format_signal(signal.name, reason, ts_str, self.global_timeframe, self.latest_indicators_state))
+                logger.info(TradeFormatter.format_signal(signal.name, reason, ts_str, self.global_timeframe, self.latest_indicators_state, is_continuity=is_cont))
                 
                 pos = self.position_manager.current_position
                 opt_price = self._get_fallback_option_price(int(pos.symbol), signal_ts)
@@ -423,11 +425,11 @@ class FundManager:
                     return # Ignore lone exit signals when not in position
                 
                 intent = MarketIntentType.LONG if signal == SignalType.LONG else MarketIntentType.SHORT
-                
+
                 # No existing position - log new entry signal
                 ts_dt = self._resolve_signal_time(signal_ts)
                 ts_str = ts_dt.strftime('%d-%b %H:%M')
-                logger.info(TradeFormatter.format_signal(signal.name, reason, ts_str, self.global_timeframe, self.latest_indicators_state))
+                logger.info(TradeFormatter.format_signal(signal.name, reason, ts_str, self.global_timeframe, self.latest_indicators_state, is_continuity=is_cont))
                 
             # 2. Handle Entries
             target_symbol = "26000" # default spot
@@ -464,9 +466,10 @@ class FundManager:
                 'symbol': target_symbol,
                 'display_symbol': target_display_symbol,
                 'timestamp': signal_ts,
-                'reason': signal.name,
-                'reason_desc': reason,
-                'nifty_price': spot_price
+                'reason': reason,
+                'reason_desc': signal.name,
+                'nifty_price': spot_price,
+                'is_continuity': is_cont
             }
             
             # Recalculate quantity based on exact entry price and budget

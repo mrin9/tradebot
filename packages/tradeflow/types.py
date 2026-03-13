@@ -61,3 +61,4 @@ class SignalPayload(BaseModel):
     reason: str = "N/A"
     reason_desc: str = ""
     nifty_price: float = 0.0
+    is_continuity: bool = False

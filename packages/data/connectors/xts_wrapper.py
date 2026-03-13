@@ -1,11 +1,13 @@
-import json
-import os
 import datetime
 from packages.config import settings
+
 from packages.data.connectors.xts_sdk.XTSConnect import XTSConnect
 from packages.data.connectors.xts_sdk.MarketDataSocketClient import MDSocket_io
+import json
+import os
 import urllib3
 from packages.utils.log_utils import setup_logger
+
 
 # Suppress InsecureRequestWarning caused by disabling SSL verification
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -40,8 +42,9 @@ class XTSManager:
                 'token': result['token'],
                 'userID': result['userID'],
                 'isInvestorClient': result.get('isInvestorClient', False),
-                'createdAt': datetime.now().isoformat()
+                'createdAt': datetime.datetime.now().isoformat()
             }
+
             
             with open(cls.SESSION_FILE, 'w') as f:
                 json.dump(data, f)
@@ -63,6 +66,7 @@ class XTSManager:
                 created_at = datetime.datetime.fromisoformat(sess['createdAt'])
                 if datetime.datetime.now() - created_at < datetime.timedelta(hours=23):
                         return sess
+
         except Exception as e:
             logger.warning(f"Failed to load {session_type} session from file: {e}")
         return None

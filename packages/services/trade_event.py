@@ -35,13 +35,13 @@ class TradeEventService:
         self.active_signals.append(payload)
         
         # Format and log the signal
-        # payload format from FundManager contains signal name, reason, etc.
         log_msg = TradeFormatter.format_signal(
             signal_name=payload.get('reason_desc', 'SIGNAL'),
             reason=payload.get('reason', ''),
             time_str=datetime.datetime.fromtimestamp(payload.get('timestamp', 0)).strftime("%H:%M:%S"),
             timeframe=payload.get('timeframe', 0),
-            indicators={} # Indicators are logged in heartbeat, keeping signal clean
+            indicators={}, # Indicators are logged in heartbeat
+            is_continuity=payload.get('is_continuity', False)
         )
         logger.info(log_msg)
 

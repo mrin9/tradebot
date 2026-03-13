@@ -37,7 +37,8 @@ class TradePersistence:
                 "cyclePnL": pos.total_realized_pnl,
                 "totalPnL": getattr(pos, 'session_realized_pnl', 0.0),
                 "niftyPrice": nifty_price,
-                "msg": msg or f"{event_type} for {pos.display_symbol}"
+                "msg": msg or f"{event_type} for {pos.display_symbol}",
+                "isContinuity": getattr(pos, 'is_continuity', False)
             }
             self.db[self.paper_col].insert_one(event_data)
         except Exception as e:

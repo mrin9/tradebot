@@ -66,6 +66,7 @@ class Position:
     
     # Event History for Unified Schema
     target_events: List[Dict] = field(default_factory=list)
+    is_continuity: bool = False
 
     def __post_init__(self):
         self.remaining_quantity = self.initial_quantity
@@ -102,7 +103,8 @@ class Position:
                 "totalPrice": self.initial_quantity * settings.NIFTY_LOT_SIZE * self.entry_price,
                 "signal": self.entry_signal,
                 "reason": self.entry_reason_description,
-                "niftyPrice": self.nifty_price_at_entry
+                "niftyPrice": self.nifty_price_at_entry,
+                "isContinuity": self.is_continuity
             },
             "targets": self.target_events,
             "stopLossPrice": self.stop_loss,
@@ -227,7 +229,8 @@ class PositionManager:
                                cycle_id=f"{date_prefix}-cycle-{self.cycle_count}", 
                                reason=entry_reason,
                                reason_desc=payload.reason_desc,
-                               nifty_price=nifty_price)
+                               nifty_price=nifty_price,
+                               is_continuity=payload.is_continuity)
 
     def _try_pyramid_add(self, price: float, timestamp: datetime.datetime, payload):
         """
@@ -459,7 +462,8 @@ class PositionManager:
 
     def _open_position(self, intent: MarketIntentType, price: float, timestamp: datetime.datetime, 
                       symbol: str | None = None, display_symbol: str | None = None,
-                      cycle_id: str = "N/A", reason: str = "N/A", reason_desc: str = "", nifty_price: float = 0.0):
+                      cycle_id: str = "N/A", reason: str = "N/A", reason_desc: str = "", nifty_price: float = 0.0,
+                      is_continuity: bool = False):
         """
         Logic for entering a trade.
         """
@@ -512,7 +516,8 @@ class PositionManager:
             pyramid_step=0,
             total_intended_quantity=self.quantity,
             formatted_entry_time=fmt_time,
-            entry_transaction_desc=trans_desc
+            entry_transaction_desc=trans_desc,
+            is_continuity=is_continuity
         )
         
         # Trigger entry event
