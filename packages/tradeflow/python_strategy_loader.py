@@ -1,15 +1,18 @@
 import importlib.util
 import logging
 import os
-from packages.tradeflow.types import SignalType, CandleType, MarketIntentType
+
+from packages.tradeflow.types import SignalType
 
 logger = logging.getLogger(__name__)
+
 
 class PythonStrategy:
     """
     A wrapper Strategy class that delegates execution to a dynamically loaded Python script.
     Delegates to a Python script for strategy logic.
     """
+
     def __init__(self, script_path: str):
         self.script_path = script_path
         self.custom_strategy = self._load_strategy(script_path)
@@ -56,13 +59,9 @@ class PythonStrategy:
         """
         if not self.custom_strategy:
             return SignalType.NEUTRAL, "PYTHON WRAPPER ERROR: Strategy not loaded", 0.0
-            
+
         try:
-            return self.custom_strategy.on_resampled_candle_closed(
-                candle, 
-                indicators, 
-                current_position_intent
-            )
+            return self.custom_strategy.on_resampled_candle_closed(candle, indicators, current_position_intent)
         except Exception as e:
             logger.error(f"❌ Error during Python Strategy evaluation: {e}")
             return SignalType.NEUTRAL, f"PYTHON STRATEGY EXCEPTION: {e}", 0.0

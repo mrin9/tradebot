@@ -1,231 +1,256 @@
-# Trade Bot V2 Testing & Backtest Guide
+## Testing & Backtest Guide
 
-This document outlines the testing framework, workflows, and usage instructions for Trade Bot V2. We use `pytest` as our primary testing framework for both unit and integration tests.
+This guide describes how testing is organized around the core engine and how to use the backtest infrastructure to validate strategies and data quality.
 
 ---
 
-## 1. Testing Framework
+## 1. Testing Philosophy
 
-We utilize `pytest` for all Python tests in this project. All tests are located in the root `tests/` directory.
+The project uses **pytest** with several layers of tests:
 
-### Running Tests
+- **Unit tests (no DB)**: Pure Python behavior in isolation.
+- **Read/Write DB tests**: Interact with a temporary DB for collectors and services.
+- **Frozen DB tests**: Deterministic integration tests, seeded from a known snapshot.
+- **XTS tests**: Connectivity and normalization for live market integration.
+- **Backtest runners**: End‑to‑end tests that simulate complete trading sessions.
 
-You can run tests from the project root using the following commands:
+All tests live under `tests/`.
 
-#### Run All Tests
+---
+
+## 2. Test Layout
+
+```text
+tests/
+├── no_db/          # Pure unit tests – no Mongo required
+├── backtest/       # Backtest runners and modes
+├── readwrite_db/   # Tests that write to a test DB
+├── frozen_db/      # Deterministic end‑to‑end tests on seeded data
+└── xts/            # XTS connectivity & stream tests
+```
+
+### 2.1 No‑DB Tests
+
+Located in `tests/no_db/`, these cover:
+
+- `test_candle_resampler.py`
+- `test_indicator_calculator.py`
+- `test_position_manager.py`
+- `test_drift_manager.py`
+- `test_engine_flow.py`
+- Strategy/domain logic that can run without a DB.
+
+They are fast and safe to run anytime.
+
+### 2.2 Read/Write DB Tests
+
+Located in `tests/readwrite_db/`, using a **test DB**:
+
+- Example: `test_collectors.py` for data collectors.
+- Use `DB_NAME=tradebot_test` so that collections are suffixed with `_test`.
+
+### 2.3 Frozen DB Tests
+
+Located in `tests/frozen_db/`, backed by snapshot data:
+
+- Example: `test_engine_pipeline.py`, `test_strategy_integration.py`, `audit_golden_copy.py`.
+- Use `DB_NAME=tradebot_frozen` and seed via `packages/db/seed_frozen_data.py`.
+
+These tests guarantee deterministic behavior across runs.
+
+### 2.4 XTS Tests
+
+Located in `tests/xts/`:
+
+- Validate:
+  - Socket connectivity.
+  - Epoch/timestamp shifts.
+  - Data normalization.
+
+Some are marked as **live** and require real credentials and market hours; others can be run offline with mocks.
+
+---
+
+## 3. Running Tests
+
+From the project root:
+
 ```bash
-# Local
 pytest tests/
-
-# Docker (VPS/Container)
-docker compose exec api pytest tests/
 ```
 
-#### Run a Specific Test File
-```bash
-# Local
-pytest tests/readwrite_db/test_fund_manager_ticks.py
+Verbose:
 
-# Docker (VPS/Container)
-docker compose exec api pytest tests/xts/test_xts_socket.py
-```
-
-#### Run a Specific Test Case
-```bash
-pytest tests/readwrite_db/test_fund_manager_ticks.py::TestFundManager::test_orchestration
-```
-
-#### Run Tests with Output
 ```bash
 pytest -v tests/
 ```
 
-Individual tests will now log the database they are using (e.g., `tradebot_test` or `tradebot_frozen_test`).
+### 3.1 Run Specific Files or Tests
 
-### XTS API Testing
+Single file:
 
-We have a dedicated suite for XTS API connectivity, data normalization, and timing calibration in `tests/xts/`.
-
-#### 1. Mocked XTS Tests (Fast, 24/7)
-These tests use simulated API responses and do not require an active XTS session or market hours.
 ```bash
-pytest tests/xts/ -m "not live"
+pytest tests/no_db/test_candle_resampler.py
 ```
 
-#### 2. Live XTS Integration Tests (Requires Active Market/Keys)
-These tests make real network calls to XTS to verify their API response structures have not changed.
-**Prerequisites:** Valid `MARKET_API_KEY`, etc. in your `.env`.
+Specific test case:
+
 ```bash
-# Run all live-tagged tests
+pytest tests/no_db/test_position_manager.py::TestPositionManager::test_basic_entry_exit
+```
+
+### 3.2 XTS Test Selection
+
+If XTS tests are organized with markers (e.g., `live`), you can use:
+
+```bash
+# Non-live XTS tests (offline)
+pytest tests/xts/ -m "not live"
+
+# Live XTS tests
 pytest tests/xts/ -m "live"
 ```
 
-#### 3. XTS Epoch & Timing Calibration
-Verifies the 10-year epoch shift (1970 vs 1980) logic used in the live trader and simulator.
-```bash
-pytest tests/xts/test_xts_epoch.py -s
-```
-
-#### 4. Live Socket Stream Tester
-Standalone script to verify you are receiving heartbeats and ticks from the live socket.
-- **Path:** `tests/xts/test_xts_socket.py`
-- **Parameters:**
-  - `--store-in-db`: Optional. If provided, saves captured ticks to the `xts_socket_data_collection_test` collection for later analysis.
+Check markers and available tests with:
 
 ```bash
-# Verify connection and print raw ticks (CTRL+C to stop)
-python tests/xts/test_xts_socket.py
-
-# Verify connection and SAVE ticks to MongoDB
-python tests/xts/test_xts_socket.py --store-in-db
+pytest tests/xts/ --maxfail=1 -q
 ```
 
 ---
 
-### 2. Database Namespacing & Global Safety
+## 4. Database Namespacing & Safety
 
-To prevent data pollution and ensure deterministic results, we use multiple test databases. **By default, the testing environment (via `conftest.py`) redirects all database operations to `tradebot_test` to protect your development data.**
+The engine uses:
 
-- **`tradebot`**: Used for manual development and live testing. **Never used by automated tests.**
-- **`tradebot_frozen_test`**: Used for **deterministic** integration tests (E2E strategies). This DB is seeded with static historical data.
-- **`tradebot_test`**: **Global Default** for all unit and volatile tests. It acts as a scratchpad for tests that write data.
+- `DB_NAME` to select which database to connect to.
+- Collection suffix logic in `packages/settings.py` and `packages/utils.mongo`.
 
-Isolation is handled automatically. If you create a new test, it will safely use `tradebot_test` without any extra configuration.
+Recommended mapping:
 
-### Seeding the Frozen Database
-Before running E2E tests, ensure the frozen data is seeded:
-```bash
-# Local
-python3 scripts/seed_test_data.py
+| Environment | DB Name           | Suffix     | Purpose                                   |
+|------------|-------------------|------------|-------------------------------------------|
+| Live       | `tradebot`        | (none)     | Real trading & live history               |
+| Test       | `tradebot_test`   | `_test`    | Default DB for dev/test tasks             |
+| Frozen     | `tradebot_frozen` | `_frozen`  | Deterministic integration & golden tests  |
 
-# Docker
-docker compose exec api python scripts/seed_test_data.py
-```
+Ensure `DB_NAME` is **not** pointing to `tradebot` when running tests unless you explicitly want to test against live data (generally not recommended).
 
 ---
 
-## 2. Integration Tests (Backtesting)
+## 5. Backtesting Framework
 
-The backtest engine is a vital parts of our integration testing, ensuring strategy logic works identically to the live system.
+The backtest framework is a key part of testing:
 
-### Backtest Workflow
+- It reuses the **same `FundManager`, `PositionManager`, and strategies** used in live trading.
+- It differs only in **how data is fed** to the engine and **which DB** is used.
 
-The backtest engine runs in two modes: **DB Mode** (High Speed) and **Socket Mode** (High Fidelity). In both modes, the final receiver and evaluator of the data is the `FundManager`.
+### 5.1 Backtest Runner
 
-```mermaid
-graph TD
-    CLI((User CLI via backtest_runner.py)) --> Args[Parse Inputs: Budget, SL, Rule, SocketEvent, etc.]
-    Args --> Setup[Initialize FundManager]
-    Setup --> Mode{CLI --mode}
-    
-    Mode -->|db| DB[db_mode.py]
-    Mode -->|socket| Socket[socket_mode.py]
-    
-    DB --> |Query| MongoDB[(MongoDB: nifty_candle)]
-    MongoDB --> FeedDB[Feed sequentially]
-    
-    Socket --> ServerCheck{"Is Simulator packages/simulator/socket_server.py running?"}
-    ServerCheck -->|No| StartSim[Auto-start embedded SocketDataService]
-    ServerCheck -->|Yes| Client[Create python-socketio Client]
-    StartSim --> Client
-    
-    Client -->|Subscribe via --socket-event| Parsers[Parse 1505/1501 Full/Partial]
-    Parsers --> FeedSocket[Relay chronologically via event loop]
-    
-    FeedDB --> FM["FundManager Engine (Handles MTFA internally)"]
-    FeedSocket --> FM
-    
-    FM --> Bot[BacktestBot]
-    Bot --> Summary[Print Terminal Breakdown]
-    Bot --> Save[(Save to backtest_results)]
+Entry module:
+
+```bash
+python -m tests.backtest.backtest_runner --help
 ```
+
+Two main modes:
+
+- **DB mode (`--mode db`)**:
+  - Reads historical candles from MongoDB.
+  - Fast; good for iteration.
+- **Socket mode (`--mode socket`)**:
+  - Uses `packages/simulator/socket_server.py` to send data via Socket.IO.
+  - High‑fidelity; mimics live tick stream.
+
+Both modes:
+
+- Build a `FundManager` with the same strategy and position configs.
+- Use `ReplayUtils` to explode candles into virtual ticks when necessary.
+- Persist results to `backtest_results` and papertrade‑style collections for analysis.
+
+### 5.2 Example DB‑Mode Command
+
+```bash
+python -m tests.backtest.backtest_runner \
+  --mode db \
+  --start 2024-02-02 \
+  --end 2024-02-02 \
+  --strategy-id triple-confirmation \
+  --budget 200000 \
+  --sl-points 15.0 \
+  --target-points "15,25,50" \
+  --tsl-points 10.0 \
+  --invest-mode compound \
+  --strike-selection ATM
+```
+
+### 5.3 Example Socket‑Mode Command
+
+```bash
+python -m tests.backtest.backtest_runner \
+  --mode socket \
+  --start 2024-02-02 \
+  --end 2024-02-02 \
+  --strategy-id triple-confirmation \
+  --budget 200000 \
+  --sl-points 20.0 \
+  --target-points "5,15,30" \
+  --tsl-points 5.0 \
+  --strike-selection ATM
+```
+
+If the socket simulator is not running, the runner can auto‑start it using `packages/simulator/socket_server.py`.
 
 ---
 
-## 3. Component Roles & Responsibilities
+## 6. Using the CLI to Run Tests
 
-1. **`tests/backtest/backtest_runner.py`**: The CLI entry point for integration tests.
-2. **`packages/backtest/db_mode.py`**: The High-Speed testing feeder. Best for rapid iteration.
-3. **`packages/backtest/socket_mode.py`**: The High-Fidelity testing feeder. Best for exact live-simulation testing.
-4. **`packages/backtest/backtest_base.py` (`BacktestBot`)**: Receives and logs simulated `PaperTrades`.
-5. **`packages/tradeflow/fund_manager.py`**: The MTFA execution orchestrator, core of our trading logic.
-6. **`packages/simulator/socket_server.py`**: Market data emulator for Socket Mode.
+For convenience, the CLI exposes a **Tests menu**:
+
+```bash
+python apps/cli/main.py menu
+```
+
+Choose **Tests**, then:
+
+- **Unit Tests**:
+  - Collectors, Fund Manager, Position Manager, Indicator Calculator, Strategy Integration, Candle Resampler.
+- **Integration Tests**:
+  - Full strategy flow, market utilities (e.g., rolling strikes).
+- **Connectivity**:
+  - XTS API connection, Market Stream tests (if configured).
+
+Behind the scenes, the CLI calls `pytest` with mapped file paths.
 
 ---
 
-## 4. Execution Commands for Backtesting
+## 7. Recommended Workflows
 
-### Fast DB Mode
-```bash
-python3 -m tests.backtest.backtest_runner \
-    --mode db \
-    --start 2026-02-27 \
-    --strategy-id triple-confirmation \
-    --budget 200000 \
-    --sl-points 15.0 \
-    --target-points "15,25,50" \
-    --tsl-points 10.0
-```
+### 7.1 Developing a New Strategy
 
-### High-Fidelity Socket Mode
-```bash
-python3 -m tests.backtest.backtest_runner \
-    --mode socket \
-    --start 2026-02-02 \
-    --end 2026-02-02 \
-    --strategy-id triple-confirmation \
-    --strike-selection ATM \
-    --budget 200000 \
-    --sl-points 20.0 \
-    --target-points "5,15,30" \
-    --tsl-points 5.0
-```
+1. Write or extend a strategy class in `packages/tradeflow/python_strategies.py`.
+2. Register the strategy in Mongo with `python_strategy_path` pointing to your class.
+3. Create unit tests in `tests/no_db/` for any pure logic.
+4. Run:
+   - `pytest tests/no_db/test_indicator_calculator.py`
+   - `pytest tests/no_db/test_engine_flow.py`
+5. Run DB‑mode backtests using `tests.backtest.backtest_runner`.
+6. Optionally, add a frozen DB test in `tests/frozen_db/` for a golden scenario.
 
-### Indicator-based Trailing SL (EMA-5)
-Instead of fixed points, you can use an indicator (like EMA-5) to trail the stop loss.
-```bash
-python3 -m tests.backtest.backtest_runner \
-    --mode db \
-    --start 2026-02-27 \
-    --strategy-id triple-confirmation \
-    --tsl-id active-ema-5
-```
+### 7.2 Verifying a Data Change or Migration
 
-### Full Parameter Example (Compound + Trailing SL)
-```bash
-python3 -m tests.backtest.backtest_runner \
-    --mode db \
-    --start 2026-02-27 \
-    --budget 200000 \
-    --invest-mode compound \
-    --strategy-id triple-confirmation \
-    --strike-selection ATM \
-    --sl-points 15.0 \
-    --target-points "15,25,50" \
-    --tsl-points 10.0
-```
+1. Update your collectors or data migration scripts.
+2. Run:
+   - `pytest tests/readwrite_db/test_collectors.py`
+3. If affecting core collections, re‑seed `tradebot_frozen` and re‑run:
+   - `pytest tests/frozen_db/`
 
-### Parameters Reference
+### 7.3 Pre‑Live Checklist
 
-The following table lists all available command-line arguments for `tests/backtest/backtest_runner.py`.
+Before running a new strategy live:
 
-| Parameter | Short | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--mode` | n/a | `db` | Backtest mode: `db` (historical from DB) or `socket` (high-fidelity simulation). |
-| `--start` | n/a | `2026-02-02` | Simulation Start Date (YYYY-MM-DD). |
-| `--end` | n/a | `None` | Simulation End Date. Defaults to `--start` if omitted. |
-| `--strategy-id` | `-I` | `n/a` | **Required**. Strategy ID from MongoDB. Used to load indicators and python path. |
-| `--budget` | `-b` | `200000.0` | Initial Capital in ₹. |
-| `--sl-points`| `-s` | `15.0` | Absolute stop loss points off premium. |
-| `--target-points` | `-t` | `15,25,50` | Comma-separated profit booking levels (points). |
-| `--tsl-points`| `-L` | `0.0` | Trailing SL increment. Set to `0.0` to disable. |
-| `--use-be` | `-e` | `n/a` | Flag to move SL to entry after first target is hit. |
-| `--strike-selection`| `-S` | `ATM` | Option strike selector: `ATM`, `ITM`, or `OTM`. |
-| `--invest-mode` | `-i` | `compound` | `compound` (reinvest profits) or `fixed` (standard sizing). |
-| `--pyramid-steps` | n/a | `100` | Comma-separated entry percentages (e.g. `25,50,25`). |
-| `--pyramid-confirm-pts` | n/a | `10.0` | Points move before next pyramid step. |
-| `--price-source` | `-p` | `close` | Entry/Exit price source: `open` or `close`. |
-| `--tsl-id`| `-T` | `active-ema-5` | Indicator ID for Trailing SL. |
+- [ ] Run unit tests (`tests/no_db/`).
+- [ ] Run at least one DB‑mode backtest over multiple days.
+- [ ] Optionally run socket‑mode backtests to mimic live feed behavior.
+- [ ] Check PnL and event logs in backtest collections.
 
-- See `python -m tests.backtest.backtest_runner --help` for the latest complete list.
-```

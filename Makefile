@@ -35,5 +35,6 @@ sync-history:
 
 # --- Code Quality ---
 lint:
-	ruff check .
-	mypy packages/ apps/
+	./.venv/bin/ruff check .
+	./.venv/bin/mypy packages/ apps/
+

@@ -1,6 +1,7 @@
 import socketio
-from .settings import settings
-from .logger import setup_logger
+
+from packages.settings import settings
+from packages.utils.log_utils import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -39,21 +40,32 @@ class OrderSocket_io(socketio.Client):
                  versions.
     """
 
-    def __init__(self, token, user_id, reconnection=True, reconnection_attempts=0, reconnection_delay=1,
-                 reconnection_delay_max=50000, randomization_factor=0.5, logger=False, binary=False, json=None,
-                 **kwargs):
+    def __init__(
+        self,
+        token,
+        user_id,
+        reconnection=True,
+        reconnection_attempts=0,
+        reconnection_delay=1,
+        reconnection_delay_max=50000,
+        randomization_factor=0.5,
+        logger=False,
+        binary=False,
+        json=None,
+        **kwargs,
+    ):
         self.sid = socketio.Client(logger=True, engineio_logger=True)
         self.eventlistener = self.sid
-        self.sid.on('connect', self.on_connect)
-        self.sid.on('message', self.on_message)
-        self.sid.on('joined', self.on_joined)
-        self.sid.on('error', self.on_error)
-        self.sid.on('order', self.on_order)
-        self.sid.on('trade', self.on_trade)
-        self.sid.on('position', self.on_position)
-        self.sid.on('tradeConversion', self.on_tradeconversion)
-        self.sid.on('logout', self.on_messagelogout)
-        self.sid.on('disconnect', self.on_disconnect)
+        self.sid.on("connect", self.on_connect)
+        self.sid.on("message", self.on_message)
+        self.sid.on("joined", self.on_joined)
+        self.sid.on("error", self.on_error)
+        self.sid.on("order", self.on_order)
+        self.sid.on("trade", self.on_trade)
+        self.sid.on("position", self.on_position)
+        self.sid.on("tradeConversion", self.on_tradeconversion)
+        self.sid.on("logout", self.on_messagelogout)
+        self.sid.on("disconnect", self.on_disconnect)
 
         self.user_id = user_id
         self.token = token
@@ -61,12 +73,13 @@ class OrderSocket_io(socketio.Client):
         """Get root url from settings"""
         self.port = settings.XTS_ROOT_URL
 
-        port = f'{self.port}/?token='
+        port = f"{self.port}/?token="
 
-        self.connection_url = port + self.token + '&userID=' + self.user_id + "&apiType=INTERACTIVE"
+        self.connection_url = port + self.token + "&userID=" + self.user_id + "&apiType=INTERACTIVE"
 
-    def connect(self, headers={}, transports='websocket', namespaces=None, socketio_path='/interactive/socket.io',
-                verify=False):
+    def connect(
+        self, headers=None, transports="websocket", namespaces=None, socketio_path="/interactive/socket.io", verify=False
+    ):
         """Connect to a Socket.IO server.
         :param url: The URL of the Socket.IO server. It can include custom
                     query string parameters if required by the server.
@@ -86,6 +99,8 @@ class OrderSocket_io(socketio.Client):
 
         """
         """Connect to the socket."""
+        if headers is None:
+            headers = {}
         url = self.connection_url
 
         """Connected to the socket."""
@@ -96,19 +111,19 @@ class OrderSocket_io(socketio.Client):
 
     def on_connect(self):
         """Connect from the socket"""
-        logger.info('Interactive socket connected successfully!')
+        logger.info("Interactive socket connected successfully!")
 
     def on_message(self):
         """On message from socket"""
-        logger.info('I received a message!')
+        logger.info("I received a message!")
 
     def on_joined(self, data):
         """On socket joined"""
-        logger.info('Interactive socket joined successfully!' + data)
+        logger.info("Interactive socket joined successfully!" + data)
 
     def on_error(self, data):
         """On receiving error from socket"""
-        logger.error('Interactive socket error!' + data)
+        logger.error("Interactive socket error!" + data)
 
     def on_order(self, data):
         """On receiving order placed data from socket"""
@@ -132,7 +147,7 @@ class OrderSocket_io(socketio.Client):
 
     def on_disconnect(self):
         """On receiving disconnection from socket"""
-        logger.info('Interactive Socket disconnected!')
+        logger.info("Interactive Socket disconnected!")
 
     def get_emitter(self):
         """For getting event listener"""

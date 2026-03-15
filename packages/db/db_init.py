@@ -1,15 +1,18 @@
-from pymongo import ASCENDING, DESCENDING
-import sys
 import os
+import sys
+
+from pymongo import ASCENDING, DESCENDING
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from packages.utils.mongo import MongoRepository
-from packages.config import settings
+from packages.db.seed_strategy_indicators import seed_strategy_indicators
+from packages.settings import settings
 from packages.utils.log_utils import setup_logger
+from packages.utils.mongo import MongoRepository
 
 logger = setup_logger(__name__)
+
 
 class DatabaseManager:
     """
@@ -57,19 +60,24 @@ class DatabaseManager:
             live_coll = db.get_collection("live_trades")
             live_coll.create_index([("sessionId", ASCENDING)], unique=True)
             live_coll.create_index([("timestamp", DESCENDING)])
-            
+
             # 7. Paper Trades
             paper_coll = db.get_collection("paper_trades")
             paper_coll.create_index([("sessionId", ASCENDING)], unique=True)
             paper_coll.create_index([("timestamp", DESCENDING)])
-            
+
             # 8. Strategy Indicators
             strategy_coll = db.get_collection("strategy_indicators")
             strategy_coll.create_index([("strategyId", ASCENDING)], unique=True)
 
             logger.info("✅ Database indexes synchronized successfully.")
+
+            # 9. Seed Strategies
+            seed_strategy_indicators()
+
         except Exception as e:
             logger.error(f"❌ Failed to synchronize indexes: {e}")
+
 
 if __name__ == "__main__":
     DatabaseManager.ensure_all_indexes()

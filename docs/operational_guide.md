@@ -1,71 +1,273 @@
-# Operational Guide
+## Operational Guide (Engine & CLI)
 
-This guide provides instructions for running the Trade Bot in various modes.
+This guide explains how to work with the **core trading engine** and **CLI** for local development, backtesting, and live trading. It intentionally ignores the UI and HTTP API.
 
-## 1. Development (Local)
+---
 
-### Prerequisites
-- Python 3.11+
-- Node.js 18+
-- MongoDB
+## 1. Environments & Prerequisites
 
-### Setup
+- **Python**: 3.10+ (recommended 3.11)
+- **MongoDB**: Local or remote instance reachable from your machine.
+- **XTS Credentials** (for live trading):
+  - Market and Interactive keys and secrets.
+
+### 1.1 Environment Setup
+
+From the project root:
+
 ```bash
-# 1. Install Python Dependencies
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-# 2. Setup Frontend
-cd apps/ui
-npm install
 ```
 
-### Running the API
+Create and configure your environment file:
+
 ```bash
-python apps/api/run.py
+cp .env.example .env
+# Edit .env with:
+# - DB_NAME (e.g. tradebot, tradebot_test, tradebot_frozen)
+# - Mongo connection URI
+# - XTS credentials (for live trading)
 ```
-*API will run at http://localhost:8000*
 
-### Running the UI
+---
+
+## 2. Running the CLI
+
+The CLI is the primary operational surface for the engine:
+
 ```bash
-cd apps/ui
-npm run dev
+python apps/cli/main.py --help
 ```
-*UI will run at http://localhost:4321*
 
-### Running the CLI
+### 2.1 Interactive Menu
+
+For a guided workflow:
+
 ```bash
-python apps/cli/main.py interactive
+python apps/cli/main.py menu
 ```
 
-## 2. Production (Docker)
+You will see a menu with options like:
 
-### Build & Run
+- **Update Master Instruments**
+- **Sync History (Nifty and Options)**
+- **Age Out History**
+- **Check Data Gaps**
+- **Fill Data Gaps**
+- **Backtesting**
+- **Live Trading**
+- **Tests**
+- **Configuration**
+- **Refresh Active Contracts**
+- **Seed Strategy Indicators**
+- **EMA Crossover Analysis**
+- **Ensure DB Indexes**
+
+Use the arrow keys to navigate; each option maps to a CLI command documented below.
+
+---
+
+## 3. Data Management Operations (via CLI)
+
+These commands operate on MongoDB and the historical data set.
+
+### 3.1 Sync Instrument Master
+
+Refresh internal instrument master from XTS:
+
 ```bash
-docker compose up -d --build
+python apps/cli/main.py update_master
 ```
 
-### Access Points
-- **Dashboard**: http://YOUR_VPS_IP:4321
-- **API**: http://YOUR_VPS_IP:8000
-- **Database**: Port 27017 (only if exposed in compose)
+Backed by `MasterDataCollector` in `packages/data/sync_master.py`.
 
-## 3. Common Tasks
+### 3.2 Sync Historical OHLC (NIFTY + Options)
 
-### Fetching Historical Data
-Use the CLI to populate your database.
+Bulk sync historical candles using `HistoricalDataCollector`:
+
 ```bash
-python apps/cli/main.py historical fetch --days 5
+# Default: last 2 days
+python apps/cli/main.py sync_history
+
+# Custom date range
+python apps/cli/main.py sync_history --date-range "2024-01-01|2024-01-31"
+python apps/cli/main.py sync_history --date-range "5dago|now"
 ```
 
-### Running a Backtest
-1. Ensure you have data in `nifty_candle`.
-2. Use the CLI to run a backtest:
-   ```bash
-   python apps/cli/main.py backtest --rule-id triple-lock-momentum --start 2026-03-02
-   ```
-3. View results in the Dashboard -> Backtest Results.
+### 3.3 Age‑Out Old Data
 
-### Checking System Health
+Prune older records to keep DB small:
+
 ```bash
-curl http://localhost:8000/api/status
+python apps/cli/main.py age_out --days 60
 ```
+
+You will be prompted for confirmation.
+
+### 3.4 Check & Fill Data Gaps
+
+Detect missing candles:
+
+```bash
+python apps/cli/main.py check_gaps --date-range "2dago|now"
+```
+
+Fill gaps found by the above:
+
+```bash
+python apps/cli/main.py fill_gaps --date-range "today"
+```
+
+For more detail on gap logic and collections, see `data_management.md`.
+
+---
+
+## 4. Backtesting Operations
+
+Backtests ultimately run through `tests/backtest/backtest_runner.py`, but the recommended entry is via the CLI.
+
+### 4.1 Direct Backtest Command
+
+```bash
+python apps/cli/main.py backtest \
+  --strategy-id triple-confirmation \
+  --start 2024-02-01 \
+  --end 2024-02-02 \
+  --mode db \
+  --budget 200000 \
+  --invest-mode compound \
+  --sl-points 15 \
+  --target-points 15,25,50 \
+  --tsl-points 10 \
+  --strike-selection ATM
+```
+
+If you omit parameters, the CLI will prompt you:
+
+- Strategy ID (pulled from `strategy_indicators` collection).
+- Mode: `db` (fast, DB‑backed) or `socket` (high‑fidelity, socket style).
+- Date range (pre‑filled with recent available trading days).
+- Budget, pyramiding, BE, SL/TSL, strike selection, targets.
+
+Internally this builds a command that runs:
+
+```bash
+python -m tests.backtest.backtest_runner [...]
+```
+
+See `testing_guide.md` for more advanced usage and parameter reference.
+
+### 4.2 Interactive Backtest
+
+You can use a friendly wizard instead of a long command:
+
+```bash
+python apps/cli/main.py interactive_backtest
+```
+
+This simply calls `backtest()` with interactive prompts.
+
+---
+
+## 5. Live Trading Operations
+
+Live trading is handled by `LiveTradeEngine` in `packages/livetrade/live_trader.py`, which wraps `FundManager` with XTS socket connections and EOD logic.
+
+### 5.1 Prerequisites
+
+- `.env` has valid XTS credentials (market & interactive).
+- Instrument master and history are up to date:
+
+```bash
+python apps/cli/main.py update_master
+python apps/cli/main.py sync_history --date-range "2dago|now"
+```
+
+### 5.2 Direct Live Trade Command
+
+```bash
+python apps/cli/main.py live_trade \
+  --strategy-id triple-confirmation \
+  --strike-selection ATM \
+  --budget 200000 \
+  --sl-points 15 \
+  --target-points 15,25,45 \
+  --tsl-points 15 \
+  --use-be \
+  --tsl-id active-ema-5 \
+  --record-papertrade \
+  --debug
+```
+
+Key parameters:
+
+- `--strategy-id`: Strategy configuration ID in Mongo (includes indicators and `python_strategy_path`).
+- `--budget`: Starting capital for the session.
+- `--strike-selection`: `ATM`, `ITM`, or `OTM`.
+- `--sl-points`, `--tsl-points`, `--target-points`: Risk profile in option premium points.
+- `--tsl-id`: Indicator ID for trailing SL (e.g., `active-ema-5`).
+- `--record-papertrade`: Persist detailed events to the `papertrade` collection.
+
+For a deeper conceptual explanation, see `live_trading_guide.md`.
+
+### 5.3 Interactive Live Trading via Menu
+
+```bash
+python apps/cli/main.py menu
+```
+
+Then choose **Live Trading**:
+
+1. Select an enabled strategy from `strategy_indicators`.
+2. Specify budget, SL, and targets.
+3. The CLI launches `live_trade` with those parameters.
+
+---
+
+## 6. Configuration & Environment Checks
+
+From the menu, choose **Configuration** or call directly:
+
+```bash
+python apps/cli/main.py menu
+```
+
+Under **Configuration**:
+
+- **Show Settings**: Print active settings (DB name, XTS root URL).
+- **Environment Check**:
+  - Verifies `.env` exists.
+  - Ensures `logs/` directory is present.
+
+You can also ensure DB indexes exist:
+
+```bash
+python apps/cli/main.py ensure_indexes
+```
+
+This calls `DatabaseManager.ensure_all_indexes()` in `packages/db/db_init.py`.
+
+---
+
+## 7. Quick Operational Checklist
+
+- **First time on a new machine:**
+  - [ ] Create virtualenv and install requirements.
+  - [ ] Copy and edit `.env`.
+  - [ ] Run `python apps/cli/main.py ensure_indexes`.
+  - [ ] Run `python apps/cli/main.py seed_strategies`.
+  - [ ] Run `python apps/cli/main.py update_master`.
+  - [ ] Run `python apps/cli/main.py sync_history --date-range "5dago|now"`.
+
+- **Before a backtest run:**
+  - [ ] Ensure DB has enough history for your date range.
+  - [ ] Confirm `DB_NAME=tradebot_test` or `tradebot_frozen` (never `tradebot` if you want isolation).
+
+- **Before a live trading session:**
+  - [ ] `DB_NAME=tradebot` (or dedicated live DB).
+  - [ ] `.env` populated with XTS keys.
+  - [ ] Recent history synced.
+  - [ ] Dry‑run strategy via backtest for today’s data.
+

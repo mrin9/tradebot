@@ -1,29 +1,28 @@
-from typing import Dict, Any, Tuple, Optional
-from packages.tradeflow.types import CandleType, SignalType, MarketIntentType, SignalReturnType
+from typing import Any
+
+from packages.tradeflow.types import CandleType, MarketIntentType, SignalType
+
 
 class TripleLockStrategy:
     """
     Standard Triple Confirmation Strategy implementation.
-    
+
     Logic:
-    - Entry: Requires a crossover on the Option (CE/PE) EMA, confirmed by Nifty Spot EMA state 
+    - Entry: Requires a crossover on the Option (CE/PE) EMA, confirmed by Nifty Spot EMA state
       and the opposing option's EMA state (pe-ema < pe-ema-21 for call entry).
-    - Recovery: Recognizes when a crossover was missed during a warmup/disconnect period 
+    - Recovery: Recognizes when a crossover was missed during a warmup/disconnect period
       by allowing 'Continuity' entries on the first live candle if conditions are already met.
-    
+
     Target this via CLI: --python-strategy-path packages/tradeflow/python_strategies.py:TripleLockStrategy
     """
-    
+
     def __init__(self):
         """Initializes strategy state, tracking warmup transitions."""
         self.was_warming_up = True
 
     def on_resampled_candle_closed(
-        self, 
-        candle: CandleType, 
-        indicators: Dict[str, Any], 
-        current_position_intent: Optional[MarketIntentType] = None
-    ) -> Tuple[SignalType, str, float]:
+        self, candle: CandleType, indicators: dict[str, Any], current_position_intent: MarketIntentType | None = None
+    ) -> tuple[SignalType, str, float]:
         """
         Processes a finalized candle to determine trading signals based on EMA crossovers.
 
@@ -31,15 +30,15 @@ class TripleLockStrategy:
             candle: The finalized OHLCV data for the current timeframe.
             indicators: Dictionary containing technical indicators and meta-indicators.
                         Example: {
-                            'nifty-ema-5': 24150.5, 
+                            'nifty-ema-5': 24150.5,
                             'nifty-ema-21': 24120.0,
-                            'ce-ema-5': 120.5, 
+                            'ce-ema-5': 120.5,
                             'ce-ema-21': 115.0,
-                            'ce-ema-5-prev': 114.0, 
+                            'ce-ema-5-prev': 114.0,
                             'ce-ema-21-prev': 116.0,
-                            'pe-ema-5': 80.0, 
+                            'pe-ema-5': 80.0,
                             'pe-ema-21': 95.0,
-                            'active-ema-5': 120.5, 
+                            'active-ema-5': 120.5,
                             'active-ema-21': 115.0,
                             'inverse-ema-5': 80.0,
                             'inverse-ema-21': 95.0,
@@ -51,7 +50,7 @@ class TripleLockStrategy:
             Tuple[SignalType, str, float]: (SignalType, Reason, Confidence)
         """
         is_warming_up = indicators.get("meta-is-warming-up", False)
-        
+
         spot_fast = indicators.get("nifty-ema-5")
         spot_slow = indicators.get("nifty-ema-21")
 
@@ -68,9 +67,16 @@ class TripleLockStrategy:
 
         # Wait for history and ensure all indicators are non-None
         required_indicators = [
-            ce_fast, ce_slow, ce_f_prev, ce_s_prev,
-            pe_fast, pe_slow, pe_f_prev, pe_s_prev,
-            spot_fast, spot_slow
+            ce_fast,
+            ce_slow,
+            ce_f_prev,
+            ce_s_prev,
+            pe_fast,
+            pe_slow,
+            pe_f_prev,
+            pe_s_prev,
+            spot_fast,
+            spot_slow,
         ]
         if any(v is None for v in required_indicators):
             return SignalType.NEUTRAL, "PYTHON: WAITING FOR INDICATOR WARMUP", 0.0
@@ -85,49 +91,50 @@ class TripleLockStrategy:
             # --- CHECK CALL ENTRY ---
             crossover_ce = (ce_f_prev <= ce_s_prev) and (ce_fast > ce_slow)
             continuation_ce = is_first_live_candle and (ce_fast > ce_slow)
-            
+
             if crossover_ce or continuation_ce:
-                if spot_fast > spot_slow and pe_fast < pe_slow: # Confirmations
-                    reason = "Triple Lock CALL Entry" + (" (Continuity)" if continuation_ce and not crossover_ce else "")
+                if spot_fast > spot_slow and pe_fast < pe_slow:  # Confirmations
+                    reason = "Triple Lock CALL Entry" + (
+                        " (Continuity)" if continuation_ce and not crossover_ce else ""
+                    )
                     return SignalType.LONG, f"PYTHON: {reason}", 1.0
 
             # --- CHECK PUT ENTRY ---
             crossover_pe = (pe_f_prev <= pe_s_prev) and (pe_fast > pe_slow)
             continuation_pe = is_first_live_candle and (pe_fast > pe_slow)
-            
+
             if crossover_pe or continuation_pe:
-                if spot_fast < spot_slow and ce_fast < ce_slow: # Confirmations
+                if spot_fast < spot_slow and ce_fast < ce_slow:  # Confirmations
                     reason = "Triple Lock PUT Entry" + (" (Continuity)" if continuation_pe and not crossover_pe else "")
                     return SignalType.SHORT, f"PYTHON: {reason}", 1.0
 
         # 3. Exit Logic
         if current_position_intent == MarketIntentType.LONG:
-            if (ce_f_prev >= ce_s_prev) and (ce_fast < ce_slow): # Crossunder
+            if (ce_f_prev >= ce_s_prev) and (ce_fast < ce_slow):  # Crossunder
                 return SignalType.EXIT, "PYTHON: CALL Crossunder Exit", 0.0
         elif current_position_intent == MarketIntentType.SHORT:
-            if (pe_f_prev >= pe_s_prev) and (pe_fast < pe_slow): # Crossunder
+            if (pe_f_prev >= pe_s_prev) and (pe_fast < pe_slow):  # Crossunder
                 return SignalType.EXIT, "PYTHON: PUT Crossunder Exit", 0.0
-            
+
         return SignalType.NEUTRAL, "No signal", 0.0
+
 
 class SimpleMACDStrategy:
     """Target this via CLI: --python-strategy-path packages/tradeflow/python_strategies.py:SimpleMACDStrategy"""
+
     def __init__(self):
         self.ce_prev_hist = None
         self.pe_prev_hist = None
         self.was_warming_up = True
 
     def on_resampled_candle_closed(
-        self, 
-        candle: CandleType, 
-        indicators: Dict[str, Any], 
-        current_position_intent: Optional[MarketIntentType] = None
-    ) -> Tuple[SignalType, str, float]:
-        
+        self, candle: CandleType, indicators: dict[str, Any], current_position_intent: MarketIntentType | None = None
+    ) -> tuple[SignalType, str, float]:
+
         is_warming_up = indicators.get("meta-is-warming-up", False)
         ce_hist = indicators.get("ce-macd-hist")
         pe_hist = indicators.get("pe-macd-hist")
-        
+
         if ce_hist is None or pe_hist is None:
             return SignalType.NEUTRAL, "PYTHON: WARMING UP", 0.0
 
@@ -139,15 +146,21 @@ class SimpleMACDStrategy:
 
         # 1. Entry Logic (Bidirectional)
         if current_position_intent is None:
-            c_ce = (self.ce_prev_hist is not None and self.ce_prev_hist <= 0 and ce_hist > 0)
+            c_ce = self.ce_prev_hist is not None and self.ce_prev_hist <= 0 and ce_hist > 0
             cont_ce = is_first_live_candle and ce_hist > 0
-            c_pe = (self.pe_prev_hist is not None and self.pe_prev_hist <= 0 and pe_hist > 0)
+            c_pe = self.pe_prev_hist is not None and self.pe_prev_hist <= 0 and pe_hist > 0
             cont_pe = is_first_live_candle and pe_hist > 0
 
             if c_ce or cont_ce:
-                signal, reason = SignalType.LONG, "PYTHON: CE MACD" + (" (Continuity)" if cont_ce and not c_ce else " Crossover")
+                signal, reason = (
+                    SignalType.LONG,
+                    "PYTHON: CE MACD" + (" (Continuity)" if cont_ce and not c_ce else " Crossover"),
+                )
             elif c_pe or cont_pe:
-                signal, reason = SignalType.SHORT, "PYTHON: PE MACD" + (" (Continuity)" if cont_pe and not c_pe else " Crossover")
+                signal, reason = (
+                    SignalType.SHORT,
+                    "PYTHON: PE MACD" + (" (Continuity)" if cont_pe and not c_pe else " Crossover"),
+                )
 
         # 2. Exit Logic (Bidirectional)
         elif current_position_intent == MarketIntentType.LONG:
@@ -163,27 +176,26 @@ class SimpleMACDStrategy:
 
         return signal, reason, 1.0 if signal in [SignalType.LONG, SignalType.SHORT] else 0.0
 
+
 class EmaCrossWithRsiStrategy:
     """
     Standard EMA Crossover confirmed by RSI.
     Target this via CLI: --python-strategy-path packages/tradeflow/python_strategies.py:EmaCrossWithRsiStrategy
-    
+
     Logic:
     - Entry: active-ema-5 crosses ABOVE active-ema-21 AND active-rsi-14 > 50.
     - Continuity: Allows entry if conditions are already met after warmup.
     """
+
     def __init__(self):
         self.was_warming_up = True
 
     def on_resampled_candle_closed(
-        self, 
-        candle: CandleType, 
-        indicators: Dict[str, Any], 
-        current_position_intent: Optional[MarketIntentType] = None
-    ) -> Tuple[SignalType, str, float]:
-        
+        self, candle: CandleType, indicators: dict[str, Any], current_position_intent: MarketIntentType | None = None
+    ) -> tuple[SignalType, str, float]:
+
         is_warming_up = indicators.get("meta-is-warming-up", False)
-        
+
         # 1. Gather Required Data (using active mapping)
         fast = indicators.get("active-ema-5")
         slow = indicators.get("active-ema-21")
@@ -201,42 +213,42 @@ class EmaCrossWithRsiStrategy:
         # 2. Entry Logic
         if current_position_intent is None:
             # Check for bullish crossover
-            crossover = (fast_prev <= slow_prev and fast > slow)
+            crossover = fast_prev <= slow_prev and fast > slow
             continuation = is_first_live_candle and (fast > slow)
-            
-            if (crossover or continuation):
+
+            if crossover or continuation:
                 if rsi > 50:
-                    reason = f"EMA Cross + RSI Confirm ({rsi:.2f})" + (" (Continuity)" if continuation and not crossover else "")
+                    reason = f"EMA Cross + RSI Confirm ({rsi:.2f})" + (
+                        " (Continuity)" if continuation and not crossover else ""
+                    )
                     return SignalType.LONG, f"PYTHON: {reason}", 1.0
 
         # 3. Exit Logic
-        else:
-            if current_position_intent == MarketIntentType.LONG:
-                if fast_prev >= slow_prev and fast < slow:
-                    return SignalType.EXIT, "PYTHON: EMA Crossunder Exit", 0.0
+        elif current_position_intent == MarketIntentType.LONG:
+            if fast_prev >= slow_prev and fast < slow:
+                return SignalType.EXIT, "PYTHON: EMA Crossunder Exit", 0.0
 
         return SignalType.NEUTRAL, "No signal", 0.0
+
 
 class SuperTrendAndPriceCrossStrategy:
     """
     Trend-following strategy based on Price vs SuperTrend line.
     Target this via CLI: --python-strategy-path packages/tradeflow/python_strategies.py:SuperTrendAndPriceCrossStrategy
     """
+
     def __init__(self):
         self.was_warming_up = True
 
     def on_resampled_candle_closed(
-        self, 
-        candle: CandleType, 
-        indicators: Dict[str, Any], 
-        current_position_intent: Optional[MarketIntentType] = None
-    ) -> Tuple[SignalType, str, float]:
-        
+        self, candle: CandleType, indicators: dict[str, Any], current_position_intent: MarketIntentType | None = None
+    ) -> tuple[SignalType, str, float]:
+
         is_warming_up = indicators.get("meta-is-warming-up", False)
-        price = candle.get('c', candle.get('close'))
+        price = candle.get("c", candle.get("close"))
         st_line = indicators.get("active-supertrend-10-3")
         st_line_prev = indicators.get("active-supertrend-10-3-prev")
-        
+
         # Wait for indicator warmup
         if any(v is None for v in [price, st_line, st_line_prev]):
             return SignalType.NEUTRAL, "PYTHON: WAITING FOR INDICATOR WARMUP", 0.0
@@ -247,17 +259,16 @@ class SuperTrendAndPriceCrossStrategy:
         # 2. Entry Logic
         if current_position_intent is None:
             # Price cross ABOVE ST line OR already above on first live candle
-            crossover = (price > st_line and st_line_prev is not None and candle.get('o', 0) <= st_line_prev)
+            crossover = price > st_line and st_line_prev is not None and candle.get("o", 0) <= st_line_prev
             continuation = is_first_live_candle and (price > st_line)
-            
+
             if crossover or continuation:
-                 reason = "Price Above Supertrend" + (" (Continuity)" if continuation and not crossover else "")
-                 return SignalType.LONG, f"PYTHON: {reason}", 1.0
-        
+                reason = "Price Above Supertrend" + (" (Continuity)" if continuation and not crossover else "")
+                return SignalType.LONG, f"PYTHON: {reason}", 1.0
+
         # 3. Exit Logic
-        else:
-            if current_position_intent == MarketIntentType.LONG:
-                if price < st_line:
-                    return SignalType.EXIT, "PYTHON: Price Below Supertrend Exit", 0.0
+        elif current_position_intent == MarketIntentType.LONG:
+            if price < st_line:
+                return SignalType.EXIT, "PYTHON: Price Below Supertrend Exit", 0.0
 
         return SignalType.NEUTRAL, "No signal", 0.0

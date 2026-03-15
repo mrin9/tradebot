@@ -1,7 +1,8 @@
+
 import requests
-import json
 
 BASE_URL = "http://localhost:8000"
+
 
 def test_status():
     print("\n--- Testing /api/status ---")
@@ -11,6 +12,7 @@ def test_status():
         print(resp.json())
     except Exception as e:
         print(f"Error: {e}")
+
 
 def test_instruments():
     print("\n--- Testing /api/instruments ---")
@@ -24,6 +26,7 @@ def test_instruments():
             print(f"Reference Date Example: {data[0].get('referenceDate')}")
     except Exception as e:
         print(f"Error: {e}")
+
 
 def test_ticks():
     print("\n--- Testing /api/ticks ---")
@@ -43,6 +46,7 @@ def test_ticks():
     except Exception as e:
         print(f"Error: {e}")
 
+
 def test_ops():
     print("\n--- Testing /api/ops/indicators/update ---")
     try:
@@ -52,6 +56,7 @@ def test_ops():
     except Exception as e:
         print(f"Error: {e}")
 
+
 def test_strategy_reset():
     print("\n--- Testing /api/strategy-rules/reset ---")
     try:
@@ -60,6 +65,7 @@ def test_strategy_reset():
         print(resp.json())
     except Exception as e:
         print(f"Error: {e}")
+
 
 if __name__ == "__main__":
     test_status()

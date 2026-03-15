@@ -1,9 +1,11 @@
-import datetime
-from packages.config import settings
-from packages.utils.mongo import MongoRepository
+from datetime import datetime, timedelta
+
+from packages.settings import settings
 from packages.utils.log_utils import setup_logger
+from packages.utils.mongo import MongoRepository
 
 logger = setup_logger(__name__)
+
 
 def age_out_history(days: int):
     """
@@ -15,20 +17,17 @@ def age_out_history(days: int):
         return
 
     db = MongoRepository.get_db()
-    cutoff_date = datetime.datetime.now() - datetime.timedelta(days=days)
-    # Ticks use epoch seconds or milliseconds? 
-    # In historical.py we likely store 't' as standard timestamp (seconds or millis). 
+    cutoff_date = datetime.now() - timedelta(days=days)
+    # Ticks use epoch seconds or milliseconds?
+    # In historical.py we likely store 't' as standard timestamp (seconds or millis).
     # Let's check historical parser... usually XTS sends seconds or we convert.
     # DateUtils.to_timestamp returns seconds.
     cutoff_ts = int(cutoff_date.timestamp())
-    
+
     friendly_date = cutoff_date.strftime("%Y-%m-%d")
     logger.info(f"PRUNING DATA | Older than {days} days (Cutoff: {friendly_date} / TS: {cutoff_ts})")
 
-    collections = [
-        settings.NIFTY_CANDLE_COLLECTION,
-        settings.OPTIONS_CANDLE_COLLECTION
-    ]
+    collections = [settings.NIFTY_CANDLE_COLLECTION, settings.OPTIONS_CANDLE_COLLECTION]
 
     total_deleted = 0
     for coll_name in collections:
