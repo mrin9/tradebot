@@ -86,3 +86,7 @@ ignore = [
 known-first-party = ["packages", "apps"]
 
 
+[tool.uv]
+package = false
+
+
