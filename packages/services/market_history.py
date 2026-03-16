@@ -1,6 +1,8 @@
 from collections.abc import Callable
 from datetime import datetime
 
+from pymongo import UpdateOne
+
 from packages.settings import settings
 from packages.utils.date_utils import DateUtils
 from packages.utils.log_utils import setup_logger
@@ -27,32 +29,56 @@ class MarketHistoryService:
         limit: int = settings.GLOBAL_WARMUP_CANDLES,
         segment: int = 1,
         use_api: bool = False,
+        save_to_db: bool = False,
     ) -> list[dict]:
         """
         Fetches historical 1m candles from API or DB.
+        If use_api is True, it first checks the DB and only calls the API if DB is insufficient.
         """
+        collection = settings.NIFTY_CANDLE_COLLECTION if instrument_id == 26000 else settings.OPTIONS_CANDLE_COLLECTION
+
+        # 1. DB Logic (Check first)
+        query = {"i": instrument_id, "t": {"$lt": end_ts}}  # Use < end_ts as current tick is live
+        if start_ts:
+            query["t"]["$gte"] = start_ts
+
+        history_cursor = list(self.db[collection].find(query).sort("t", -1).limit(limit))
+        db_history = sorted(history_cursor, key=lambda x: x["t"])
+
+        # If we have enough data in DB, return it
+        if len(db_history) >= limit:
+            return db_history
+
+        # 2. API Logic (Fallback or Enrichment)
         if use_api and self.fetch_ohlc_api_fn:
             fmt = "%b %d %Y %H%M%S"
             start_dt = DateUtils.market_timestamp_to_datetime(start_ts)
             end_dt = DateUtils.market_timestamp_to_datetime(end_ts)
 
-            logger.debug(f"🌐 Fetching API History for {instrument_id}: {start_dt} -> {end_dt}")
+            logger.info(
+                f"🌐 DB insufficient ({len(db_history)}/{limit}). Fetching API History for {instrument_id}: {start_dt} -> {end_dt}"
+            )
             history = self.fetch_ohlc_api_fn(segment, instrument_id, start_dt.strftime(fmt), end_dt.strftime(fmt))
 
             if history:
+                if save_to_db:
+                    self._save_candles_to_db(collection, history)
                 return history[-limit:]
 
-            logger.warning(f"⚠️ API returned no data for {instrument_id}. Falling back to DB.")
+            logger.warning(f"⚠️ API returned no data for {instrument_id}. Returning DB partials.")
 
-        # DB Logic
-        collection = settings.NIFTY_CANDLE_COLLECTION if instrument_id == 26000 else settings.OPTIONS_CANDLE_COLLECTION
+        return db_history
 
-        query = {"i": instrument_id, "t": {"$lte": end_ts}}
-        if start_ts:
-            query["t"]["$gte"] = start_ts
-
-        history_cursor = list(self.db[collection].find(query).sort("t", -1).limit(limit))
-        return sorted(history_cursor, key=lambda x: x["t"])
+    def _save_candles_to_db(self, collection_name: str, candles: list[dict]):
+        """Persists fetched candles to MongoDB using upsert."""
+        if not candles:
+            return
+        try:
+            ops = [UpdateOne({"i": c["i"], "t": c["t"]}, {"$set": c}, upsert=True) for c in candles]
+            result = self.db[collection_name].bulk_write(ops)
+            logger.info(f"💾 Saved {len(candles)} candles to {collection_name} (Upserted: {result.upserted_count})")
+        except Exception as e:
+            logger.error(f"❌ Failed to save candles to {collection_name}: {e}")
 
     def run_warmup(
         self,
@@ -62,6 +88,7 @@ class MarketHistoryService:
         category: str,
         limit: int = settings.GLOBAL_WARMUP_CANDLES,
         use_api: bool = False,
+        save_to_db: bool = False,
     ) -> int:
         """
         Orchestrates the warmup for a specific instrument and category inside FundManager.
@@ -79,6 +106,7 @@ class MarketHistoryService:
             limit=limit,
             segment=segment,
             use_api=use_api,
+            save_to_db=save_to_db,
         )
 
         if not history:

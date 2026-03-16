@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     NIFTY_STRIKE_STEP: int = 50
 
     OPTIONS_STRIKE_COUNT: int = 10  # ATM +/- 10 strikes
+    SYNC_HISTORY_WORKERS: int = 4  # Concurrent workers for historical sync
 
     # 1.6 Backtesting Defaults
     BACKTEST_STOP_LOSS: float = 15.0

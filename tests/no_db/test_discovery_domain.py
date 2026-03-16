@@ -41,10 +41,11 @@ def test_derive_target_contracts_logic(mock_db):
     mock_master_col = mock_db[settings.INSTRUMENT_MASTER_COLLECTION]
 
     # 1. Mock expiry and contract responses
+    mock_master_col.distinct.return_value = ["2026-03-12T00:00:00"]
     mock_master_col.find_one.return_value = {"contractExpiration": "2026-03-12T00:00:00"}
     mock_master_col.find.return_value = [
-        {"exchangeInstrumentID": 1001, "strikePrice": 22450, "optionType": 3},
-        {"exchangeInstrumentID": 1002, "strikePrice": 22450, "optionType": 4},
+        {"exchangeInstrumentID": 1001, "strikePrice": 22450, "optionType": 3, "contractExpiration": "2026-03-12T00:00:00"},
+        {"exchangeInstrumentID": 1002, "strikePrice": 22450, "optionType": 4, "contractExpiration": "2026-03-12T00:00:00"},
     ]
 
     service = ContractDiscoveryService(db=mock_db)

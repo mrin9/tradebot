@@ -46,7 +46,7 @@ def test_diagnostic_report_partial_data():
         patch("packages.utils.mongo.MongoRepository.get_db", return_value=mock_db),
         patch("packages.services.contract_discovery.ContractDiscoveryService.derive_target_contracts") as m_derive,
     ):
-        m_derive.return_value = [{"exchangeInstrumentID": 1001}]
+        m_derive.return_value = [{"exchangeInstrumentID": 1001, "contractExpiration": "2026-03-12"}]
 
         s_dt = datetime(2026, 3, 1)
         report = _generate_diagnostic_report(s_dt, s_dt, strike_count=0)

@@ -11,6 +11,7 @@ from packages.tradeflow.drift_manager import DriftManager
 from packages.tradeflow.indicator_calculator import IndicatorCalculator
 from packages.tradeflow.order_manager import PaperTradingOrderManager
 from packages.tradeflow.position_manager import PositionManager
+from concurrent.futures import ThreadPoolExecutor
 from packages.tradeflow.python_strategy_loader import PythonStrategy
 from packages.tradeflow.types import InstrumentCategoryType, InstrumentKindType, MarketIntentType, SignalType
 from packages.utils.date_utils import DateUtils
@@ -152,31 +153,55 @@ class FundManager:
         current_ts = changed_info.get("current_ts")
         instruments = changed_info.get("instruments", {})
 
+        new_instruments_to_warmup = []
         for cat, info in instruments.items():
-            if not info["is_new"]:
-                continue
+            if info["is_new"]:
+                new_instruments_to_warmup.append((cat, info["id"], info["desc"]))
 
-            new_id = info["id"]
-            new_desc = info["desc"]
+        if not new_instruments_to_warmup:
+            return
 
+        # 1. Sequential Setup (Thread-Unsafe Parts)
+        warmup_anchor = current_ts or self.latest_market_time or time.time()
+        use_api = not self.is_backtest
+
+        for cat, new_id, new_desc in new_instruments_to_warmup:
             logger.info(f"🔄 Component Drift Update: {cat} -> {new_desc} ({new_id})")
 
             # Sync description to FundManager's local copy (used for logs)
             self.active_instruments[f"{cat}_DESC"] = new_desc
 
-            # 1. Ensure Resampler and Reset it
+            # Ensure Resampler and Reset it
             self._ensure_resampler(new_id, InstrumentCategoryType(cat))
             self.resamplers[new_id].reset()
 
-            # 2. Extract cached indicators immediately to avoid stale data
+            # Pre-initialize Indicator Calculator deques sequentially to ensure thread-safety
+            if new_id not in self.indicator_calculator.instrument_candles:
+                from collections import deque
+                self.indicator_calculator.instrument_candles[new_id] = deque(
+                    maxlen=self.indicator_calculator.max_window_size
+                )
+
+            # Extract cached indicators immediately to avoid stale data
             cached_indicators = self.indicator_calculator.extract_indicators(new_id, InstrumentCategoryType(cat))
             if cached_indicators:
                 self.latest_indicators_state.update(cached_indicators)
 
-            # 3. Perform Initial Warmup
-            # Use provided current_ts from drift check, fallback to fund manager's latest market time
-            warmup_anchor = current_ts or self.latest_market_time or time.time()
-            self.history_service.run_warmup(self, new_id, warmup_anchor, cat, use_api=not self.is_backtest)
+        # 2. Parallel Warmup (Thread-Safe Parts)
+        # We manage is_warming_up flag here to prevent premature resets in nested run_warmup calls
+        self.is_warming_up = True
+        try:
+
+            def do_warmup(warmup_args):
+                cat_target, id_target = warmup_args
+                self.history_service.run_warmup(
+                    self, id_target, warmup_anchor, cat_target, use_api=use_api, save_to_db=use_api
+                )
+
+            with ThreadPoolExecutor(max_workers=len(new_instruments_to_warmup)) as executor:
+                executor.map(do_warmup, [(cat, nid) for cat, nid, _ in new_instruments_to_warmup])
+        finally:
+            self.is_warming_up = False
 
     def _get_fallback_option_price(
         self, symbol_id: int, current_ts: float | None, is_entry: bool = False

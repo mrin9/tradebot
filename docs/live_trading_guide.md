@@ -83,7 +83,7 @@ python apps/cli/main.py seed_strategies
 ### 3.1 Direct CLI Command
 
 ```bash
-python apps/cli/main.py live_trade \
+python apps/cli/main.py live-trade \
   --strategy-id triple-confirmation \
   --strike-selection ATM \
   --budget 200000 \
@@ -264,8 +264,8 @@ In case of process restart:
 - [ ] CLI command chosen:
 
 ```bash
-python apps/cli/main.py live_trade \
-  --strategy-id <your-strategy-id> \
+python apps/cli/main.py live-trade \
+  --strategy-id triple-confirmation \
   --strike-selection ATM \
   --budget 200000 \
   --sl-points 15 \

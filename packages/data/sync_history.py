@@ -1,5 +1,6 @@
 import time
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
 
 from pymongo import UpdateOne
 
@@ -80,9 +81,6 @@ class HistoricalDataCollector:
                 logger.error(f"Error fetching chunk {start_str}: {e}")
                 time.sleep(1)  # Backoff
 
-            # Avoid rate limits
-            time.sleep(0.5)
-
         logger.info(f"Sync Complete for {instrument_id}. Total New Ticks: {total_upserted}")
         return total_upserted
 
@@ -117,15 +115,19 @@ class HistoricalDataCollector:
             if not contracts:
                 logger.warning(f"No contracts derived for {day_str}. Skipping.")
             else:
-                logger.info(f"Syncing {len(contracts)} contracts for {day_str}...")
+                logger.info(f"🚀 Syncing {len(contracts)} contracts for {day_str} in parallel ({settings.SYNC_HISTORY_WORKERS} workers)...")
                 day_start = current_dt.replace(hour=0, minute=0, second=0)
                 day_end = current_dt.replace(hour=23, minute=59, second=59)
 
-                for c in contracts:
+                def sync_task(c):
                     inst_id = c["exchangeInstrumentID"]
-                    self.sync_for_instrument(inst_id, day_start, day_end, is_index=False)
-                    # Increased delay between instruments to avoid burst limits
-                    time.sleep(0.5)
+                    try:
+                        self.sync_for_instrument(inst_id, day_start, day_end, is_index=False)
+                    except Exception as e:
+                        logger.error(f"Failed parallel sync for {inst_id}: {e}")
+
+                with ThreadPoolExecutor(max_workers=settings.SYNC_HISTORY_WORKERS) as executor:
+                    executor.map(sync_task, contracts)
 
             current_dt += timedelta(days=1)
 
