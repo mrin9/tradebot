@@ -16,11 +16,11 @@ The engine primarily works with the following logical collections (suffixes omit
   - `nifty_candle`: Spot index OHLCV.
   - `options_candle`: Options OHLCV (current and historical contracts).
 - **Trading & Analytics**
-  - `backtest_results`: Stored backtest summaries for later analysis.
+  - `backtest`: Stored backtest summaries for later analysis.
   - `papertrade`: Fine‑grained trade events (used by backtests and live sessions).
-  - `live_trades`: High‑level live session summaries.
+  - `livetrade`: High‑level live session summaries.
 - **Configuration**
-  - `strategy_indicators`: Strategy definitions and indicator configs.
+  - `strategy_indicator`: Strategy definitions and indicator configs.
 
 Collection names are dynamically suffixed based on `DB_NAME` (e.g., `_test`, `_frozen`) using logic in `packages/settings.py` and `packages/utils.mongo.py`.
 

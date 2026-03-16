@@ -16,7 +16,7 @@ from packages.tradeflow.types import InstrumentCategoryType
 
 @pytest.fixture
 def calc_instance():
-    """Mock indicator config from strategy_indicators DB format."""
+    """Mock indicator config from strategy_indicator DB format."""
     config = [
         {"indicatorId": "fast-ema", "indicator": "ema-5", "InstrumentType": "SPOT"},
         {"indicatorId": "rsi", "indicator": "rsi-14", "InstrumentType": "CE"},

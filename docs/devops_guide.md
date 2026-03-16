@@ -189,7 +189,7 @@ docker compose exec api python apps/cli/main.py update_master
 The engine uses a **collection suffix** strategy via `packages/settings.py` and `packages/utils/mongo.py`:
 
 - **Live**: `DB_NAME=tradebot`
-  - Collections: `nifty_candle`, `options_candle`, `papertrade`, `live_trades`, etc.
+  - Collections: `nifty_candle`, `options_candle`, `papertrade`, `livetrade`, etc.
 - **Test**: `DB_NAME=tradebot_test`
   - Collections: `nifty_candle_test`, `options_candle_test`, etc.
 - **Frozen**: `DB_NAME=tradebot_frozen`

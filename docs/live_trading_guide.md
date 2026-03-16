@@ -13,7 +13,7 @@ Live trading is powered by:
 - **`FundManager`** in `packages/tradeflow/fund_manager.py` for decision‑making.
 - **`PositionManager`** and `PaperTradingOrderManager` for risk control and PnL.
 - **MongoDB** collections for:
-  - `live_trades`: high‑level session summaries.
+  - `livetrade`: high‑level session summaries.
   - `papertrade`: detailed event stream for audit.
 
 The core idea:
@@ -62,7 +62,7 @@ python apps/cli/main.py ensure_indexes
 
 ### 2.3 Strategy Configuration
 
-In the `strategy_indicators` collection:
+In the `strategy_indicator` collection:
 
 - Each strategy document includes:
   - `strategyId` (e.g., `triple-confirmation`).
@@ -206,7 +206,7 @@ Engine logs include:
 
 Typical collections involved:
 
-- `live_trades`:
+- `livetrade`:
   - High‑level summary per live session / strategy.
   - Session start/end, total PnL, high‑level stats.
 - `papertrade`:
@@ -218,7 +218,7 @@ Typical collections involved:
 Use MongoDB Compass or your preferred tool to inspect:
 
 - `papertrade` for detailed audit trail.
-- `live_trades` for aggregate results.
+- `livetrade` for aggregate results.
 
 ---
 

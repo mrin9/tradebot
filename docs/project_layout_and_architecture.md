@@ -111,7 +111,7 @@ Only the **data source** changes. In every mode:
 
 Strategy and engine behavior are configured via:
 
-- **MongoDB Strategy Indicators**: Per‑strategy indicator definitions (`indicatorId`, `indicator`, `InstrumentType`).
+- **MongoDB Strategy Indicator**: Per‑strategy indicator definitions (`indicatorId`, `indicator`, `InstrumentType`).
 - **`TradeConfigService`**:
   - Loads strategy config documents from Mongo (IDs like `triple-confirmation`).
   - Normalizes the document into:
@@ -224,7 +224,7 @@ The CLI (`apps/cli/main.py`) is the main human‑facing interface for the engine
   - `live_trade` – start `LiveTradeEngine` for actual trading with XTS.
 - **Support / safety**:
   - `ensure_indexes` – call `DatabaseManager.ensure_all_indexes`.
-  - `seed_strategies` – populate `strategy_indicators` DB.
+  - `seed_strategies` – populate `strategy_indicator` DB.
   - `menu` – interactive console that wraps the above operations.
 
 For more operational detail, see `operational_guide.md`.

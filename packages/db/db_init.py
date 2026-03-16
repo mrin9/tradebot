@@ -57,17 +57,17 @@ class DatabaseManager:
             results_coll.create_index([("timestamp", DESCENDING)])
 
             # 6. Live Trades
-            live_coll = db.get_collection("live_trades")
+            live_coll = db.get_collection(settings.LIVE_TRADES_COLLECTION)
             live_coll.create_index([("sessionId", ASCENDING)], unique=True)
             live_coll.create_index([("timestamp", DESCENDING)])
 
             # 7. Paper Trades
-            paper_coll = db.get_collection("paper_trades")
+            paper_coll = db.get_collection(settings.PAPERTRADE_COLLECTION)
             paper_coll.create_index([("sessionId", ASCENDING)], unique=True)
             paper_coll.create_index([("timestamp", DESCENDING)])
 
             # 8. Strategy Indicators
-            strategy_coll = db.get_collection("strategy_indicators")
+            strategy_coll = db.get_collection(settings.STRATEGY_INDICATORS_COLLECTION)
             strategy_coll.create_index([("strategyId", ASCENDING)], unique=True)
 
             logger.info("✅ Database indexes synchronized successfully.")

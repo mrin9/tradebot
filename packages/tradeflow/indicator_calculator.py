@@ -23,7 +23,7 @@ class IndicatorCalculator:
     def __init__(self, indicators_config: list[dict[str, Any]], max_window_size: int = settings.GLOBAL_WARMUP_CANDLES):
         """
         Args:
-            indicators_config (List[Dict]): The 'indicators' array from strategy_indicators DB.
+            indicators_config (List[Dict]): The 'indicators' array from strategy_indicator Collection.
                 Example: [{'indicatorId': 'fast_ema', 'indicator': 'ema-5', 'InstrumentType': 'SPOT'}]
             max_window_size (int): Max candles to keep per category.
         """

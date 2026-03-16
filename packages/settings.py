@@ -43,15 +43,15 @@ class Settings(BaseSettings):
 
     @property
     def BACKTEST_RESULT_COLLECTION(self) -> str:
-        return f"backtest_results{self.COLLECTION_SUFFIX}"
+        return f"backtest{self.COLLECTION_SUFFIX}"
 
     @property
     def STRATEGY_INDICATORS_COLLECTION(self) -> str:
-        return f"strategy_indicators{self.COLLECTION_SUFFIX}"
+        return f"strategy_indicator{self.COLLECTION_SUFFIX}"
 
     @property
     def LIVE_TRADES_COLLECTION(self) -> str:
-        return f"live_trades{self.COLLECTION_SUFFIX}"
+        return f"livetrade{self.COLLECTION_SUFFIX}"
 
     @property
     def PAPERTRADE_COLLECTION(self) -> str:

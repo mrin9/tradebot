@@ -146,7 +146,7 @@ python apps/cli/main.py backtest \
 
 If you omit parameters, the CLI will prompt you:
 
-- Strategy ID (pulled from `strategy_indicators` collection).
+- Strategy ID (pulled from `strategy_indicator` collection).
 - Mode: `db` (fast, DB‑backed) or `socket` (high‑fidelity, socket style).
 - Date range (pre‑filled with recent available trading days).
 - Budget, pyramiding, BE, SL/TSL, strike selection, targets.
@@ -220,7 +220,7 @@ python apps/cli/main.py menu
 
 Then choose **Live Trading**:
 
-1. Select an enabled strategy from `strategy_indicators`.
+1. Select an enabled strategy from `strategy_indicator`.
 2. Specify budget, SL, and targets.
 3. The CLI launches `live_trade` with those parameters.
 

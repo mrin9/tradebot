@@ -4,6 +4,7 @@ from bson import ObjectId
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from packages.settings import settings
 from packages.utils.mongo import get_db
 
 router = APIRouter(prefix="/api/strategy-rules", tags=["strategy-rules"])
@@ -21,7 +22,7 @@ class StrategyIndicator(BaseModel):
 @router.get("")
 async def get_strategies():
     db = get_db()
-    strategies = list(db["strategy_indicators"].find({}))
+    strategies = list(db[settings.STRATEGY_INDICATORS_COLLECTION].find({}))
 
     for s in strategies:
         s["id"] = str(s["_id"])
@@ -35,7 +36,7 @@ async def get_strategy(id: str):
     db = get_db()
     try:
         query = {"_id": ObjectId(id)} if ObjectId.is_valid(id) else {"strategyId": id}
-        strategy = db["strategy_indicators"].find_one(query)
+        strategy = db[settings.STRATEGY_INDICATORS_COLLECTION].find_one(query)
         if strategy:
             strategy["id"] = str(strategy["_id"])
             del strategy["_id"]
@@ -50,7 +51,7 @@ async def get_strategy(id: str):
 async def create_strategy(strategy: StrategyIndicator):
     db = get_db()
     doc = strategy.dict()
-    res = db["strategy_indicators"].insert_one(doc)
+    res = db[settings.STRATEGY_INDICATORS_COLLECTION].insert_one(doc)
     return {"id": str(res.inserted_id), "status": "created"}
 
 
@@ -58,7 +59,7 @@ async def create_strategy(strategy: StrategyIndicator):
 async def update_strategy(id: str, strategy: StrategyIndicator):
     db = get_db()
     query = {"_id": ObjectId(id)} if ObjectId.is_valid(id) else {"strategyId": id}
-    db["strategy_indicators"].update_one(query, {"$set": strategy.dict()})
+    db[settings.STRATEGY_INDICATORS_COLLECTION].update_one(query, {"$set": strategy.dict()})
     return {"status": "updated"}
 
 

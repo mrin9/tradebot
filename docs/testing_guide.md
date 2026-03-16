@@ -166,7 +166,7 @@ Both modes:
 
 - Build a `FundManager` with the same strategy and position configs.
 - Use `ReplayUtils` to explode candles into virtual ticks when necessary.
-- Persist results to `backtest_results` and papertrade‑style collections for analysis.
+- Persist results to `backtest` and papertrade‑style collections for analysis.
 
 ### 5.2 Example DB‑Mode Command
 

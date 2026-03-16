@@ -4,6 +4,7 @@ import sys
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from packages.settings import settings
 from packages.utils.log_utils import setup_logger
 from packages.utils.mongo import MongoRepository
 
@@ -46,13 +47,13 @@ INDICATORS = [
 
 
 def seed_strategy_indicators():
-    col = MongoRepository.get_collection("strategy_indicators")
+    col = MongoRepository.get_collection(settings.STRATEGY_INDICATORS_COLLECTION)
 
     # Complete Refresh
     col.delete_many({})
     col.insert_many(INDICATORS)
 
-    logger.info(f"Seeded {len(INDICATORS)} strategies into strategy_indicators collection")
+    logger.info(f"Seeded {len(INDICATORS)} strategies into {settings.STRATEGY_INDICATORS_COLLECTION} collection")
     for r in INDICATORS:
         logger.info(f"  → {r['strategyId']}: {r['name']} | Indicators: {len(r['indicators'])}")
 

@@ -489,7 +489,7 @@ def live_trade(
         str | None, typer.Option("--tsl-id", "-T", help="Indicator ID for Trailing SL (e.g. active-ema-5)")
     ] = "active-ema-5",
     record_papertrade: Annotated[
-        bool, typer.Option(help="Record detailed trade logs in 'paper_trades' collection")
+        bool, typer.Option(help="Record detailed trade logs in 'papertrade' collection")
     ] = True,
     debug: Annotated[bool, typer.Option(help="Enable Socket Debug Logging")] = False,
 ):

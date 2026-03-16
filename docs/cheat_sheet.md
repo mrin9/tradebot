@@ -189,7 +189,7 @@ python apps/cli/main.py seed_strategies
 
 **Description**
 
-- Seeds the `strategy_indicators` collection with predefined strategy configs.
+- Seeds the `strategy_indicator` collection with predefined strategy configs.
 
 **Options**
 

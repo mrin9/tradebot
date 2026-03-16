@@ -43,7 +43,7 @@ flowchart TD
      - Executes entry/exit decisions using `PositionManager` and `PaperTradingOrderManager`.
 4. Results (trades, papertrade events, session summaries) are:
    - Logged to console (through `log_utils` and `trade_formatter`).
-   - Optionally persisted to Mongo (`trade_persistence`, `papertrade`, `live_trades`).
+   - Optionally persisted to Mongo (`trade_persistence`, `papertrade`, `livetrade`).
 
 ---
 
@@ -114,7 +114,7 @@ To make the above more concrete, here is a typical **LONG** trade lifecycle in e
    - On exit:
      - `PositionManager._close_position` finalizes trade.
      - `PaperTradingOrderManager` records PnL and lifecycle.
-     - Optional persistence to Mongo (`papertrade`, `backtest_results`, `live_trades`).
+     - Optional persistence to Mongo (`papertrade`, `backtest`, `livetrade`).
 
 This lifecycle is **identical** across backtests and live trading; only the **source** of ticks/candles differs.
 
@@ -167,7 +167,7 @@ Class: `IndicatorCalculator`
 
 ### 3.2 Inputs
 
-- `indicators_config`: list of indicator definitions from `strategy_indicators` collection.
+- `indicators_config`: list of indicator definitions from `strategy_indicator` collection.
   - Each config typically has:
     - `indicatorId`: logical name (e.g., `fast_ema`).
     - `indicator`: shorthand (e.g., `ema-5`, `rsi-14`, `supertrend-10-3`).

@@ -25,7 +25,7 @@ class TradeConfigService:
         strategy = db[coll_name].find_one({"strategyId": strategy_id})
 
         if not strategy:
-            raise ValueError(f"Strategy ID '{strategy_id}' not found in 'strategy_indicators' collection.")
+            raise ValueError(f"Strategy ID '{strategy_id}' not found in '{settings.STRATEGY_INDICATORS_COLLECTION}' collection.")
 
         # Normalize and return
         return TradeConfigService.normalize_strategy_config(strategy)
