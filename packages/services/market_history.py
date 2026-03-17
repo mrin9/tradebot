@@ -27,6 +27,7 @@ class MarketHistoryService:
         start_ts: float,
         end_ts: float,
         limit: int = settings.GLOBAL_WARMUP_CANDLES,
+        timeframe_seconds: int = 60,
         segment: int = 1,
         use_api: bool = False,
         save_to_db: bool = False,
@@ -42,11 +43,14 @@ class MarketHistoryService:
         if start_ts:
             query["t"]["$gte"] = start_ts
 
-        history_cursor = list(self.db[collection].find(query).sort("t", -1).limit(limit))
+        # Adjust fetch limit based on timeframe (e.g. 200 * 3 = 600 for 3m)
+        fetch_limit = limit * (timeframe_seconds // 60)
+        
+        history_cursor = list(self.db[collection].find(query).sort("t", -1).limit(fetch_limit))
         db_history = sorted(history_cursor, key=lambda x: x["t"])
 
         # If we have enough data in DB, return it
-        if len(db_history) >= limit:
+        if len(db_history) >= fetch_limit:
             return db_history
 
         # 2. API Logic (Fallback or Enrichment)
@@ -56,14 +60,14 @@ class MarketHistoryService:
             end_dt = DateUtils.market_timestamp_to_datetime(end_ts)
 
             logger.info(
-                f"🌐 DB insufficient ({len(db_history)}/{limit}). Fetching API History for {instrument_id}: {start_dt} -> {end_dt}"
+                f"🌐 DB insufficient ({len(db_history)}/{fetch_limit}). Fetching API History for {instrument_id}: {start_dt} -> {end_dt}"
             )
             history = self.fetch_ohlc_api_fn(segment, instrument_id, start_dt.strftime(fmt), end_dt.strftime(fmt))
 
             if history:
                 if save_to_db:
                     self._save_candles_to_db(collection, history)
-                return history[-limit:]
+                return history[-fetch_limit:]
 
             logger.warning(f"⚠️ API returned no data for {instrument_id}. Returning DB partials.")
 
@@ -87,6 +91,7 @@ class MarketHistoryService:
         current_ts: float,
         category: str,
         limit: int = settings.GLOBAL_WARMUP_CANDLES,
+        timeframe_seconds: int = 60,
         use_api: bool = False,
         save_to_db: bool = False,
     ) -> int:
@@ -104,6 +109,7 @@ class MarketHistoryService:
             start_ts=start_ts,
             end_ts=current_ts,
             limit=limit,
+            timeframe_seconds=timeframe_seconds,
             segment=segment,
             use_api=use_api,
             save_to_db=save_to_db,
@@ -118,6 +124,11 @@ class MarketHistoryService:
         # Suppress heartbeats and signals during warmup
         saved_warming_up = fund_manager.is_warming_up
         fund_manager.is_warming_up = True
+        
+        # Suppress diagnostic logs
+        fund_manager.indicator_calculator.suppress_logs = True
+        for r in fund_manager.resamplers.values():
+            r.suppress_logs = True
 
         try:
             for candle in history:
@@ -129,6 +140,9 @@ class MarketHistoryService:
             return 0
         finally:
             fund_manager.is_warming_up = saved_warming_up
+            fund_manager.indicator_calculator.suppress_logs = False
+            for r in fund_manager.resamplers.values():
+                r.suppress_logs = False
 
         logger.info(f"✅ Warmup complete for {category} ({instrument_id}): {count} candles processed.")
         return count
@@ -166,6 +180,10 @@ class MarketHistoryService:
 
             original_on_signal = fund_manager.position_manager.on_signal
             fund_manager.position_manager.on_signal = lambda x: None
+            
+            fund_manager.indicator_calculator.suppress_logs = True
+            for r in fund_manager.resamplers.values():
+                r.suppress_logs = True
 
             for tick in warmup_ticks:
                 fund_manager.on_tick_or_base_candle(tick)
@@ -173,6 +191,9 @@ class MarketHistoryService:
             fund_manager.log_heartbeat = original_log_heartbeat
             fund_manager.is_warming_up = False
             fund_manager.position_manager.on_signal = original_on_signal
+            fund_manager.indicator_calculator.suppress_logs = False
+            for r in fund_manager.resamplers.values():
+                r.suppress_logs = False
         else:
             logger.warning("No historical data found for warmup.")
 

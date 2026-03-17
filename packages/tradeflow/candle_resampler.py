@@ -21,6 +21,8 @@ class CandleResampler:
 
         self.current_candle: dict | None = None
         self.last_period_start: int | None = None
+        self.source_candle_count = 0
+        self.suppress_logs = False
 
     def reset(self):
         """Resets the resampler state for a clean start."""
@@ -60,10 +62,17 @@ class CandleResampler:
                 closed_candle["is_final"] = True
 
                 if self.on_candle_closed:
+                    if not self.suppress_logs:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        from datetime import datetime
+                        pretty_ts = datetime.fromtimestamp(self.last_period_start).strftime('%H:%M:%S')
+                        logger.info(f"💡 [CR] Finalizing {self.interval_seconds // 60}m Candle for {self.instrument_id} @ {pretty_ts} | Source: {self.source_candle_count}m | Close: {closed_candle['close']}")
                     self.on_candle_closed(closed_candle)
 
                 # Reset for new
                 self.current_candle = None
+                self.source_candle_count = 0
 
         self.last_period_start = period_start
 
@@ -101,8 +110,11 @@ class CandleResampler:
                 can["high"] = max(can["high"], high_) if can["high"] is not None else high_
             if low_ is not None:
                 can["low"] = min(can["low"], low_) if can["low"] is not None else low_
-
-            can["close"] = close_  # Close is always the latest close
+            if close_ is not None:
+                can["close"] = close_  # Only update close if we have a valid price
+            
             can["volume"] += volume_
+        
+        self.source_candle_count += 1
 
         return closed_candle

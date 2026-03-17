@@ -28,7 +28,7 @@ class DriftManager:
         self.active_instruments: dict[str, int] = {"SPOT": 26000}
         self.active_descriptions: dict[str, str] = {}
 
-        self.on_instruments_changed: Callable[[dict[str, int]], None] | None = None
+        self.on_instruments_changed_callbacks: list[Callable[[dict[str, Any]], None]] = []
 
     def check_drift(self, current_spot: float, current_ts: float) -> bool:
         """
@@ -71,21 +71,25 @@ class DriftManager:
                         f"⚠️ DriftManager: Failed to resolve {cat} contract for strike {atm_strike} at {current_ts}"
                     )
 
-            if self.on_instruments_changed:
-                # Provide info about which ones changed
-                changed_info = {
-                    "current_ts": current_ts,
-                    "instruments": {
-                        cat: {
-                            "id": self.active_instruments[cat],
-                            "desc": self.active_descriptions.get(cat),
-                            "is_new": self.active_instruments[cat] != old_instruments.get(cat),
-                        }
-                        for cat in ["CE", "PE"]
-                        if self.active_instruments.get(cat)
-                    },
-                }
-                self.on_instruments_changed(changed_info)
+            # Provide info about which ones changed
+            changed_info = {
+                "current_ts": current_ts,
+                "instruments": {
+                    cat: {
+                        "id": self.active_instruments[cat],
+                        "desc": self.active_descriptions.get(cat),
+                        "is_new": self.active_instruments[cat] != old_instruments.get(cat),
+                    }
+                    for cat in ["CE", "PE"]
+                    if self.active_instruments.get(cat)
+                },
+            }
+
+            for callback in self.on_instruments_changed_callbacks:
+                try:
+                    callback(changed_info)
+                except Exception as e:
+                    logger.error(f"Error in drift callback: {e}")
 
             return True
 

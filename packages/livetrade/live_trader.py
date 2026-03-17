@@ -51,7 +51,7 @@ class LiveTradeEngine:
         self.drift_manager = DriftManager(
             self.discovery_service, instrument_type=self.strategy_config.get("instrument_type", "OPTIONS")
         )
-        self.drift_manager.on_instruments_changed = self._on_drift_instruments_changed
+        self.drift_manager.on_instruments_changed_callbacks.append(self._on_drift_instruments_changed)
 
         # 2. Initialize FundManager with services
         self.fund_manager = FundManager(
@@ -148,7 +148,12 @@ class LiveTradeEngine:
 
         try:
             self.history_service.run_warmup(
-                self.fund_manager, settings.NIFTY_EXCHANGE_INSTRUMENT_ID, anchor_timestamp, "SPOT", use_api=True
+                self.fund_manager,
+                settings.NIFTY_EXCHANGE_INSTRUMENT_ID,
+                anchor_timestamp,
+                "SPOT",
+                timeframe_seconds=self.fund_manager.global_timeframe,
+                use_api=True,
             )
             self.has_warmed_up = True
 
@@ -184,7 +189,8 @@ class LiveTradeEngine:
     def _update_rolling_strikes(self, new_atm):
         """Calculates window and delegates to MarketService."""
         if self.current_atm_strike is not None:
-            logger.info(f"🔄 Rolling ATM Shift: {self.current_atm_strike} -> {new_atm}")
+            if self.current_atm_strike != new_atm:
+                logger.info(f"🔄 Rolling ATM Shift: {self.current_atm_strike} -> {new_atm}")
         else:
             logger.info(f"Targeting ATM: {new_atm}")
 

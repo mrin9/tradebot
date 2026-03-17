@@ -36,6 +36,7 @@ class IndicatorCalculator:
         self.active_instrument_ids: dict[InstrumentCategoryType, int | None] = {}
         # Cache of the latest calculated results per instrument
         self.latest_results: dict[int, dict[str, float | int | None]] = {}
+        self.suppress_logs = False
 
         # Initialize deques for each unique instrument category from config
         for ind in self.config:
@@ -99,6 +100,11 @@ class IndicatorCalculator:
             "timestamp": ts,
         }
         target_deque.append(candle_dict)
+        
+        if not self.suppress_logs:
+            from datetime import datetime
+            pretty_ts = datetime.fromtimestamp(ts).strftime('%H:%M:%S')
+            logger.info(f"📊 [IC] {instrument_category.value} ({instrument_id}) @ {pretty_ts} | Memory: {len(target_deque)} candles | Close: {candle_dict['close']}")
 
 
         if len(target_deque) < 1:
@@ -133,6 +139,11 @@ class IndicatorCalculator:
                 indicators_to_calc.append(ind)
 
         try:
+            # Forward fill null prices to ensure indicator calculations (like EMA) don't break
+            df = df.with_columns([
+                pl.col(c).forward_fill() for c in ["open", "high", "low", "close"]
+            ])
+
             for ind in indicators_to_calc:
                 ind_shorthand = ind.get("indicator", ind.get("type", "N/A"))
                 key = ind.get("indicatorId") or ind_shorthand
@@ -140,6 +151,13 @@ class IndicatorCalculator:
 
             res = self._extract_results_from_df(df, instrument_category, indicators_to_calc)
             self.latest_results[instrument_id] = res
+            
+            # Log results for debugging
+            if not self.suppress_logs:
+                ema_logs = [f"{k}: {v:.2f}" for k, v in res.items() if "ema" in k and "prev" not in k and v is not None]
+                if ema_logs:
+                    logger.info(f"📈 [IC] Results for {instrument_id}: {', '.join(ema_logs)}")
+                
             return res
         except Exception as e:
             logger.error(f"Error calculating indicators for category {instrument_category}: {e}", exc_info=True)

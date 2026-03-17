@@ -40,7 +40,7 @@ class TradeEventService:
             reason=payload.get("reason", ""),
             time_str=datetime.fromtimestamp(payload.get("timestamp", 0)).strftime("%H:%M:%S"),
             timeframe=payload.get("timeframe", 0),
-            indicators={},  # Indicators are logged in heartbeat
+            indicators=payload.get("indicators", {}),
             is_continuity=payload.get("is_continuity", False),
         )
         logger.info(log_msg)

@@ -110,7 +110,7 @@ class FundManager:
             self.discovery_service, instrument_type=self.trade_instrument_type
         )
         self.active_instruments = self.drift_manager.active_instruments
-        self.drift_manager.on_instruments_changed = self._on_drift_instruments_changed
+        self.drift_manager.on_instruments_changed_callbacks.append(self._on_drift_instruments_changed)
 
         # Initialize Resamplers per instrument_id
         self.resamplers: dict[int, CandleResampler] = {}
@@ -145,8 +145,7 @@ class FundManager:
         Callback triggered when DriftManager resolves new instruments.
         Handles resampler management and initial warmup.
         """
-        if self.is_warming_up:
-            return
+        # Removed: if self.is_warming_up: return (This was incorrectly blocking Option warmup during NIFTY warmup)
 
         self._needs_mapping_update = True  # Invalidate cache
 
@@ -195,11 +194,14 @@ class FundManager:
             def do_warmup(warmup_args):
                 cat_target, id_target = warmup_args
                 self.history_service.run_warmup(
-                    self, id_target, warmup_anchor, cat_target, use_api=use_api, save_to_db=use_api
+                    self, id_target, warmup_anchor, cat_target, timeframe_seconds=self.global_timeframe, use_api=use_api, save_to_db=use_api
                 )
 
             with ThreadPoolExecutor(max_workers=len(new_instruments_to_warmup)) as executor:
                 executor.map(do_warmup, [(cat, nid) for cat, nid, _ in new_instruments_to_warmup])
+            
+            # 3. Final Refresh: Pull the latest state into FundManager's indicators dict
+            self.latest_indicators_state = self._get_mapped_indicators()
         finally:
             self.is_warming_up = False
 
@@ -292,8 +294,8 @@ class FundManager:
 
         is_spot = (inst_id == 26000) or getattr(self, "spot_instrument_id", 26000) == inst_id
 
-        # 1.a Drift Check (Only when we get Spot)
-        if is_spot and ts:
+        # 1.a Drift Check (Only when we get Spot and not warming up)
+        if is_spot and ts and not self.is_warming_up:
             self.drift_manager.check_drift(price, ts)
 
         # 2. Update Position Manager immediately for Stop Loss / Target Checks
@@ -360,19 +362,19 @@ class FundManager:
         # Invalidate mapping cache as raw indicator values just changed
         self._needs_mapping_update = True
 
-        # Refresh the flat state for logging and heartbeats
+        if category == InstrumentCategoryType.SPOT:
+            # 0. Synchronize other resamplers (CE/PE/Traded) to current SPOT timestamp
+            # This ensures that if Option ticks arrived slightly late, they are still
+            # processed into the current or previous candle before we run indicators.
+            for r_id, r in self.resamplers.items():
+                if r_id != 26000:  # Not Spot
+                    # If resampler is at or behind current SPOT timestamp, flush it
+                    if r.last_period_start is not None and r.last_period_start <= ts:
+                        r.add_candle({"t": ts + self.global_timeframe, "is_flush": True})  # Flush with end of period
+
+        # Refresh the flat state for logging and heartbeats after sync
         # We pull the fully mapped (active/inverse) indicators so logs match strategy view
         self.latest_indicators_state = self._get_mapped_indicators()
-
-        # 0. Synchronize other resamplers (CE/PE/Traded) to current SPOT timestamp
-        # This ensures that if Option ticks arrived slightly late, they are still
-        # processed into the current or previous candle before we run indicators.
-        for r_id, r in self.resamplers.items():
-            if r_id != 26000:  # Not Spot
-                # If resampler is lagging behind current SPOT timestamp, flush it
-                if r.last_period_start is not None and r.last_period_start < ts:
-                    r.add_candle({"t": ts, "is_flush": True})  # Dummy tick to force close if needed
-                    # Note: add_candle logic handles period jumps internally
 
         if self.log_heartbeat and not self.is_warming_up and category == InstrumentCategoryType.SPOT:
             ", ".join(
@@ -554,6 +556,7 @@ class FundManager:
                 "reason_desc": signal.name,
                 "nifty_price": spot_price,
                 "is_continuity": is_cont,
+                "timeframe": self.global_timeframe,
             }
 
             # Recalculate quantity based on exact entry price and budget
@@ -590,7 +593,11 @@ class FundManager:
             self.position_manager.on_signal(payload)
 
             if self.on_signal:
-                payload.update({"indicators": self.latest_indicators_state.copy(), "is_buy": signal == SignalType.LONG})
+                payload.update({
+                    "indicators": self.latest_indicators_state.copy(),
+                    "is_buy": signal == SignalType.LONG,
+                    "timeframe": self.global_timeframe
+                })
                 self.on_signal(payload)
 
     def handle_eod_settlement(self, timestamp: float) -> None:
