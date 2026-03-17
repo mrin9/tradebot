@@ -100,9 +100,12 @@ class TradeFormatter:
         )
 
     @staticmethod
-    def format_heartbeat(time_display: str, category: str, indicators: dict[str, float]) -> str:
+    def format_heartbeat(
+        time_display: str, category: str, indicators: dict[str, float], active_desc: str = "", inverse_desc: str = ""
+    ) -> str:
         state_str = TradeFormatter._format_indicator_state(indicators)
-        return f"{TradeFormatter.EMOJI_HEARTBEAT} HEARTBEAT [Candle: {time_display}] {TradeFormatter.EMOJI_HEARTBEAT}| Category: {category} | Indicators: {state_str}"
+        instr_str = f" | active:{active_desc}, inverse:{inverse_desc}" if active_desc or inverse_desc else ""
+        return f"{TradeFormatter.EMOJI_HEARTBEAT} HEARTBEAT [Candle: {time_display}] {TradeFormatter.EMOJI_HEARTBEAT}{instr_str} | Indicators: {state_str}"
 
     @staticmethod
     def _format_indicator_state(indicators: dict[str, float]) -> str:

@@ -390,7 +390,20 @@ class FundManager:
             else:
                 time_display = "N/A"
 
-            logger.info(TradeFormatter.format_heartbeat(time_display, category.value, self.latest_indicators_state))
+            # Determine active/inverse descriptions for the heartbeat log
+            pos = self.position_manager.current_position
+            is_long = pos.intent == MarketIntentType.LONG if pos else True
+            active_cat = "CE" if is_long else "PE"
+            inverse_cat = "PE" if is_long else "CE"
+            
+            active_desc = self.active_instruments.get(f"{active_cat}_DESC", "N/A")
+            inverse_desc = self.active_instruments.get(f"{inverse_cat}_DESC", "N/A")
+
+            logger.info(
+                TradeFormatter.format_heartbeat(
+                    time_display, category.value, self.latest_indicators_state, active_desc, inverse_desc
+                )
+            )
 
         # ONLY execute strategy decision synchronously when the SPOT candle acts as the anchor
         if category != InstrumentCategoryType.SPOT:
