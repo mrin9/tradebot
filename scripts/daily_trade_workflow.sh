@@ -2,7 +2,7 @@
 
 # Configuration
 PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
-VENV_PATH="$PROJECT_DIR/venv"
+VENV_PATH="$PROJECT_DIR/.venv"
 PYTHON_CMD="$VENV_PATH/bin/python3"
 CLI_PATH="$PROJECT_DIR/apps/cli/main.py"
 PID_FILE="$PROJECT_DIR/logs/live_trade.pid"
