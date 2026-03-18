@@ -103,7 +103,41 @@ class TradeFormatter:
     def format_heartbeat(
         time_display: str, category: str, indicators: dict[str, float], active_desc: str = "", inverse_desc: str = ""
     ) -> str:
-        state_str = TradeFormatter._format_indicator_state(indicators)
+        # 1. Define groups for concise formatting
+        categories = ["nifty", "active", "inverse", "ce", "pe"]
+        formatted_groups = []
+        seen_keys = set()
+
+        # Helper to format a group of EMA values
+        def get_ema_vals(cat_prefix: str, suffix: str = ""):
+            v5 = indicators.get(f"{cat_prefix}-ema-5{suffix}")
+            v21 = indicators.get(f"{cat_prefix}-ema-21{suffix}")
+            if v5 is not None and v21 is not None:
+                seen_keys.add(f"{cat_prefix}-ema-5{suffix}")
+                seen_keys.add(f"{cat_prefix}-ema-21{suffix}")
+                return f"{v5:.2f}, {v21:.2f}"
+            return None
+
+        # 2. Process EMAs in the requested sequence
+        for cat in categories:
+            vals = get_ema_vals(cat)
+            if vals:
+                formatted_groups.append(f"{cat}-ema-5-21: {vals}")
+
+        # 3. Process previous EMAs in the same sequence
+        for cat in categories:
+            vals = get_ema_vals(cat, "-prev")
+            if vals:
+                formatted_groups.append(f"{cat}-ema-prev-5-21: {vals}")
+
+        # 4. Handle remaining indicators using the generic formatter
+        remaining_indicators = {k: v for k, v in indicators.items() if k not in seen_keys}
+        if remaining_indicators:
+            others = TradeFormatter._format_indicator_state(remaining_indicators)
+            if others != "N/A":
+                formatted_groups.append(others)
+
+        state_str = " | ".join(formatted_groups)
         instr_str = f" | active:{active_desc}, inverse:{inverse_desc}" if active_desc or inverse_desc else ""
         return f"{TradeFormatter.EMOJI_HEARTBEAT} HEARTBEAT [Candle: {time_display}] {TradeFormatter.EMOJI_HEARTBEAT}{instr_str} | Indicators: {state_str}"
 

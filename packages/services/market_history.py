@@ -98,8 +98,8 @@ class MarketHistoryService:
         """
         Orchestrates the warmup for a specific instrument and category inside FundManager.
         """
-        # Determine sync range (standard 4 days covers weekends)
-        start_ts = current_ts - (3600 * 24 * 4)
+        # Determine sync range (10 days covers weekends even for 1500+ minutes)
+        start_ts = current_ts - (3600 * 24 * 10)
 
         # Segment 1 for Nifty (SPOT), 2 for Options (NSEFO)
         segment = 1 if instrument_id == 26000 else 2
