@@ -138,6 +138,22 @@ class IndicatorCalculator:
             ]:
                 indicators_to_calc.append(ind)
 
+        # 3. Stability Check: Warn if history is too short for long-period indicators (e.g. EMA-21)
+        # Rule of thumb: EMA needs approx 3.5 * period to stabilize
+        for ind in indicators_to_calc:
+            ind_str = ind.get("indicator", ind.get("type", "N/A")).lower()
+            if ind_str.startswith("ema-"):
+                try:
+                    period = int(ind_str.split("-")[1])
+                    required = int(period * 3.5)
+                    if len(target_deque) < required and not self.suppress_logs:
+                        logger.warning(
+                            f"⚠️ [IC] Low history for {ind_str} on {instrument_category.value} ({instrument_id}). "
+                            f"Have {len(target_deque)} bars, need ~{required} for stabilization. Values may lag."
+                        )
+                except (ValueError, IndexError):
+                    pass
+
         try:
             # Forward fill null prices to ensure indicator calculations (like EMA) don't break
             df = df.with_columns([

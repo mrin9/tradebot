@@ -191,14 +191,16 @@ class FundManager:
         self.is_warming_up = True
         try:
 
-            def do_warmup(warmup_args):
-                cat_target, id_target = warmup_args
+            for cat_target, id_target, _ in new_instruments_to_warmup:
                 self.history_service.run_warmup(
-                    self, id_target, warmup_anchor, cat_target, timeframe_seconds=self.global_timeframe, use_api=use_api, save_to_db=use_api
+                    self,
+                    id_target,
+                    warmup_anchor,
+                    cat_target,
+                    timeframe_seconds=self.global_timeframe,
+                    use_api=use_api,
+                    save_to_db=use_api,
                 )
-
-            with ThreadPoolExecutor(max_workers=len(new_instruments_to_warmup)) as executor:
-                executor.map(do_warmup, [(cat, nid) for cat, nid, _ in new_instruments_to_warmup])
             
             # 3. Final Refresh: Pull the latest state into FundManager's indicators dict
             self.latest_indicators_state = self._get_mapped_indicators()
