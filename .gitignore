@@ -89,3 +89,7 @@ simulator_service.pid
 
 # Trained ML models (large binaries)
 models/*.joblib
+
+# Local Project Data
+tmp/
+tradebot-java/
