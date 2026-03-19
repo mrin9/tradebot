@@ -473,16 +473,13 @@ class PositionManager:
                     triggered = False
                     if is_long_dir and low < ind_val:  # Use Low for Long
                         triggered = True
-                        exit_price = min(current_price, ind_val)  # Pessimistic exit
                     elif not is_long_dir and high > ind_val:  # Use High for Short
                         triggered = True
-                        exit_price = max(current_price, ind_val)
-
 
                     if triggered:
-                        desc = f"INDICATOR_TSL ({self.tsl_id}) hit at {exit_price:.2f} (Value: {ind_val:.2f})"
+                        desc = f"({self.tsl_id or 'active-ema-5'}: {ind_val:.2f})"
                         self._close_position(
-                            exit_price, exit_time, "INDICATOR_TSL", reason_desc=desc, nifty_price=nifty_price
+                            ind_val, exit_time, "INDICATOR_TSL", reason_desc=desc, nifty_price=nifty_price
                         )
                         return
 
@@ -693,6 +690,7 @@ class PositionManager:
                 action_pnl=chunk_pnl,
                 cycle_pnl=pos.total_realized_pnl,
                 session_pnl=self.session_realized_pnl,
+                reason_desc=reason_desc,
             )
             logger.info(log_msg)
             if self.on_trade_event:

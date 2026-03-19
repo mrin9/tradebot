@@ -301,7 +301,7 @@ class FundManager:
             self.drift_manager.check_drift(price, ts)
 
         # 2. Update Position Manager immediately for Stop Loss / Target Checks
-        if self.position_manager.current_position:
+        if self.position_manager.current_position and not self.is_warming_up:
             # Only update position if the tick belongs to the active traded instrument
             if str(inst_id) == self.position_manager.current_position.symbol:
                 nifty_price = self.latest_tick_prices.get(26000)

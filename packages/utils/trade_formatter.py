@@ -69,6 +69,7 @@ class TradeFormatter:
         action_pnl: float,
         cycle_pnl: float,
         session_pnl: float,
+        reason_desc: str = "",
     ) -> str:
         fmt_time = timestamp.strftime("%d-%b-%y %H:%M").upper()
         if cycle_pnl > 0:
@@ -77,8 +78,10 @@ class TradeFormatter:
             emoji = TradeFormatter.EMOJI_EXIT_LOSS
         else:
             emoji = TradeFormatter.EMOJI_EXIT_NEUTRAL
+        
+        desc_suffix = f": {reason_desc}" if reason_desc else ":"
         return (
-            f"{emoji} [{fmt_time}] Exit {reason}: [{symbol}] Sold {quantity} lots({lot_size}) @ {price:,.2f} | "
+            f"{emoji} [{fmt_time}] Exit {reason}{desc_suffix} [{symbol}] Sold {quantity} lots({lot_size}) @ {price:,.2f} | "
             f"Total: {int(total):,} | Action PnL: {int(action_pnl):>+7,} | "
             f"Cycle PnL: {int(cycle_pnl):>+7,} | Session PnL: {int(session_pnl):>+7,}"
         )
