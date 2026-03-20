@@ -347,17 +347,10 @@ class FundManager:
                         r.add_candle({"t": ts + self.global_timeframe, "is_flush": True})  # Flush with end of period
 
         # Refresh the flat state for logging and heartbeats after sync
-        # We pull the fully mapped (active/inverse) indicators so logs match strategy view
+        # We pull the fully mapped (active/inverse/trade) indicators so logs match strategy view
         self.latest_indicators_state = self._get_mapped_indicators()
 
         if self.log_heartbeat and not self.is_warming_up and category == InstrumentCategoryType.SPOT:
-            ", ".join(
-                [
-                    f"{k}: {v:.2f}" if isinstance(v, (int, float)) else f"{k}: {v}"
-                    for k, v in self.latest_indicators_state.items()
-                ]
-            )
-
             # Format candle start and end times for clarity
             if ts:
                 start_str = DateUtils.market_timestamp_to_datetime(ts).strftime("%H:%M:%S")
@@ -366,20 +359,22 @@ class FundManager:
             else:
                 time_display = "N/A"
 
-            # Determine active/inverse descriptions for the heartbeat log
+            # Determine descriptions for the heartbeat log
             pos = self.position_manager.current_position
             is_long = pos.intent == MarketIntentType.LONG if pos else True
             active_cat = "CE" if is_long else "PE"
             inverse_cat = "PE" if is_long else "CE"
-            
+
+            # Refined log format: | trade: NIFTY... , active: NIFTY... , inverse: NIFTY... |
+            trade_desc = pos.display_symbol if pos else "None"
             active_desc = self.active_instruments.get(f"{active_cat}_DESC", "N/A")
             inverse_desc = self.active_instruments.get(f"{inverse_cat}_DESC", "N/A")
 
-            logger.info(
-                TradeFormatter.format_heartbeat(
-                    time_display, category.value, self.latest_indicators_state, active_desc, inverse_desc
-                )
-            )
+            # Pretty-print indicators
+            sorted_inds = dict(sorted(self.latest_indicators_state.items()))
+            inds_str = " | ".join([f"{k}: {v:.2f}" if isinstance(v, float) else f"{k}: {v}" for k, v in sorted_inds.items()])
+
+            logger.info(f"💚 HEARTBEAT [{start_str} - {end_str}] 💚 | trade: {trade_desc} , active: {active_desc} , inverse: {inverse_desc} | Indicators: {inds_str}")
 
         # ONLY execute strategy decision synchronously when the SPOT candle acts as the anchor
         if category != InstrumentCategoryType.SPOT:
@@ -603,6 +598,10 @@ class FundManager:
         """
         Builds a unified indicator dictionary for the strategy.
         Caches the result to avoid redundant mapping on every tick.
+        New Scheme:
+        - active-*: Always current ATM
+        - inverse-*: Always current opposing ATM
+        - trade-*: Pinned to the specifically traded instrument (if in position)
         """
         if not self._needs_mapping_update:
             return self._cached_mapped_indicators
@@ -612,7 +611,7 @@ class FundManager:
         # 1. Pull Spot Indicators (Always present)
         mapped.update(self.indicator_calculator.extract_indicators(26000, InstrumentCategoryType.SPOT))
 
-        # 2. Pull Current Monitored Contract Indicators
+        # 2. Pull Current Monitored ATM Contract Indicators
         ce_id = self.active_instruments.get("CE")
         pe_id = self.active_instruments.get("PE")
 
@@ -622,36 +621,37 @@ class FundManager:
         mapped.update(ce_inds)
         mapped.update(pe_inds)
 
-        # 3. Handle Active/Inverse Mapping
+        # 3. Handle Mappings
         pos = self.position_manager.current_position
+        is_long = pos.intent == MarketIntentType.LONG if pos else True
+        
+        # 3a. ATM Mappings (active/inverse) - ALWAYS follows current ATM
+        self._apply_prefix_mapping(mapped, ce_inds if is_long else pe_inds, "active-", is_long)
+        self._apply_prefix_mapping(mapped, pe_inds if is_long else ce_inds, "inverse-", not is_long)
+
+        # 3b. Trade Mapping (trade-) - PINNED to pos instrument
         if pos:
-            is_long = pos.intent == MarketIntentType.LONG
             traded_id = int(pos.symbol)
             t_cat = InstrumentCategoryType.CE if is_long else InstrumentCategoryType.PE
             traded_inds = self.indicator_calculator.extract_indicators(traded_id, t_cat)
-            inv_inds = pe_inds if is_long else ce_inds
-            self._apply_active_inverse_mapping(mapped, traded_inds, inv_inds, is_long)
+            self._apply_prefix_mapping(mapped, traded_inds, "trade-", is_long)
         else:
-            self._apply_active_inverse_mapping(mapped, ce_inds, pe_inds, True)
+             # Fallback: if no position, trade-* = active-*
+             self._apply_prefix_mapping(mapped, ce_inds if is_long else pe_inds, "trade-", is_long)
 
         self._cached_mapped_indicators = mapped
         self._needs_mapping_update = False
         return mapped
 
-    def _apply_active_inverse_mapping(
-        self, target: dict[str, Any], active_source: dict[str, Any], inverse_source: dict[str, Any], is_long: bool
+    def _apply_prefix_mapping(
+        self, target: dict[str, Any], source: dict[str, Any], new_prefix: str, is_ce: bool
     ) -> None:
-        """Helper to apply active/inverse prefixes to the target dict."""
-        active_prefix = "ce-" if is_long else "pe-"
-        inverse_prefix = "pe-" if is_long else "ce-"
+        """Helper to apply a specific prefix to indicators from a source dict."""
+        orig_prefix = "ce-" if is_ce else "pe-"
 
-        for k, v in active_source.items():
-            if k.startswith(active_prefix):
-                target[k.replace(active_prefix, "active-", 1)] = v
-
-        for k, v in inverse_source.items():
-            if k.startswith(inverse_prefix):
-                target[k.replace(inverse_prefix, "inverse-", 1)] = v
+        for k, v in source.items():
+            if k.startswith(orig_prefix):
+                target[k.replace(orig_prefix, new_prefix, 1)] = v
 
     def _resolve_signal_time(self, signal_ts: float | None) -> datetime:
         """Centralized helper to resolve a signal timestamp to a market-aware datetime."""

@@ -202,12 +202,18 @@ class EmaCrossWithRsiStrategy:
 
         is_warming_up = indicators.get("meta-is-warming-up", False)
 
-        # 1. Gather Required Data (using active mapping)
+        # 1. Gather Required Data (using active mapping for entries, trade for exits)
         fast = indicators.get("active-ema-5")
         slow = indicators.get("active-ema-21")
         fast_prev = indicators.get("active-ema-5-prev")
         slow_prev = indicators.get("active-ema-21-prev")
         rsi = indicators.get("active-rsi-14")
+
+        # Pull trade-pinned indicators for exit stability
+        t_fast = indicators.get("trade-ema-5")
+        t_slow = indicators.get("trade-ema-21")
+        t_fast_prev = indicators.get("trade-ema-5-prev")
+        t_slow_prev = indicators.get("trade-ema-21-prev")
 
         # Wait for indicator warmup
         if any(v is None for v in [fast, slow, fast_prev, slow_prev, rsi]):
@@ -229,9 +235,12 @@ class EmaCrossWithRsiStrategy:
                     )
                     return SignalType.LONG, f"PYTHON: {reason}", 1.0
 
-        # 3. Exit Logic
+        # 3. Exit Logic (uses trade-pinned indicators)
         elif current_position_intent == MarketIntentType.LONG:
-            if fast_prev >= slow_prev and fast < slow:
+            if any(v is None for v in [t_fast, t_slow, t_fast_prev, t_slow_prev]):
+                return SignalType.NEUTRAL, "PYTHON: WAITING FOR TRADE INDICATOR WARMUP", 0.0
+                
+            if t_fast_prev >= t_slow_prev and t_fast < t_slow:
                 return SignalType.EXIT, "PYTHON: EMA Crossunder Exit", 0.0
 
         return SignalType.NEUTRAL, "No signal", 0.0
@@ -259,13 +268,19 @@ class SuperTrendAndPriceCrossStrategy:
         if candle_dt.time() < start_time:
             return SignalType.NEUTRAL, f"PYTHON: BEFORE START TIME ({settings.TRADE_START_TIME})", 0.0
 
+        # 1. Gather Required Data
         is_warming_up = indicators.get("meta-is-warming-up", False)
         price = candle.get("c", candle.get("close"))
+        
+        # Entries use active (latest market ATM)
         st_line = indicators.get("active-supertrend-10-3")
         st_line_prev = indicators.get("active-supertrend-10-3-prev")
+        
+        # Exits use trade (specifically held instrument)
+        t_st_line = indicators.get("trade-supertrend-10-3")
 
         # Wait for indicator warmup
-        if any(v is None for v in [price, st_line, st_line_prev]):
+        if any(v is None for v in [price, st_line, st_line_prev, t_st_line]):
             return SignalType.NEUTRAL, "PYTHON: WAITING FOR INDICATOR WARMUP", 0.0
 
         is_first_live_candle = not is_warming_up and self.was_warming_up
@@ -281,9 +296,9 @@ class SuperTrendAndPriceCrossStrategy:
                 reason = "Price Above Supertrend" + (" (Continuity)" if continuation and not crossover else "")
                 return SignalType.LONG, f"PYTHON: {reason}", 1.0
 
-        # 3. Exit Logic
+        # 3. Exit Logic (uses trade-pinned supertrend)
         elif current_position_intent == MarketIntentType.LONG:
-            if price < st_line:
+            if price < t_st_line:
                 return SignalType.EXIT, "PYTHON: Price Below Supertrend Exit", 0.0
 
         return SignalType.NEUTRAL, "No signal", 0.0

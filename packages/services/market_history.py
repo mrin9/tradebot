@@ -205,7 +205,8 @@ class MarketHistoryService:
         """
         Centrally retrieves the last known NIFTY spot price for a given day.
         """
-        start_ts = DateUtils.to_timestamp(dt, end_of_day=False)
+        start_dt = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_ts = DateUtils.to_timestamp(start_dt)
         end_ts = DateUtils.to_timestamp(dt, end_of_day=True)
 
         doc = self.db[settings.NIFTY_CANDLE_COLLECTION].find_one(
