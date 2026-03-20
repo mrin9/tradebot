@@ -71,12 +71,14 @@ class Settings(BaseSettings):
     BACKTEST_STOP_LOSS: float = 15.0
     BACKTEST_TARGET_STEPS: str = "15,25,50"
     BACKTEST_INVEST_MODE: str = "compound"
-    GLOBAL_WARMUP_CANDLES: int = 500
+    GLOBAL_WARMUP_CANDLES: int = 1500
     BACKTEST_PRICE_SOURCE: str = "close"  # Default price source for backtest (open or close)
 
     # 2. Core Operation Modes
     MARKET_TIMEZONE: str = "Asia/Kolkata"
     DEFAULT_TIMEFRAME: int = 180
+    TRADE_START_TIME: str = "09:20:00"
+    LOG_HEARTBEAT: bool = False
 
     # 4. Socket & Simulator Settings
     SOCKET_SIMULATOR_URL: str = "http://localhost:5050"

@@ -95,11 +95,11 @@ class CandleResampler:
         if not self.current_candle:
             self.current_candle = {
                 "instrument_id": self.instrument_id,
+                # MATCH JAVA: Use period START as the candle timestamp
                 "timestamp": period_start,
                 "open": open_,
                 "high": high_,
                 "low": low_,
-
                 "close": close_,
                 "volume": volume_,
                 "is_final": False,

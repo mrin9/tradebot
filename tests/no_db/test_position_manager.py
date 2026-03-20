@@ -36,7 +36,7 @@ def test_options_long_intent_cycle(pm_setup):
     pm, om = pm_setup
 
     # 1. Entry
-    now = datetime(2026, 2, 11, 9, 15)
+    now = datetime(2026, 2, 11, 9, 30)
     pm.on_signal(
         {"signal": MarketIntent.LONG, "symbol": "NIFTY", "display_symbol": "NIFTY", "price": 100.0, "timestamp": now}
     )
@@ -111,7 +111,7 @@ def test_fractional_exit(pm_setup):
     # Setup: 3 targets, initial qty 100. Chunk size = 100 // 4 = 25.
     pm.quantity = 100
     pm.target_steps = [10, 20, 30]
-    now = datetime(2026, 2, 11, 9, 15)
+    now = datetime(2026, 2, 11, 9, 30)
 
     # 1. Entry at 100. Targets: 110, 120, 130
     pm.on_signal(
@@ -160,7 +160,7 @@ def test_pyramid_default_100_behaves_like_all_in(pm_setup):
     pm.quantity = 100
     pm.pyramid_steps = [100]
 
-    now = datetime(2026, 2, 11, 9, 15)
+    now = datetime(2026, 2, 11, 9, 30)
     pm.on_signal(
         {"signal": MarketIntent.LONG, "symbol": "NIFTY", "display_symbol": "NIFTY", "price": 100.0, "timestamp": now}
     )
@@ -177,7 +177,7 @@ def test_pyramid_staged_entry(pm_setup):
     pm.pyramid_steps = [25, 50, 25]
     pm.pyramid_confirm_pts = 10.0
 
-    now = datetime(2026, 2, 11, 9, 15)
+    now = datetime(2026, 2, 11, 9, 30)
 
     # Step 1: Initial entry → 25% of 100 = 25 lots
     pm.on_signal(
@@ -213,7 +213,7 @@ def test_indicator_based_tsl(pm_setup):
     """Verifies that indicator-based TSL triggers only after profit."""
     pm, _om = pm_setup
     pm.tsl_id = "active-ema-5"
-    now = datetime(2026, 2, 11, 9, 15)
+    now = datetime(2026, 2, 11, 9, 30)
 
     # 1. Entry at 100. Target 1 is at 140.0
     pm.on_signal(
@@ -237,4 +237,24 @@ def test_indicator_based_tsl(pm_setup):
     pm.update_tick({"ltp": 138.0, "timestamp": now.timestamp() + 180}, indicators={"active-ema-5": 142.0})
     assert pm.current_position is None
     assert pm.trades_history[-1].status == "INDICATOR_TSL"
-    assert "Value: 142.00" in pm.trades_history[-1].exit_reason_description
+    assert "active-ema-5: 142.00" in pm.trades_history[-1].exit_reason_description
+
+def test_trade_start_time_guard(pm_setup):
+    """Verifies that signals before TRADE_START_TIME are ignored."""
+    pm, om = pm_setup
+    
+    # 1. Signal at 09:15 (should be IGNORED if guard is 09:20)
+    early_time = datetime(2026, 2, 11, 9, 15)
+    pm.on_signal(
+        {"signal": MarketIntent.LONG, "symbol": "NIFTY", "display_symbol": "NIFTY", "price": 100.0, "timestamp": early_time}
+    )
+    assert pm.current_position is None
+    assert len(om.orders) == 0
+
+    # 2. Signal at 09:25 (should be ACCEPTED)
+    valid_time = datetime(2026, 2, 11, 9, 25)
+    pm.on_signal(
+        {"signal": MarketIntent.LONG, "symbol": "NIFTY", "display_symbol": "NIFTY", "price": 100.0, "timestamp": valid_time}
+    )
+    assert pm.current_position is not None
+    assert om.orders[0]["timestamp"] == valid_time

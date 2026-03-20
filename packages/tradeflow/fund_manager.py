@@ -155,9 +155,16 @@ class FundManager:
         new_instruments_to_warmup = []
         for cat, info in instruments.items():
             if info["is_new"]:
-                new_instruments_to_warmup.append((cat, info["id"], info["desc"]))
+                new_id = info["id"]
+                # If we were already monitoring this (pre-warming window), don't reset or warmup!
+                if new_id in self.resamplers:
+                    logger.info(f"⚡ Using pre-warmed history for {cat} ({new_id})")
+                else:
+                    new_instruments_to_warmup.append((cat, new_id, info["desc"]))
 
         if not new_instruments_to_warmup:
+            # Still need to handle mapping update for cached state
+            self.latest_indicators_state = self._get_mapped_indicators()
             return
 
         # 1. Sequential Setup (Thread-Unsafe Parts)
@@ -165,7 +172,7 @@ class FundManager:
         use_api = not self.is_backtest
 
         for cat, new_id, new_desc in new_instruments_to_warmup:
-            logger.info(f"🔄 Component Drift Update: {cat} -> {new_desc} ({new_id})")
+            logger.info(f"🔄 Component Drift Update (Warmup Required): {cat} -> {new_desc} ({new_id})")
 
             # Sync description to FundManager's local copy (used for logs)
             self.active_instruments[f"{cat}_DESC"] = new_desc
@@ -341,7 +348,14 @@ class FundManager:
                     category = "SPOT"  # Fallback for futures/cash
 
         if not category:
-            return  # Data for instrument not actively monitored
+            # During backtest, we pre-warm indicators for all relevant strikes (monitored ids)
+            if self.is_backtest and int(inst_id) in self.drift_manager.monitored_instrument_ids:
+                # Heuristic: it's an option. We don't know if it's CE or PE without asking discovery_service,
+                # but IndicatorCalculator can handle OPTIONS_BOTH or we can just pick one (it only affects prefix).
+                # To be safe, we just let it be processed.
+                 category = "CE" # Default prefix for pre-warming (doesn't matter much for strategy evaluation)
+            else:
+                return  # Data for instrument not actively monitored
 
         # Ensure resampler exists (especially for drifted/traded instruments)
         self._ensure_resampler(int(inst_id), InstrumentCategoryType(category))
@@ -363,6 +377,16 @@ class FundManager:
 
         # Invalidate mapping cache as raw indicator values just changed
         self._needs_mapping_update = True
+
+        # 0. Risk Checks (SL/Target) - MUST happen before Strategy/Resampling for parity
+        if self.position_manager.current_position and not self.is_warming_up:
+            if str(inst_id) == self.position_manager.current_position.symbol:
+                nifty_price = self.latest_tick_prices.get(26000)
+                mapped = self._get_mapped_indicators()
+                
+                # PARITY FIX: Match Java's graininess. Don't explode 1-min candles.
+                # Just process the candle as a single unit.
+                self.position_manager.update_tick(candle, nifty_price=nifty_price, indicators=mapped)
 
         if category == InstrumentCategoryType.SPOT:
             # 0. Synchronize other resamplers (CE/PE/Traded) to current SPOT timestamp

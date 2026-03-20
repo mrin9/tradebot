@@ -62,48 +62,49 @@ class SocketDataProvider:
             nifty_cursor = nifty_coll.find(query).sort("t", 1)
             options_cursor = options_coll.find(query).sort("t", 1)
 
-            # Use heapq.merge to union and sort by time 't'
+            # 1. Helper to explode bars into a flat tick stream
+            from packages.utils.replay_utils import ReplayUtils
+
+            def _tick_generator(cursor, priority):
+                for doc in cursor:
+                    ticks = ReplayUtils.explode_bar_to_ticks(doc["i"], doc, doc["t"])
+                    for t in ticks:
+                        yield (t["t"], priority, t)
+
+            # 2. Use heapq.merge to union and sort ALL virtual ticks by time 't'
             # We add a priority (0 for options, 1 for nifty) to ensure
             # Option indicators are updated before the Spot candle close triggers strategy evaluation.
             merged_stream = heapq.merge(
-                ((doc["t"], 1, doc) for doc in nifty_cursor),
-                ((doc["t"], 0, doc) for doc in options_cursor),
+                _tick_generator(nifty_cursor, 1),
+                _tick_generator(options_cursor, 0),
                 key=lambda x: (x[0], x[1]),
             )
 
             logger.info(f"Replaying TICK data from {start_dt} to {end_dt}...")
 
             count = 0
-            for timestamp, _priority, doc in merged_stream:
+            for timestamp, _priority, v_tick in merged_stream:
                 if not self.running:
                     break
 
-                if count % 1000 == 0:
-                    logger.info(f"Replay progress: {count} docs emitted. Current T: {timestamp}")
+                if count % 5000 == 0:
+                    logger.info(f"Replay progress: {count} ticks emitted. Current T: {timestamp}")
 
-                inst_id = doc["i"]
-                base_t = doc["t"]
+                inst_id = v_tick["i"]
 
-                # Tick Breakdown logic (4 sub-ticks per 1-min bar)
-                from packages.utils.replay_utils import ReplayUtils
+                if v_tick["is_snapshot"]:
+                    await self._emit_1512_snapshot(inst_id, v_tick["p"], v_tick["t"], v_tick["v"])
+                else:
+                    await self._emit_1501_tick(inst_id, v_tick["p"], v_tick["t"], v_tick["v"])
 
-                virtual_ticks = ReplayUtils.explode_bar_to_ticks(inst_id, doc, base_t)
-
-                for v_tick in virtual_ticks:
-                    if not self.running:
-                        break
-                    if v_tick["is_snapshot"]:
-                        await self._emit_1512_snapshot(inst_id, v_tick["p"], v_tick["t"], v_tick["v"])
-                    else:
-                        await self._emit_1501_tick(inst_id, v_tick["p"], v_tick["t"], v_tick["v"])
-                    if delay > 0:
-                        await asyncio.sleep(delay)
+                if delay > 0:
+                    await asyncio.sleep(delay)
 
                 count += 1
                 if count % 100 == 0:
                     await asyncio.sleep(0)  # Yield control
 
-            logger.info(f"Replay Finished. Total docs emitted: {count}")
+            logger.info(f"Replay Finished. Total ticks emitted: {count}")
             await self.sio.emit("simulation_complete", {"status": "done"})
             self.running = False
 

@@ -150,8 +150,9 @@ class ContractDiscoveryService:
 
     @staticmethod
     def get_atm_strike(price: float, step: int = 50) -> float:
-        """Helper to round a price to the nearest strike."""
-        return round(price / step) * step
+        """Helper to round a price to the nearest strike. Maps exactly to Java's Math.round behavior."""
+        import math
+        return math.floor((price / step) + 0.5) * step
 
     def derive_target_contracts(self, current_dt: datetime, strike_count: int | None = None):
         """

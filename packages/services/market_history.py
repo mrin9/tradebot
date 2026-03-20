@@ -44,7 +44,8 @@ class MarketHistoryService:
             query["t"]["$gte"] = start_ts
 
         # Adjust fetch limit based on timeframe (e.g. 200 * 3 = 600 for 3m)
-        fetch_limit = limit * (timeframe_seconds // 60)
+        # 🔴 PARITY FIX: Match Java's logic which fetches exactly 'limit' 1-min candles.
+        fetch_limit = limit
         
         history_cursor = list(self.db[collection].find(query).sort("t", -1).limit(fetch_limit))
         db_history = sorted(history_cursor, key=lambda x: x["t"])

@@ -162,6 +162,20 @@ Two main modes:
   - Uses `packages/simulator/socket_server.py` to send data via Socket.IO.
   - High‑fidelity; mimics live tick stream.
 
+### 5.2 Key Parameters
+
+| Parameter | Default (if omitted) | Description |
+|-----------|----------------------|-------------|
+| `--mode` | `db` | Backtest source: `db` or `socket` |
+| `--start` | `2026-02-02` | Start date (YYYY-MM-DD) |
+| `--end` | (same as start) | End date (YYYY-MM-DD) |
+| `--strategy-id` | `triple-confirmation` | Strategy identifier from DB |
+| `--sl-points` | `15.0` | Stop loss points |
+| `--target-points` | `"15,25,50"` | Comma-separated target steps |
+| `--tsl-points` | `0.0` | Trailing stop loss points (0 to disable) |
+| `--invest-mode` | `compound` | Investment mode: `fixed` or `compound` |
+| `--log-heartbeat` | `false` | Enable verbose indicator/price logs |
+
 Both modes:
 
 - Build a `FundManager` with the same strategy and position configs.
@@ -173,15 +187,15 @@ Both modes:
 ```bash
 python -m tests.backtest.backtest_runner \
   --mode db \
-  --start 2024-02-02 \
-  --end 2024-02-02 \
+  --start 2026-03-19 \
   --strategy-id triple-confirmation \
   --budget 200000 \
   --sl-points 15.0 \
   --target-points "15,25,50" \
-  --tsl-points 10.0 \
+  --tsl-points 0.0 \
   --invest-mode compound \
-  --strike-selection ATM
+  --log-heartbeat
+```
 ```
 
 ### 5.3 Example Socket‑Mode Command

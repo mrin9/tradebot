@@ -1,5 +1,9 @@
+from datetime import datetime
 from typing import Any
 
+import pytz
+
+from packages.settings import settings
 from packages.tradeflow.types import CandleType, MarketIntentType, SignalType
 
 
@@ -23,33 +27,20 @@ class TripleLockStrategy:
     def on_resampled_candle_closed(
         self, candle: CandleType, indicators: dict[str, Any], current_position_intent: MarketIntentType | None = None
     ) -> tuple[SignalType, str, float]:
-        """
-        Processes a finalized candle to determine trading signals based on EMA crossovers.
+        # Market Open Stability Guard
+        tz = pytz.timezone(settings.MARKET_TIMEZONE)
+        ts = candle.get("t", candle.get("timestamp"))
+        candle_dt = datetime.fromtimestamp(ts, tz)
+        start_time = datetime.strptime(settings.TRADE_START_TIME, "%H:%M:%S").time()
 
-        Args:
-            candle: The finalized OHLCV data for the current timeframe.
-            indicators: Dictionary containing technical indicators and meta-indicators.
-                        Example: {
-                            'nifty-ema-5': 24150.5,
-                            'nifty-ema-21': 24120.0,
-                            'ce-ema-5': 120.5,
-                            'ce-ema-21': 115.0,
-                            'ce-ema-5-prev': 114.0,
-                            'ce-ema-21-prev': 116.0,
-                            'pe-ema-5': 80.0,
-                            'pe-ema-21': 95.0,
-                            'active-ema-5': 120.5,
-                            'active-ema-21': 115.0,
-                            'inverse-ema-5': 80.0,
-                            'inverse-ema-21': 95.0,
-                            'meta-is-warming-up': False
-                        }
-            current_position_intent: The current trade direction if a position is open.
-
-        Returns:
-            Tuple[SignalType, str, float]: (SignalType, Reason, Confidence)
-        """
         is_warming_up = indicators.get("meta-is-warming-up", False)
+        
+        # Determine if we just finished the boot-up warmup phase
+        # Note: This is True ONLY for the very first candle where is_warming_up is False
+        is_first_live_candle = not is_warming_up and self.was_warming_up
+
+        if candle_dt.time() < start_time:
+            return SignalType.NEUTRAL, f"PYTHON: BEFORE START TIME ({settings.TRADE_START_TIME})", 0.0
 
         spot_fast = indicators.get("nifty-ema-5")
         spot_slow = indicators.get("nifty-ema-21")
@@ -81,11 +72,6 @@ class TripleLockStrategy:
         if any(v is None for v in required_indicators):
             return SignalType.NEUTRAL, "PYTHON: WAITING FOR INDICATOR WARMUP", 0.0
 
-        # Allow entry on continuation only if this is the FIRST live candle after a warmup phase
-        # This handles cases where the actual crossover happened during the disconnect period.
-        is_first_live_candle = not is_warming_up and self.was_warming_up
-        self.was_warming_up = is_warming_up
-
         # 2. Entry Logic (Bidirectional)
         if current_position_intent is None:
             # --- CHECK CALL ENTRY ---
@@ -116,6 +102,8 @@ class TripleLockStrategy:
             if (pe_f_prev >= pe_s_prev) and (pe_fast < pe_slow):  # Crossunder
                 return SignalType.EXIT, "PYTHON: PUT Crossunder Exit", 0.0
 
+        # 4. Final Maintenance
+        self.was_warming_up = is_warming_up
         return SignalType.NEUTRAL, "No signal", 0.0
 
 
@@ -130,6 +118,15 @@ class SimpleMACDStrategy:
     def on_resampled_candle_closed(
         self, candle: CandleType, indicators: dict[str, Any], current_position_intent: MarketIntentType | None = None
     ) -> tuple[SignalType, str, float]:
+
+        # Market Open Stability Guard
+        tz = pytz.timezone(settings.MARKET_TIMEZONE)
+        ts = candle.get("t", candle.get("timestamp"))
+        candle_dt = datetime.fromtimestamp(ts, tz)
+        start_time = datetime.strptime(settings.TRADE_START_TIME, "%H:%M:%S").time()
+
+        if candle_dt.time() < start_time:
+            return SignalType.NEUTRAL, f"PYTHON: BEFORE START TIME ({settings.TRADE_START_TIME})", 0.0
 
         is_warming_up = indicators.get("meta-is-warming-up", False)
         ce_hist = indicators.get("ce-macd-hist")
@@ -194,6 +191,15 @@ class EmaCrossWithRsiStrategy:
         self, candle: CandleType, indicators: dict[str, Any], current_position_intent: MarketIntentType | None = None
     ) -> tuple[SignalType, str, float]:
 
+        # Market Open Stability Guard
+        tz = pytz.timezone(settings.MARKET_TIMEZONE)
+        ts = candle.get("t", candle.get("timestamp"))
+        candle_dt = datetime.fromtimestamp(ts, tz)
+        start_time = datetime.strptime(settings.TRADE_START_TIME, "%H:%M:%S").time()
+
+        if candle_dt.time() < start_time:
+            return SignalType.NEUTRAL, f"PYTHON: BEFORE START TIME ({settings.TRADE_START_TIME})", 0.0
+
         is_warming_up = indicators.get("meta-is-warming-up", False)
 
         # 1. Gather Required Data (using active mapping)
@@ -243,6 +249,15 @@ class SuperTrendAndPriceCrossStrategy:
     def on_resampled_candle_closed(
         self, candle: CandleType, indicators: dict[str, Any], current_position_intent: MarketIntentType | None = None
     ) -> tuple[SignalType, str, float]:
+
+        # Market Open Stability Guard
+        tz = pytz.timezone(settings.MARKET_TIMEZONE)
+        ts = candle.get("t", candle.get("timestamp"))
+        candle_dt = datetime.fromtimestamp(ts, tz)
+        start_time = datetime.strptime(settings.TRADE_START_TIME, "%H:%M:%S").time()
+
+        if candle_dt.time() < start_time:
+            return SignalType.NEUTRAL, f"PYTHON: BEFORE START TIME ({settings.TRADE_START_TIME})", 0.0
 
         is_warming_up = indicators.get("meta-is-warming-up", False)
         price = candle.get("c", candle.get("close"))

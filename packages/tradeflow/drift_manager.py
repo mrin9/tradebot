@@ -27,6 +27,7 @@ class DriftManager:
         # {category: instrument_id}
         self.active_instruments: dict[str, int] = {"SPOT": 26000}
         self.active_descriptions: dict[str, str] = {}
+        self.monitored_instrument_ids: set[int] = {26000}
 
         self.on_instruments_changed_callbacks: list[Callable[[dict[str, Any]], None]] = []
 
@@ -70,6 +71,12 @@ class DriftManager:
                     logger.warning(
                         f"⚠️ DriftManager: Failed to resolve {cat} contract for strike {atm_strike} at {current_ts}"
                     )
+
+            # Update monitored window (±5 strikes) to pre-warm indicators
+            window_ids = self.discovery_service.get_strike_window_ids(
+                atm_strike, window_size=5, current_ts=current_ts
+            )
+            self.monitored_instrument_ids = window_ids | {26000}  # Add NIFTY SPOT
 
             # Provide info about which ones changed
             changed_info = {

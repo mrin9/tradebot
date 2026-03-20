@@ -284,6 +284,7 @@ class BacktestEngine:
         start_date: str,
         end_date: str | None = None,
         mode: str = "db",
+        log_heartbeat: bool = False,
     ):
         self.strategy_config = strategy_config
         self.position_config = position_config
@@ -292,7 +293,10 @@ class BacktestEngine:
         self.mode = mode
 
         self.fund_manager = FundManager(
-            strategy_config=strategy_config, position_config=position_config, is_backtest=True
+            strategy_config=strategy_config,
+            position_config=position_config,
+            is_backtest=True,
+            log_heartbeat=log_heartbeat,
         )
 
         # Performance optimization: Load contract cache for the symbol relative to backtest start

@@ -33,6 +33,7 @@ class Position:
     entry_time: datetime
     stop_loss: float
     targets: list[float]
+    entry_timestamp: float = 0.0
     current_price: float = 0.0
     status: str = "OPEN"
     pnl: float = 0.0
@@ -207,6 +208,10 @@ class PositionManager:
             timestamp = datetime.fromtimestamp(timestamp)
         symbol = str(payload.symbol) if payload.symbol else self.symbol
         display_symbol = payload.display_symbol or symbol
+        
+        # 4. Entry Start Time Guard
+        if timestamp.time() < datetime.strptime(settings.TRADE_START_TIME, "%H:%M:%S").time():
+            return
 
         if self.current_position:
             if self.current_position.intent != intent:
@@ -230,6 +235,11 @@ class PositionManager:
             # 2. Extract specific trigger name if provided
             entry_reason = payload.reason
             nifty_price = payload.nifty_price
+            
+            # Ensure entry_timestamp is always a float epoch
+            raw_ts = payload.timestamp
+            if isinstance(raw_ts, datetime):
+                raw_ts = raw_ts.timestamp()
 
             date_prefix = trade_date.strftime("%Y%m%d")
             self._open_position(
@@ -243,6 +253,7 @@ class PositionManager:
                 reason_desc=payload.reason_desc,
                 nifty_price=nifty_price,
                 is_continuity=payload.is_continuity,
+                entry_timestamp=raw_ts,
             )
 
     def _try_pyramid_add(self, price: float, timestamp: datetime, payload: SignalPayload) -> None:
@@ -343,6 +354,12 @@ class PositionManager:
 
         # Parse realistic exit time from tick if available
         ts = tick.get("t", tick.get("timestamp"))
+        
+        # PARITY FIX: Don't hit SL/Target on the same tick (or earlier) as entry.
+        # This matches Java's execution order where SL checks happen BEFORE strategy signals.
+        if ts and self.current_position.entry_timestamp and ts <= self.current_position.entry_timestamp:
+            return
+
         if isinstance(ts, (int, float)):
             exit_time = DateUtils.market_timestamp_to_datetime(ts)
         else:
@@ -495,6 +512,7 @@ class PositionManager:
         reason_desc: str = "",
         nifty_price: float = 0.0,
         is_continuity: bool = False,
+        entry_timestamp: float = 0.0,
     ) -> None:
         """
         Logic for entering a trade.
@@ -552,6 +570,7 @@ class PositionManager:
             nifty_price_at_entry=nifty_price,
             pyramid_step=0,
             total_intended_quantity=self.quantity,
+            entry_timestamp=entry_timestamp,
             formatted_entry_time=fmt_time,
             entry_transaction_desc=trans_desc,
             is_continuity=is_continuity,
