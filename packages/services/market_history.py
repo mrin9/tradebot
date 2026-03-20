@@ -118,7 +118,8 @@ class MarketHistoryService:
 
         if not history:
             pretty_time = DateUtils.market_timestamp_to_iso(current_ts)
-            logger.warning(f"No history found for warmup: {category} ({instrument_id}) at {pretty_time}")
+            if not getattr(fund_manager, "reduced_log", False):
+                logger.warning(f"No history found for warmup: {category} ({instrument_id}) at {pretty_time}")
             return 0
 
         count = 0
@@ -141,11 +142,13 @@ class MarketHistoryService:
             return 0
         finally:
             fund_manager.is_warming_up = saved_warming_up
-            fund_manager.indicator_calculator.suppress_logs = False
+            is_reduced = getattr(fund_manager, "reduced_log", False)
+            fund_manager.indicator_calculator.suppress_logs = is_reduced
             for r in fund_manager.resamplers.values():
-                r.suppress_logs = False
+                r.suppress_logs = is_reduced
 
-        logger.info(f"✅ Warmup complete for {category} ({instrument_id}): {count} candles processed.")
+        if not getattr(fund_manager, "reduced_log", False):
+            logger.info(f"✅ Warmup complete for {category} ({instrument_id}): {count} candles processed.")
         return count
 
     def run_full_backtest_warmup(self, fund_manager, start_date: str, warmup_candles: int | None = None):

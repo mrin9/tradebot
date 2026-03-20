@@ -71,7 +71,7 @@ def get_parser():
         help="Indicator ID for Trailing Stop Loss (e.g. active-ema-5)",
     )
     parser.add_argument(
-        "--log-heartbeat", action="store_true", default=settings.LOG_HEARTBEAT, help="Log heartbeats in backtest"
+        "--verbose", action="store_true", default=False, help="Enable verbose heartbeats, warmup notices, and low history warnings"
     )
     return parser
 
@@ -141,7 +141,7 @@ def main():
         start_date=args.start,
         end_date=args.end,
         mode=args.mode,
-        log_heartbeat=args.log_heartbeat,
+        reduced_log=not args.verbose,
     )
 
     try:

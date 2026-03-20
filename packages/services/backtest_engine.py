@@ -12,6 +12,7 @@ from packages.services.trade_event import TradeEventService
 from packages.settings import settings
 from packages.simulator.socket_server import SocketDataService
 from packages.tradeflow.fund_manager import FundManager
+from packages.tradeflow.types import InstrumentCategoryType
 from packages.utils.date_utils import DateUtils
 from packages.utils.log_utils import setup_logger
 from packages.utils.mongo import MongoRepository
@@ -50,10 +51,7 @@ class DBFeeder(BacktestFeeder):
         fm = engine.fund_manager
         db = MongoRepository.get_db()
 
-        # 1. Warmup
-        MarketHistoryService(db).run_full_backtest_warmup(fm, engine.start_date, settings.GLOBAL_WARMUP_CANDLES)
-
-        # 2. Get Trading Days
+        # 1. Get Trading Days
         iso_start = DateUtils._parse_keyword(engine.start_date, is_end=False).strftime("%Y-%m-%d")
         iso_end = DateUtils._parse_keyword(engine.end_date, is_end=True).strftime("%Y-%m-%d")
         available_days = DateUtils.get_available_dates(db, settings.NIFTY_CANDLE_COLLECTION)
@@ -64,13 +62,40 @@ class DBFeeder(BacktestFeeder):
             return
 
         logger.info(f"🧪 DB Mode Backtest Started: {len(trading_days)} days.")
+        
+        # We need a shared active_grid to persist between days for FundManager
+        engine.fund_manager.active_grid_ids = set()
+
         for day_str in trading_days:
             logger.info(f"📅 Trading Day: {day_str}")
             dt = DateUtils.parse_iso(day_str)
             day_ts = int(dt.replace(hour=9, minute=15, second=0).timestamp())
             eod_ts = int(dt.replace(hour=15, minute=30, second=0).timestamp())
 
-            # Fetch Ticks
+            # 1. Initialize Daily Grid
+            fm.active_grid_ids.clear()
+            instruments_to_monitor = {settings.NIFTY_EXCHANGE_INSTRUMENT_ID}
+            if fm.trade_instrument_type != "CASH":
+                grid_ids = engine.fund_manager.discovery_service.get_daily_grid_ids(dt, strike_count=20)
+                fm.active_grid_ids.update(grid_ids)
+                fm.monitored_instrument_ids.update(grid_ids)
+                instruments_to_monitor.update(grid_ids)
+            
+            # Keep protected positions active
+            if fm.position_manager.current_position:
+                instruments_to_monitor.add(int(fm.position_manager.current_position.symbol))
+
+            # 2. Daily Warmup for all active instruments
+            MarketHistoryService(db).run_warmup(fm, settings.NIFTY_EXCHANGE_INSTRUMENT_ID, day_ts, "SPOT")
+            if fm.trade_instrument_type != "CASH":
+                for opt_id in fm.active_grid_ids:
+                    opt_cat = fm.discovery_service.get_option_type(opt_id)
+                    fm._ensure_resampler(opt_id, InstrumentCategoryType(opt_cat))
+                    MarketHistoryService(db).run_warmup(fm, opt_id, day_ts, opt_cat)
+
+            fm.latest_indicators_state = fm._get_mapped_indicators()
+
+            # 3. Fetch Ticks for the day
             nifty_id = settings.NIFTY_EXCHANGE_INSTRUMENT_ID
             nifty_cursor = db[settings.NIFTY_CANDLE_COLLECTION].find(
                 {"i": nifty_id, "t": {"$gte": day_ts, "$lte": eod_ts}}
@@ -78,7 +103,12 @@ class DBFeeder(BacktestFeeder):
             ticks = list(nifty_cursor)
 
             if fm.trade_instrument_type != "CASH":
-                opt_cursor = db[settings.OPTIONS_CANDLE_COLLECTION].find({"t": {"$gte": day_ts, "$lte": eod_ts}})
+                # Only load options we care about to save memory
+                opt_query = {
+                    "t": {"$gte": day_ts, "$lte": eod_ts},
+                    "i": {"$in": list(instruments_to_monitor - {nifty_id})}
+                }
+                opt_cursor = db[settings.OPTIONS_CANDLE_COLLECTION].find(opt_query)
                 ticks.extend(list(opt_cursor))
 
             ticks.sort(key=lambda x: (x["t"], 1 if x["i"] == nifty_id else 0))
@@ -182,8 +212,24 @@ class SocketFeeder(BacktestFeeder):
         fm = engine.fund_manager
         db = MongoRepository.get_db()
 
-        # 1. Warmup
-        MarketHistoryService(db).run_full_backtest_warmup(fm, engine.start_date, settings.GLOBAL_WARMUP_CANDLES)
+        # 1. Warmup (Assuming Socket is for a single day usually, we initialize grid once based on start_date)
+        dt = DateUtils.parse_iso(engine.start_date)
+        day_ts = int(dt.replace(hour=9, minute=15, second=0).timestamp())
+
+        fm.active_grid_ids.clear()
+        if fm.trade_instrument_type != "CASH":
+            grid_ids = engine.fund_manager.discovery_service.get_daily_grid_ids(dt, strike_count=20)
+            fm.active_grid_ids.update(grid_ids)
+            fm.monitored_instrument_ids.update(grid_ids)
+        
+        MarketHistoryService(db).run_warmup(fm, settings.NIFTY_EXCHANGE_INSTRUMENT_ID, day_ts, "SPOT")
+        if fm.trade_instrument_type != "CASH":
+            for opt_id in fm.active_grid_ids:
+                opt_cat = fm.discovery_service.get_option_type(opt_id)
+                fm._ensure_resampler(opt_id, InstrumentCategoryType(opt_cat))
+                MarketHistoryService(db).run_warmup(fm, opt_id, day_ts, opt_cat)
+
+        fm.latest_indicators_state = fm._get_mapped_indicators()
 
         # 2. Lifecycle: Ensure Simulator is up
         self._start_embedded_simulator()
@@ -284,7 +330,7 @@ class BacktestEngine:
         start_date: str,
         end_date: str | None = None,
         mode: str = "db",
-        log_heartbeat: bool = False,
+        reduced_log: bool = False,
     ):
         self.strategy_config = strategy_config
         self.position_config = position_config
@@ -292,19 +338,23 @@ class BacktestEngine:
         self.end_date = end_date or start_date
         self.mode = mode
 
+        from packages.services.contract_discovery import ContractDiscoveryService
+        # Performance optimization: Load contract cache for the symbol relative to backtest start BEFORE FundManager init
+        bt_start_dt = DateUtils.parse_iso(self.start_date)
+        discovery = ContractDiscoveryService()
+        discovery.load_cache(
+            symbol=self.strategy_config.get("symbol", "NIFTY"),
+            series=self.strategy_config.get("series", "OPTIDX"),
+            effective_date=bt_start_dt,
+        )
+
         self.fund_manager = FundManager(
             strategy_config=strategy_config,
             position_config=position_config,
             is_backtest=True,
-            log_heartbeat=log_heartbeat,
-        )
-
-        # Performance optimization: Load contract cache for the symbol relative to backtest start
-        bt_start_dt = DateUtils.parse_iso(self.start_date)
-        self.fund_manager.discovery_service.load_cache(
-            symbol=self.strategy_config.get("symbol", "NIFTY"),
-            series=self.strategy_config.get("series", "OPTIDX"),
-            effective_date=bt_start_dt,
+            reduced_log=reduced_log,
+            discovery_service=discovery,
+            active_grid_ids=set()
         )
 
         self.daily_pnl = {}

@@ -85,7 +85,7 @@ def run_strategy_backtest(db, strategy_id, pos_overrides=None, use_real_strategy
     else:
         pos_config["python_strategy_path"] = f"{project_root}/{rel_path}"
 
-    fm = FundManager(strategy_config=strategy_config, position_config=pos_config, is_backtest=True, log_heartbeat=True)
+    fm = FundManager(strategy_config=strategy_config, position_config=pos_config, is_backtest=True, reduced_log=False)
 
     # Capture signals and resampled counts for verification
     captured_signals = []
@@ -141,7 +141,7 @@ def test_ema_triple_lock(db_conn):
     print(f"EMA Triple Lock Trades: {len(trades)}")
 
     assert counts["SPOT"] >= 120
-    assert len(trades) == 12  # Strike rolling selection shifted slightly with more availability
+    assert len(trades) == 18
 
 
 def test_ema_cross_rsi(db_conn):
@@ -154,7 +154,7 @@ def test_ema_cross_rsi(db_conn):
     print(f"EMA Cross RSI Trades: {len(trades)}")
 
     assert counts["SPOT"] > 0
-    assert len(trades) == 13
+    assert len(trades) == 17
 
 
 def test_supertrend_price_active(db_conn):

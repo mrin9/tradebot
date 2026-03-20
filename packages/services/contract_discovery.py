@@ -154,10 +154,10 @@ class ContractDiscoveryService:
         import math
         return math.floor((price / step) + 0.5) * step
 
-    def derive_target_contracts(self, current_dt: datetime, strike_count: int | None = None):
+    def derive_target_contracts(self, current_dt: datetime, strike_count: int | None = None, expiry_count: int = 2):
         """
         Derives CE/PE contracts for ATM and +/- strike_count for the given date.
-        Returns contracts for BOTH the Current Weekly and the Next Weekly expiries.
+        Returns contracts for the nearest expiries (default 2).
         Uses NIFTY spot closing price found in nifty_candle collection via MarketHistoryService.
         """
         if strike_count is None:
@@ -191,8 +191,8 @@ class ContractDiscoveryService:
             logger.warning(f"No active NIFTY expiries found in master for date {dt_iso}")
             return []
 
-        # Take first three (Current, Next, and Next-Next)
-        target_expiries = expiries[:3]
+        # Take specified number of expiries
+        target_expiries = expiries[:expiry_count]
         logger.info(f"Deriving contracts for {len(target_expiries)} expiries: {target_expiries}")
 
         # 4. Fetch Contracts
@@ -210,3 +210,24 @@ class ContractDiscoveryService:
         )
 
         return contracts
+
+    def get_option_type(self, instrument_id: int) -> str:
+        """Helper to quickly check if a cached contract is CE or PE."""
+        if self._is_cache_loaded:
+            for cache_list in self._cache.values():
+                for c in cache_list:
+                    if int(c["exchangeInstrumentID"]) == instrument_id:
+                        return "CE" if c.get("optionType") == 3 else "PE"
+                        
+        doc = self.db[settings.INSTRUMENT_MASTER_COLLECTION].find_one({"exchangeInstrumentID": str(instrument_id)})
+        if doc:
+            return "CE" if doc.get("optionType") == 3 else "PE"
+        return "CE"
+
+    def get_daily_grid_ids(self, current_dt: datetime, strike_count: int = 20) -> set[int]:
+        """
+        Gets a static set of Exchange Instrument IDs spanning +/- strike_count from ATM.
+        Defaults to nearest expiry only to keep socket subscriptions optimally sized (~82 options).
+        """
+        contracts = self.derive_target_contracts(current_dt, strike_count=strike_count, expiry_count=1)
+        return {int(c["exchangeInstrumentID"]) for c in contracts}

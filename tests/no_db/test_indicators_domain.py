@@ -64,7 +64,7 @@ def test_calculator_standalone_logic(calc_instance):
 
 def test_calculator_dynamic_category_init(calc_instance):
     """Ensures dynamic initialization when an unexpected instrument category appears."""
-    res = calc_instance.add_candle({"c": 100}, instrument_category=InstrumentCategoryType.PE)
+    res = calc_instance.add_candle({"c": 100, "t": 1000}, instrument_category=InstrumentCategoryType.PE)
     assert res == {}
     assert InstrumentCategoryType.PE in calc_instance.active_instrument_ids
 

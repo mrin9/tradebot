@@ -10,8 +10,8 @@ from packages.services.market_history import MarketHistoryService
 from packages.services.trade_config_service import TradeConfigService
 from packages.services.trade_event import TradeEventService
 from packages.settings import settings
-from packages.tradeflow.drift_manager import DriftManager
 from packages.tradeflow.fund_manager import FundManager
+from packages.tradeflow.types import InstrumentCategoryType
 from packages.utils.date_utils import DateUtils
 from packages.utils.log_utils import setup_logger
 from packages.utils.mongo import MongoRepository
@@ -47,22 +47,19 @@ class LiveTradeEngine:
             self.session_id, record_papertrade=position_config.get("record_papertrade", True)
         )
 
-        # 1.1 Initialize DriftManager
-        self.drift_manager = DriftManager(
-            self.discovery_service, instrument_type=self.strategy_config.get("instrument_type", "OPTIONS")
-        )
-        self.drift_manager.on_instruments_changed_callbacks.append(self._on_drift_instruments_changed)
+        # 2. Setup active grid for FundManager
+        self.active_grid_ids: set[int] = set()
 
-        # 2. Initialize FundManager with services
+        # 3. Initialize FundManager with services
         self.fund_manager = FundManager(
             strategy_config=self.strategy_config,
             position_config=self.position_config,
-            log_heartbeat=True,
+            reduced_log=False,
             config_service=self.config_service,
             discovery_service=self.discovery_service,
             history_service=self.history_service,
             fetch_quote_fn=self._fetch_quote_api,
-            drift_manager=self.drift_manager,
+            active_grid_ids=self.active_grid_ids,
         )
 
         # Hook FundManager events into TradeEventService
@@ -83,8 +80,8 @@ class LiveTradeEngine:
             )
         )
 
-        # Initial subscriptions
-        self._resync_strike_chain()
+        # Initial subscriptions and grid logic
+        self._initialize_daily_grid()
 
         # Start Services
         self.market_service.start(on_tick=self._process_tick)
@@ -147,6 +144,8 @@ class LiveTradeEngine:
         self.fund_manager.is_warming_up = True
 
         try:
+            logger.info("🔥 Commencing Bulk Warmup for Static Grid...")
+            # Warm up SPOT
             self.history_service.run_warmup(
                 self.fund_manager,
                 settings.NIFTY_EXCHANGE_INSTRUMENT_ID,
@@ -155,68 +154,70 @@ class LiveTradeEngine:
                 timeframe_seconds=self.fund_manager.global_timeframe,
                 use_api=True,
             )
+
+            # Warm up Options Grid
+            if self.strategy_config.get("instrument_type", "OPTIONS") != "CASH":
+                for opt_id in self.active_grid_ids:
+                    opt_cat = self.fund_manager.discovery_service.get_option_type(opt_id)
+                    # Initialize resamplers
+                    self.fund_manager._ensure_resampler(opt_id, InstrumentCategoryType(opt_cat))
+                    
+                    self.history_service.run_warmup(
+                        self.fund_manager,
+                        opt_id,
+                        anchor_timestamp,
+                        opt_cat,
+                        timeframe_seconds=self.fund_manager.global_timeframe,
+                        use_api=True,
+                    )
+            
+            # Extract indicators to be ready for tick 1
+            self.fund_manager.latest_indicators_state = self.fund_manager._get_mapped_indicators()
+
             self.has_warmed_up = True
 
             # Record INIT event with enriched config
             self.event_service.record_init(self.fund_manager, mode="live")
+            logger.info("✅ Bulk Warmup Complete. Ready for Live Ticks.")
         finally:
             self.fund_manager.is_warming_up = False
 
-    def _resync_strike_chain(self):
-        """Initial ATM resolution and subscription."""
+    def _initialize_daily_grid(self):
+        """Initial ATM resolution and static 80-option grid subscription."""
         try:
-            quote = self._fetch_quote_api(1, settings.NIFTY_EXCHANGE_INSTRUMENT_ID)
-            spot = quote.get("p") if quote else None
-            if not spot:
-                # Fallback to DB
-                db = MongoRepository.get_db()
-                last = db[settings.NIFTY_CANDLE_COLLECTION].find_one(
-                    {"i": settings.NIFTY_EXCHANGE_INSTRUMENT_ID}, sort=[("t", -1)]
-                )
-                spot = last["c"] if last else 25000
+            now = datetime.now(DateUtils.MARKET_TZ)
+            instruments_to_sub = {settings.NIFTY_EXCHANGE_INSTRUMENT_ID}
 
-            self._update_rolling_strikes(self.discovery_service.get_atm_strike(spot))
+            if self.strategy_config.get("instrument_type", "OPTIONS") != "CASH":
+                logger.info("📡 Deriving Static Option Grid for the day...")
+                # Track 20 strikes up and down
+                grid_ids = self.discovery_service.get_daily_grid_ids(now, strike_count=20)
+                if grid_ids:
+                    self.active_grid_ids.update(grid_ids)
+                    self.fund_manager.monitored_instrument_ids.update(grid_ids)
+                    instruments_to_sub.update(grid_ids)
+                    logger.info(f"✅ Found {len(grid_ids)} options for static grid tracking.")
+                else:
+                    logger.warning("⚠️ Failed to derive static option grid. Will rely only on protected positions.")
+
+            # Identify protected instruments (currently in position)
+            active_pos = self.fund_manager.position_manager.current_position
+            if active_pos:
+                instruments_to_sub.add(int(active_pos.symbol))
+
+            current_subs = self.market_service.subscribed_instruments
+            to_sub = list(instruments_to_sub - current_subs)
+            to_unsub = list((current_subs - instruments_to_sub))
+
+            if to_sub:
+                self.market_service.subscribe(to_sub)
+            if to_unsub:
+                self.market_service.unsubscribe(to_unsub)
+
         except Exception as e:
-            logger.error(f"❌ Error in _resync_strike_chain: {e}")
+            logger.error(f"❌ Error in _initialize_daily_grid: {e}")
 
-    def _on_drift_instruments_changed(self, changed_info: dict[str, Any]):
-        """
-        Callback from DriftManager. Updates market subscriptions.
-        """
-        new_atm = self.discovery_service.get_atm_strike(self.drift_manager.selection_spot_price or 0)
-        self._update_rolling_strikes(new_atm)
 
-    def _update_rolling_strikes(self, new_atm):
-        """Calculates window and delegates to MarketService."""
-        if self.current_atm_strike is not None:
-            if self.current_atm_strike != new_atm:
-                logger.info(f"🔄 Rolling ATM Shift: {self.current_atm_strike} -> {new_atm}")
-        else:
-            logger.info(f"Targeting ATM: {new_atm}")
-
-        new_ids = self.discovery_service.get_strike_window_ids(new_atm, current_ts=self.fund_manager.latest_market_time)
-        if not new_ids:
-            return
-
-        # Add Nifty Spot
-        new_ids.add(settings.NIFTY_EXCHANGE_INSTRUMENT_ID)
-
-        # Identify protected instruments (currently in position)
-        protected = set()
-        active_pos = self.fund_manager.position_manager.current_position
-        if active_pos:
-            protected.add(int(active_pos.symbol))
-
-        current_subs = self.market_service.subscribed_instruments
-        to_sub = list(new_ids - current_subs)
-        to_unsub = list((current_subs - new_ids) - protected)
-
-        if to_sub:
-            self.market_service.subscribe(to_sub)
-        if to_unsub:
-            self.market_service.unsubscribe(to_unsub)
-
-        self.current_atm_strike = new_atm
 
     def _fetch_ohlc_api(
         self, segment: int, instrument_id: int, start_time: str | None = None, end_time: str | None = None

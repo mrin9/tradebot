@@ -30,7 +30,7 @@ def test_fund_manager_heartbeat_count(mock_dependencies, caplog):
     }
 
     position_config = {"python_strategy_path": "packages/tradeflow/python_strategies.py:TripleLockStrategy"}
-    fm = FundManager(strategy_config, position_config=position_config, log_heartbeat=True, is_backtest=True)
+    fm = FundManager(strategy_config, position_config=position_config, reduced_log=False, is_backtest=True)
     fm.active_instruments = {"SPOT": 26000, "CE": 45500, "PE": 45501}
 
     # 1. Simulate SPOT candle close at T=1000 (Period ends at 1000 + 180 = 1180)

@@ -7,7 +7,6 @@ from packages.services.contract_discovery import ContractDiscoveryService
 from packages.services.market_history import MarketHistoryService
 from packages.services.trade_config_service import TradeConfigService
 from packages.tradeflow.candle_resampler import CandleResampler
-from packages.tradeflow.drift_manager import DriftManager
 from packages.tradeflow.indicator_calculator import IndicatorCalculator
 from packages.tradeflow.order_manager import PaperTradingOrderManager
 from packages.tradeflow.position_manager import PositionManager
@@ -31,14 +30,14 @@ class FundManager:
         self,
         strategy_config: dict[str, Any],
         position_config: dict[str, Any] | None = None,
-        log_heartbeat: bool = False,
+        reduced_log: bool = False,
         is_backtest: bool = False,
         config_service: TradeConfigService | None = None,
         discovery_service: ContractDiscoveryService | None = None,
         history_service: MarketHistoryService | None = None,
         fetch_ohlc_fn: Callable | None = None,  # Legacy injection
         fetch_quote_fn: Callable | None = None,  # Legacy injection
-        drift_manager: DriftManager | None = None,
+        active_grid_ids: set[int] | None = None,
     ):
         # 1. Initialize Services
         self.config_service = config_service or TradeConfigService()
@@ -50,10 +49,13 @@ class FundManager:
         self.position_config = self.config_service.build_position_config(**(position_config or {}))
 
         self.indicators_config = self.config.get("indicators", [])
-        self.log_heartbeat = log_heartbeat
+        self.reduced_log = reduced_log
+        self.log_heartbeat = not reduced_log
         self.is_backtest = is_backtest
 
         self.indicator_calculator = IndicatorCalculator(indicators_config=self.indicators_config)
+        if self.reduced_log:
+            self.indicator_calculator.suppress_logs = True
 
         # 3. Load Strategy
         python_path = self.position_config.get("python_strategy_path") or self.config.get("pythonStrategyPath")
@@ -105,13 +107,10 @@ class FundManager:
 
         self.global_timeframe = self.config["timeframe_seconds"]
 
-        # Track active instruments being monitored {category: instrument_id}
-        self.drift_manager = drift_manager or DriftManager(
-            self.discovery_service, instrument_type=self.trade_instrument_type
-        )
-        self.active_instruments = self.drift_manager.active_instruments
-        self.drift_manager.on_instruments_changed_callbacks.append(self._on_drift_instruments_changed)
-
+        # Track active ATM instruments being monitored {category: instrument_id}
+        self.active_instruments: dict[str, int | str] = {}
+        self.monitored_instrument_ids = active_grid_ids or set()
+        
         # Initialize Resamplers per instrument_id
         self.resamplers: dict[int, CandleResampler] = {}
         self._ensure_resampler(26000, InstrumentCategoryType.SPOT)
@@ -140,79 +139,7 @@ class FundManager:
             )
             logger.debug(f"🛠️ Created resampler for {category.value} ({instrument_id})")
 
-    def _on_drift_instruments_changed(self, changed_info: dict[str, Any]) -> None:
-        """
-        Callback triggered when DriftManager resolves new instruments.
-        Handles resampler management and initial warmup.
-        """
-        # Removed: if self.is_warming_up: return (This was incorrectly blocking Option warmup during NIFTY warmup)
 
-        self._needs_mapping_update = True  # Invalidate cache
-
-        current_ts = changed_info.get("current_ts")
-        instruments = changed_info.get("instruments", {})
-
-        new_instruments_to_warmup = []
-        for cat, info in instruments.items():
-            if info["is_new"]:
-                new_id = info["id"]
-                # If we were already monitoring this (pre-warming window), don't reset or warmup!
-                if new_id in self.resamplers:
-                    logger.info(f"⚡ Using pre-warmed history for {cat} ({new_id})")
-                else:
-                    new_instruments_to_warmup.append((cat, new_id, info["desc"]))
-
-        if not new_instruments_to_warmup:
-            # Still need to handle mapping update for cached state
-            self.latest_indicators_state = self._get_mapped_indicators()
-            return
-
-        # 1. Sequential Setup (Thread-Unsafe Parts)
-        warmup_anchor = current_ts or self.latest_market_time or time.time()
-        use_api = not self.is_backtest
-
-        for cat, new_id, new_desc in new_instruments_to_warmup:
-            logger.info(f"🔄 Component Drift Update (Warmup Required): {cat} -> {new_desc} ({new_id})")
-
-            # Sync description to FundManager's local copy (used for logs)
-            self.active_instruments[f"{cat}_DESC"] = new_desc
-
-            # Ensure Resampler and Reset it
-            self._ensure_resampler(new_id, InstrumentCategoryType(cat))
-            self.resamplers[new_id].reset()
-
-            # Pre-initialize Indicator Calculator deques sequentially to ensure thread-safety
-            if new_id not in self.indicator_calculator.instrument_candles:
-                from collections import deque
-                self.indicator_calculator.instrument_candles[new_id] = deque(
-                    maxlen=self.indicator_calculator.max_window_size
-                )
-
-            # Extract cached indicators immediately to avoid stale data
-            cached_indicators = self.indicator_calculator.extract_indicators(new_id, InstrumentCategoryType(cat))
-            if cached_indicators:
-                self.latest_indicators_state.update(cached_indicators)
-
-        # 2. Parallel Warmup (Thread-Safe Parts)
-        # We manage is_warming_up flag here to prevent premature resets in nested run_warmup calls
-        self.is_warming_up = True
-        try:
-
-            for cat_target, id_target, _ in new_instruments_to_warmup:
-                self.history_service.run_warmup(
-                    self,
-                    id_target,
-                    warmup_anchor,
-                    cat_target,
-                    timeframe_seconds=self.global_timeframe,
-                    use_api=use_api,
-                    save_to_db=use_api,
-                )
-            
-            # 3. Final Refresh: Pull the latest state into FundManager's indicators dict
-            self.latest_indicators_state = self._get_mapped_indicators()
-        finally:
-            self.is_warming_up = False
 
     def _get_fallback_option_price(
         self, symbol_id: int, current_ts: float | None, is_entry: bool = False
@@ -301,11 +228,7 @@ class FundManager:
         if inst_id:
             self.latest_tick_prices[int(inst_id)] = price
 
-        is_spot = (inst_id == 26000) or getattr(self, "spot_instrument_id", 26000) == inst_id
 
-        # 1.a Drift Check (Only when we get Spot and not warming up)
-        if is_spot and ts and not self.is_warming_up:
-            self.drift_manager.check_drift(price, ts)
 
         # 2. Update Position Manager immediately for Stop Loss / Target Checks
         if self.position_manager.current_position and not self.is_warming_up:
@@ -331,11 +254,17 @@ class FundManager:
 
         # 3. Route to Resamplers based on Category
         category = None
-        # Check if it's one of the primary monitored instruments (Spot, current ATM CE/PE)
-        for cat, active_id in self.active_instruments.items():
-            if active_id == int(inst_id):
-                category = cat
-                break
+        
+        is_spot = (inst_id == 26000) or getattr(self, "spot_instrument_id", 26000) == inst_id
+        if is_spot:
+            category = InstrumentCategoryType.SPOT
+
+        if not category:
+            # Check if it's one of the primary monitored instruments (Spot, current ATM CE/PE)
+            for cat, active_id in self.active_instruments.items():
+                if active_id == int(inst_id):
+                    category = cat
+                    break
 
         # If not primary but currently being traded, it's still CE or PE
         if not category and self.position_manager.current_position:
@@ -348,12 +277,14 @@ class FundManager:
                     category = "SPOT"  # Fallback for futures/cash
 
         if not category:
-            # During backtest, we pre-warm indicators for all relevant strikes (monitored ids)
-            if self.is_backtest and int(inst_id) in self.drift_manager.monitored_instrument_ids:
+            if self.is_backtest and (self.monitored_instrument_ids and int(inst_id) in self.monitored_instrument_ids):
                 # Heuristic: it's an option. We don't know if it's CE or PE without asking discovery_service,
                 # but IndicatorCalculator can handle OPTIONS_BOTH or we can just pick one (it only affects prefix).
                 # To be safe, we just let it be processed.
                  category = "CE" # Default prefix for pre-warming (doesn't matter much for strategy evaluation)
+            elif not self.is_backtest:
+                  # In live mode if it reached here, it's one of the options we subscribed to
+                  category = "CE"
             else:
                 return  # Data for instrument not actively monitored
 
@@ -389,7 +320,24 @@ class FundManager:
                 self.position_manager.update_tick(candle, nifty_price=nifty_price, indicators=mapped)
 
         if category == InstrumentCategoryType.SPOT:
-            # 0. Synchronize other resamplers (CE/PE/Traded) to current SPOT timestamp
+            # 1. Dynamic ATM Resolution: Update active CE/PE based on the latest NIFTY close
+            if self.trade_instrument_type == "OPTIONS" and ts:
+                spot_price = candle.get("c", candle.get("close", 26000))
+                atm_strike = self.discovery_service.get_atm_strike(spot_price)
+                
+                # Fetch CE
+                ce_id, ce_desc = self.discovery_service.resolve_option_contract(atm_strike, True, ts)
+                if ce_id:
+                    self.active_instruments["CE"] = int(ce_id)
+                    self.active_instruments["CE_DESC"] = ce_desc
+                
+                # Fetch PE
+                pe_id, pe_desc = self.discovery_service.resolve_option_contract(atm_strike, False, ts)
+                if pe_id:
+                    self.active_instruments["PE"] = int(pe_id)
+                    self.active_instruments["PE_DESC"] = pe_desc
+
+            # 2. Synchronize other resamplers (CE/PE/Traded) to current SPOT timestamp
             # This ensures that if Option ticks arrived slightly late, they are still
             # processed into the current or previous candle before we run indicators.
             for r_id, r in self.resamplers.items():
